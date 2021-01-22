@@ -1,0 +1,14 @@
+[package]
+name = "scheduler"
+version = "0.1.0"
+authors = ["Zondax GmbH <info@zondax.ch>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.12"
+jsonrpc-core = "17.0.0"
+jsonrpc-derive = "17.0.0"
+jsonrpc-http-server = "17.0.0"
+serde = { version = "1.0.120", features = ["serde_derive"] }
