@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::handler::Handler;
 use crate::requests::{RequestMethod, SchedulerRequest, SchedulerResponse};
 
-pub struct Scheduler {
+pub(crate) struct Scheduler {
     _task_queue: VecDeque<SchedulerRequest>,
     _state: PathBuf,
 }

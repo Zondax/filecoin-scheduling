@@ -16,7 +16,7 @@ pub trait RpcMethods {
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
 }
 
-pub struct Server<H: Handler>(H);
+pub(crate) struct Server<H: Handler>(H);
 
 impl<H> Server<H>
 where

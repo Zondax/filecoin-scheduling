@@ -12,8 +12,3 @@ pub enum SchedulerResponse {
     Schedule(String),
     SchedulePreemptive(String),
 }
-
-pub(crate) struct SchedulerRequest {
-    pub sender: oneshot::Sender<SchedulerResponse>,
-    pub method: RequestMethod,
-}
