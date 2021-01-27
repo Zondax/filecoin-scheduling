@@ -1,9 +1,9 @@
 mod error;
-mod ffi;
+//mod ffi;
 mod resource;
 mod task;
 pub use error::Error;
-pub use ffi::{FfiResourceAlloc, FfiResourceReq};
+//pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use resource::{ResourceAlloc, ResourceReq};
 pub use task::{Deadline, Task};
 

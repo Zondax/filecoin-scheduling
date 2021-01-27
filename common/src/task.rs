@@ -2,7 +2,7 @@ use chrono::{offset::Utc, DateTime};
 use std::error::Error;
 use std::time::Duration;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::{ResourceAlloc, ResourceReq};
 
@@ -15,6 +15,7 @@ pub enum TaskResult<T> {
 }
 
 /// Deadline struct to configure when the task should be started and finished
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Deadline(DateTime<Utc>, DateTime<Utc>);
 
 impl Deadline {
@@ -23,12 +24,18 @@ impl Deadline {
     }
 }
 
-pub struct Task<T> {
-    pub task: Box<dyn Fn(Vec<ResourceAlloc>) -> TaskResult<T>>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskRequirements {
     pub(crate) req: ResourceReq,
     pub(crate) time_per_iter: Duration,
     pub(crate) exec_time: Duration,
     pub(crate) deadline: Deadline,
+}
+
+pub struct Task<T> {
+    //#[serde(skip_serializing)]
+    pub task: Box<dyn Fn(Vec<ResourceAlloc>) -> TaskResult<T>>,
+    pub task_req: TaskRequirements,
 }
 
 impl<T: Serialize + DeserializeOwned> Task<T> {
@@ -39,12 +46,15 @@ impl<T: Serialize + DeserializeOwned> Task<T> {
         exec_time: Duration,
         deadline: Deadline,
     ) -> Self {
-        Self {
-            task: Box::new(func),
+        let task_req = TaskRequirements {
             req,
             time_per_iter,
             exec_time,
             deadline,
+        };
+        Self {
+            task: Box::new(func),
+            task_req,
         }
     }
 }

@@ -19,7 +19,8 @@ impl Scheduler {
     }
 
     fn schedule(&self, task: String) -> SchedulerResponse {
-        SchedulerResponse::Schedule(format!("HelloWorld {}", task))
+        // A simple echo
+        SchedulerResponse::Schedule(task)
     }
 }
 
@@ -28,9 +29,7 @@ impl Handler for Scheduler {
         let sender = request.sender;
         let response = match request.method {
             RequestMethod::Schedule(s) => self.schedule(s),
-            RequestMethod::SchedulePreemptive(s) => {
-                SchedulerResponse::SchedulePreemptive(format!("Preemptive {}", s))
-            }
+            RequestMethod::SchedulePreemptive(s) => SchedulerResponse::SchedulePreemptive(s),
         };
         let _ = sender.send(response);
     }

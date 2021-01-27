@@ -1,5 +1,4 @@
 use crate::error::ClientError;
-use common::SERVER_ADDRESS;
 
 #[jsonrpc_client::api]
 pub trait RpcClient {

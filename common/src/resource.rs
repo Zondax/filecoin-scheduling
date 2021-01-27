@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResourceReq {
     resource: String,
