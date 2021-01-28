@@ -20,7 +20,7 @@ impl Scheduler {
 
     fn schedule(&self, task: String) -> SchedulerResponse {
         // A simple echo
-        SchedulerResponse::Schedule(task)
+        SchedulerResponse::Schedule(Ok(task))
     }
 }
 

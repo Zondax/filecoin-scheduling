@@ -1,5 +1,6 @@
 //use std::error::Error;
 //use std::fmt::Debug;
+
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
@@ -15,12 +16,16 @@ use crate::error::ClientError;
 const SHARED_MEM_SIZE: usize = 2048;
 
 // The path to were the shared_mem file-link would be stored
-const SHARED_MEM_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "scheduler_shm");
+const SHARED_MEM_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_shm");
 
 // The timein milliseconds to wait until an error is returned when trying to lock a global mutex
-const TIMEOUT: u64 = 1;
+const TIMEOUT: u64 = 10;
 
-pub(crate) struct GlobalMutex(Box<dyn LockImpl>);
+//pub(crate) struct GlobalMutex(Box<dyn LockImpl>);
+pub struct GlobalMutex {
+    mem: Shmem,
+    mutex: Box<dyn LockImpl>,
+}
 
 impl GlobalMutex {
     #[tracing::instrument(level = "debug")]
@@ -59,7 +64,7 @@ impl GlobalMutex {
         };
 
         // Initialize or wait for initialized mutex
-        if shmem.is_owner() {
+        mutex = if shmem.is_owner() {
             debug!("Process {} owns the shared memory", std::process::id());
             is_init.store(0, Ordering::Relaxed);
             // Initialize the mutex
@@ -71,7 +76,7 @@ impl GlobalMutex {
                 .unwrap()
             };
             is_init.store(1, Ordering::Relaxed);
-            mutex = lock;
+            lock
         } else {
             // We are not the owner of the share memory so we need to why until the process that
             // owns it has already initialized it.
@@ -84,10 +89,10 @@ impl GlobalMutex {
                 )
                 .unwrap()
             };
-            mutex = lock;
-        }
+            lock
+        };
 
-        Ok(Self(mutex))
+        Ok(Self { mem: shmem, mutex })
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -96,8 +101,15 @@ impl GlobalMutex {
             "Trying to acquire the mutex - process id: {}",
             std::process::id()
         );
-        self.0
+
+        self.mutex
             .try_lock(Timeout::Val(Duration::from_millis(TIMEOUT)))
+            .map_err(|e| ClientError::GlobalMutexError(e.to_string()))
+    }
+
+    pub fn release(&self) -> Result<(), ClientError> {
+        self.mutex
+            .release()
             .map_err(|e| ClientError::GlobalMutexError(e.to_string()))
     }
 }

@@ -2,22 +2,22 @@ use crate::error::ClientError;
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
-    async fn schedule(&self, task: String) -> Result<String, ClientError>;
+    async fn schedule(&self, task: String) -> Result<String, String>;
 
-    async fn schedule_preemptive(&self, task: String) -> Result<String, ClientError>;
+    async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
 }
 
 #[jsonrpc_client::implement(RpcClient)]
-pub(crate) struct Client {
+pub struct Client {
     inner: reqwest::Client,
     base_url: jsonrpc_client::Url,
 }
 
 impl Client {
-    pub(crate) fn new(base_url: &str) -> Result<Self, ClientError> {
+    pub fn new(base_url: &str) -> std::result::Result<Self, ClientError> {
         let base_url = base_url
             .parse::<jsonrpc_client::Url>()
-            .map_err(|e| ClientError::Other(e.to_string()))?;
+            .map_err(|e| ClientError::RpcError(e.to_string()))?;
         let inner = reqwest::Client::new();
         Ok(Self { inner, base_url })
     }

@@ -6,9 +6,3 @@ pub enum RequestMethod {
     Schedule(String),
     SchedulePreemptive(String),
 }
-
-#[derive(Serialize, Deserialize)]
-pub enum SchedulerResponse {
-    Schedule(String),
-    SchedulePreemptive(String),
-}

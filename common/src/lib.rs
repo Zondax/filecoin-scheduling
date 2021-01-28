@@ -5,9 +5,9 @@ mod task;
 pub use error::Error;
 //pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use resource::{ResourceAlloc, ResourceReq};
-pub use task::{Deadline, Task};
+pub use task::{Deadline, Task, TaskRequirements, TaskResult};
 
-pub const SERVER_ADDRESS: &'static str = "127.0.0.7:5000";
+pub const SERVER_ADDRESS: &'static str = "127.0.0.1:5000";
 
 #[cfg(test)]
 mod tests {

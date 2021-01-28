@@ -1,12 +1,12 @@
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResourceReq {
-    resource: String,
-    quantity: usize,
-    preemptible: bool,
+    pub resource: String,
+    pub quantity: usize,
+    pub preemptible: bool,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResourceAlloc {
-    resource: ResourceReq,
-    resource_id: usize,
+    pub resource: ResourceReq,
+    pub resource_id: usize,
 }

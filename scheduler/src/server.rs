@@ -10,13 +10,13 @@ use crate::requests::{RequestMethod, SchedulerRequest, SchedulerResponse};
 #[rpc(server)]
 pub trait RpcMethods {
     #[rpc(name = "schedule")]
-    fn schedule(&self, task: String) -> BoxFuture<Result<String>>;
+    fn schedule(&self, task: String) -> BoxFuture<Result<std::result::Result<String, String>>>;
 
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
 }
 
-pub(crate) struct Server<H: Handler>(H);
+pub struct Server<H: Handler>(H);
 
 impl<H> Server<H>
 where
@@ -28,7 +28,7 @@ where
 }
 
 impl<H: Handler> RpcMethods for Server<H> {
-    fn schedule(&self, task: String) -> BoxFuture<Result<String>> {
+    fn schedule(&self, task: String) -> BoxFuture<Result<std::result::Result<String, String>>> {
         let method = RequestMethod::Schedule(task);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -37,7 +37,7 @@ impl<H: Handler> RpcMethods for Server<H> {
             receiver
                 .map(|e| match e {
                     Ok(SchedulerResponse::Schedule(res)) => Ok(res),
-                    _ => Ok("Preemptive".to_string()),
+                    _ => unreachable!(),
                 })
                 .boxed(),
         )
