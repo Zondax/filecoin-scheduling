@@ -54,31 +54,17 @@ pub fn schedule<T: Debug + Clone>(
 fn launch_scheduler_process() -> Result<(), ClientError> {
     use nix::unistd::{fork, ForkResult};
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { .. }) => {}
+        Ok(ForkResult::Parent { .. }) => Ok(()),
         Ok(ForkResult::Child) => {
-            scheduler_process();
+            let mutex = GlobalMutex::new()?;
+            if let Ok(_guard) = mutex.try_lock() {
+                let _ = run_scheduler();
+                mutex.release().unwrap();
+            }
+            Ok(())
         }
-        Err(e) => return Err(ClientError::Other(e.to_string())),
+        Err(e) => Err(ClientError::Other(e.to_string())),
     }
-    Ok(())
-}
-
-fn scheduler_process() {
-    // We are another process and can not redirect errors to the application
-    // unless we use IPC communication like ipc-channel crate
-
-    let mutex = GlobalMutex::new().unwrap();
-    match mutex.try_lock() {
-        Ok(_guard) => {
-            let _ = run_scheduler();
-            // waiting for the scheduler thread allows us to keep the mutex locked throughout
-            // the entire scheduler lifetime. If the Scheduler panics, the handler will return
-            // immediately
-        }
-        _ => {}
-    }
-    mutex.release().unwrap();
-    std::process::exit(0);
 }
 
 #[cfg(test)]
@@ -87,7 +73,7 @@ pub fn schedule_test<T: Debug + Clone>(
     _task: Task<T>,
     _timeout: Duration,
 ) -> Result<String, ClientError> {
-    let handle = scheduler::run_scheduler_test().unwrap();
+    let handle = scheduler::spawn_scheduler_with_handler().unwrap();
     std::thread::sleep(Duration::from_millis(500));
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
     let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
@@ -106,7 +92,6 @@ pub fn schedule_test<T: Debug + Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scheduler::run_scheduler_test;
 
     #[test]
     fn calls_scheduler_one_process() {
@@ -133,7 +118,7 @@ mod tests {
         let token = register(pid, client_id);
 
         let res = schedule_test(token, task, Default::default());
-        println!("Result: {:?}", res);
         assert!(res.is_ok());
+        assert_eq!(res.unwrap().parse::<u32>().unwrap(), pid);
     }
 }

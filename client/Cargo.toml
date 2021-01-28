@@ -22,4 +22,5 @@ tracing = "0.1.22"
 
 [dev-dependencies]
 chrono = "0.4.19"
+ipmpsc = "0.4.0"
 rand = "0.8.2"

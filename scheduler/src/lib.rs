@@ -17,7 +17,7 @@ use jsonrpc_http_server::ServerBuilder;
 
 use common::SERVER_ADDRESS;
 
-const STATE_FILE_PATH: &'static str = concat!(env!("CARGO_TARGET_DIR"), "scheduler_state");
+const STATE_FILE_PATH: &'static str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_state");
 
 /// Starts a json-rpc server listening to *addr*
 pub fn run_scheduler() -> Result<(), Box<dyn Error>> {
@@ -34,7 +34,7 @@ pub fn run_scheduler() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn run_scheduler_test() -> Result<CloseHandle, Box<dyn Error>> {
+pub fn spawn_scheduler_with_handler() -> Result<CloseHandle, Box<dyn Error>> {
     let handler = scheduler::Scheduler::new(STATE_FILE_PATH);
     let server = server::Server::new(handler);
     let mut io = IoHandler::new();

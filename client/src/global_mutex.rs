@@ -17,11 +17,12 @@ const SHARED_MEM_SIZE: usize = 2048;
 
 // The path to were the shared_mem file-link would be stored
 const SHARED_MEM_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_shm");
+#[cfg(test)]
+const IPC_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/ipc_buffer");
 
 // The time in milliseconds to wait until an error is returned when trying to lock a global mutex
 const TIMEOUT: u64 = 10;
 
-//pub(crate) struct GlobalMutex(Box<dyn LockImpl>);
 pub struct GlobalMutex {
     mem: Shmem,
     mutex: Box<dyn LockImpl>,
@@ -29,7 +30,7 @@ pub struct GlobalMutex {
 
 impl GlobalMutex {
     #[tracing::instrument(level = "debug")]
-    pub fn new() -> Result<Self, ClientError> {
+    pub fn _new() -> Result<Self, ClientError> {
         // Create or open the shared memory mapping
         let shmem = match ShmemConf::new()
             .size(SHARED_MEM_SIZE)
@@ -120,7 +121,7 @@ mod tests {
 
     const NUM_THREADS: usize = 4;
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     #[repr(u8)]
     enum MutexState {
         //Only one thread should report Owned
@@ -130,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mutex_contention() {
+    fn test_mutex_contention_threads() {
         use std::sync::mpsc;
 
         let (tx, rx) = mpsc::channel::<MutexState>();
@@ -168,5 +169,66 @@ mod tests {
         assert_eq!(res.len(), NUM_THREADS);
         // At least one thread should have owned the mutex
         assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
+    }
+
+    //#[cfg(target = "linux")]
+    #[test]
+    fn test_mutex_contention_processes() {
+        use ipmpsc::{Receiver, Sender, SharedRingBuffer};
+        use nix::unistd::{fork, ForkResult};
+        use std::path::Path;
+
+        //Lets run 4 threads instead of processes
+        match unsafe { fork() } {
+            Ok(ForkResult::Parent { .. }) => {
+                // checks if the file buffer exists
+                if !Path::new(IPC_PATH).exists() {
+                    SharedRingBuffer::create(IPC_PATH, 2048).unwrap();
+                }
+                let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
+                let sender = Sender::new(shared);
+                let mutex = GlobalMutex::new().unwrap();
+                let mut guard = mutex.try_lock();
+                if let Ok(_) = guard {
+                    sender.send(&MutexState::Owned).unwrap();
+                    // Ensures that this threads owns the mutex along the test
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                } else {
+                    sender.send(&MutexState::Locked).unwrap();
+                }
+
+                let mut res: Vec<MutexState> = vec![];
+                let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
+                let rx = Receiver::new(shared);
+                for _ in 0..2 {
+                    if let Ok(state) = rx.recv::<MutexState>() {
+                        res.push(state);
+                    }
+                }
+
+                assert_eq!(res.len(), 2);
+                // At least one thread should have owned the mutex
+                assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
+            }
+
+            Ok(ForkResult::Child) => {
+                // checks if the file buffer exists
+                if !Path::new(IPC_PATH).exists() {
+                    SharedRingBuffer::create(IPC_PATH, 1024).unwrap();
+                }
+                let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
+                let sender = Sender::new(shared);
+                let mutex = GlobalMutex::new().unwrap();
+                let mut guard = mutex.try_lock();
+                if let Ok(_) = guard {
+                    sender.send(&MutexState::Owned).unwrap();
+                    // Ensures that this threads owns the mutex along the test
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                } else {
+                    sender.send(&MutexState::Locked).unwrap();
+                }
+            }
+            Err(e) => panic!(e.to_string()),
+        }
     }
 }
