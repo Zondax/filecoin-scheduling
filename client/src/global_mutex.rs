@@ -18,7 +18,7 @@ const SHARED_MEM_SIZE: usize = 2048;
 // The path to were the shared_mem file-link would be stored
 const SHARED_MEM_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_shm");
 
-// The timein milliseconds to wait until an error is returned when trying to lock a global mutex
+// The time in milliseconds to wait until an error is returned when trying to lock a global mutex
 const TIMEOUT: u64 = 10;
 
 //pub(crate) struct GlobalMutex(Box<dyn LockImpl>);
@@ -111,5 +111,62 @@ impl GlobalMutex {
         self.mutex
             .release()
             .map_err(|e| ClientError::GlobalMutexError(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NUM_THREADS: usize = 4;
+
+    #[derive(Debug, PartialEq, Eq)]
+    #[repr(u8)]
+    enum MutexState {
+        //Only one thread should report Owned
+        Owned,
+        // Other threads should report that the mutex is locked
+        Locked,
+    }
+
+    #[test]
+    fn test_mutex_contention() {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel::<MutexState>();
+        let mut handlers = vec![];
+        // Lets run 4 threads instead of processes
+        for i in 0..NUM_THREADS {
+            let sender = tx.clone();
+            let handler = std::thread::Builder::new()
+                .name(i.to_string())
+                .spawn(move || {
+                    let mutex = GlobalMutex::new().unwrap();
+                    let mut guard = mutex.try_lock();
+                    if let Ok(_) = guard {
+                        sender.send(MutexState::Owned).unwrap();
+                        // Ensures that this threads owns the mutex along the test
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    } else {
+                        sender.send(MutexState::Locked).unwrap();
+                    }
+                });
+            handlers.push(handler.unwrap());
+        }
+
+        for h in handlers.drain(..) {
+            h.join().unwrap();
+        }
+
+        let mut res = vec![];
+        for _ in 0..NUM_THREADS {
+            if let Ok(state) = rx.recv() {
+                res.push(state);
+            }
+        }
+
+        assert_eq!(res.len(), NUM_THREADS);
+        // At least one thread should have owned the mutex
+        assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
     }
 }
