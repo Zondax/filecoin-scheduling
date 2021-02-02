@@ -1,6 +1,3 @@
-//use std::error::Error;
-//use std::fmt::Debug;
-
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
@@ -24,22 +21,32 @@ const IPC_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/ipc_buffer");
 const TIMEOUT: u64 = 10;
 
 pub struct GlobalMutex {
+    #[allow(dead_code)]
     mem: Shmem,
     mutex: Box<dyn LockImpl>,
 }
 
 impl GlobalMutex {
+    pub fn new() -> Result<Self, ClientError> {
+        Self::_new(None)
+    }
+
+    pub fn new_with_name<'a>(name: &'a str) -> Result<Self, ClientError> {
+        Self::_new(Some(name))
+    }
+
     #[tracing::instrument(level = "debug")]
-    pub fn _new() -> Result<Self, ClientError> {
+    fn _new<'a>(name: Option<&'a str>) -> Result<Self, ClientError> {
+        let path = if let Some(suffix) = name {
+            format!("{}_{}", SHARED_MEM_PATH, suffix)
+        } else {
+            SHARED_MEM_PATH.to_string()
+        };
         // Create or open the shared memory mapping
-        let shmem = match ShmemConf::new()
-            .size(SHARED_MEM_SIZE)
-            .flink(SHARED_MEM_PATH)
-            .create()
-        {
+        let shmem = match ShmemConf::new().size(SHARED_MEM_SIZE).flink(&path).create() {
             Ok(m) => m,
             Err(ShmemError::LinkExists) => {
-                let share = ShmemConf::new().flink(SHARED_MEM_PATH).open();
+                let share = ShmemConf::new().flink(&path).open();
                 if let Err(e) = share {
                     error!("Shared memory exist but can not be opened");
                     return Err(ClientError::GlobalMutexError(e.to_string()));
@@ -49,7 +56,7 @@ impl GlobalMutex {
             Err(e) => {
                 error!(
                     "Unable to create or open shmem link for global mutex {} : {}",
-                    SHARED_MEM_PATH, e
+                    path, e
                 );
                 return Err(ClientError::GlobalMutexError(e.to_string()));
             }
@@ -142,7 +149,8 @@ mod tests {
             let handler = std::thread::Builder::new()
                 .name(i.to_string())
                 .spawn(move || {
-                    let mutex = GlobalMutex::new().unwrap();
+                    // Pass a name to the mutex because so that it is exclusive to this test
+                    let mutex = GlobalMutex::new_with_name("threads").unwrap();
                     let mut guard = mutex.try_lock();
                     if let Ok(_) = guard {
                         sender.send(MutexState::Owned).unwrap();
@@ -171,7 +179,7 @@ mod tests {
         assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
     }
 
-    //#[cfg(target = "linux")]
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_mutex_contention_processes() {
         use ipmpsc::{Receiver, Sender, SharedRingBuffer};
@@ -188,7 +196,7 @@ mod tests {
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
                 let mutex = GlobalMutex::new().unwrap();
-                let mut guard = mutex.try_lock();
+                let guard = mutex.try_lock();
                 if let Ok(_) = guard {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test

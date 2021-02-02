@@ -1,5 +1,5 @@
-use std::fs::File;
-use std::io::prelude::*;
+//use std::fs::File;
+//use std::io::prelude::*;
 
 use std::error::Error;
 use std::fmt::Debug;
@@ -8,19 +8,20 @@ use std::time::Duration;
 mod client;
 mod error;
 mod global_mutex;
-pub mod jrpc_client;
+pub mod rpc_client;
 
 pub use crate::client::ClientToken;
 pub use common::{Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult};
 pub use error::ClientError;
 pub use global_mutex::GlobalMutex;
-pub use jrpc_client::*;
+pub use rpc_client::*;
 pub use scheduler::run_scheduler;
 
+use jsonrpc_client::Error as RpcError;
 use tokio::runtime::Runtime;
 
 use common::SERVER_ADDRESS;
-use jrpc_client::{Client as RpcClient, RpcClient as RpcClientTrait};
+use rpc_client::{Client as RpcClient, RpcClient as RpcClientTrait};
 
 pub fn abort() -> Result<(), Box<dyn Error>> {
     Ok(())
@@ -36,19 +37,42 @@ pub fn schedule<T: Debug + Clone>(
     task: Task<T>,
     _timeout: Duration,
 ) -> Result<String, ClientError> {
-    launch_scheduler_process()?;
-    std::thread::sleep(Duration::from_millis(500));
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
     let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
+    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
-    let result = rt
-        .block_on(async {
-            // We pass a simple string just for testing, in the real implementation it would be part of
-            // the info contained in the task field
-            jrpc_client.schedule(format!("{}", client.pid)).await
-        })
-        .map_err(|e| ClientError::RpcError(e.to_string()))?;
-    result.map_err(|e| ClientError::RpcError(e.to_string()))
+    let result = rt.block_on(async { jrpc_client.schedule(format!("{}", client.pid)).await });
+
+    if let Ok(r) = result {
+        return r.map_err(|e| ClientError::Other(e));
+    }
+
+    let e = result.unwrap_err();
+    // We assume here that the returned error is of type reqwest::Error because of the feature we enabled
+    // here for the jsonrpc_client crate, if we use surf or another feature for such crate the code
+    // bellow will not work
+    if let RpcError::Client(ref e) = e {
+        // A connection type error that means the scheduler is offline
+        if e.is_connect() || e.is_timeout() {
+            #[cfg(not(test))]
+            launch_scheduler_process()?;
+
+            #[cfg(test)]
+            let handle = scheduler::spawn_scheduler_with_handler().unwrap();
+
+            std::thread::sleep(Duration::from_millis(500));
+
+            let result =
+                rt.block_on(async { jrpc_client.schedule(format!("{}", client.pid)).await });
+
+            #[cfg(test)]
+            handle.close();
+
+            return result
+                .map_err(|e| ClientError::RpcError(e.to_string()))?
+                .map_err(|e| ClientError::RpcError(e));
+        }
+    }
+    Err(ClientError::Other(e.to_string()))
 }
 
 fn launch_scheduler_process() -> Result<(), ClientError> {
@@ -65,28 +89,6 @@ fn launch_scheduler_process() -> Result<(), ClientError> {
         }
         Err(e) => Err(ClientError::Other(e.to_string())),
     }
-}
-
-#[cfg(test)]
-pub fn schedule_test<T: Debug + Clone>(
-    client: ClientToken,
-    _task: Task<T>,
-    _timeout: Duration,
-) -> Result<String, ClientError> {
-    let handle = scheduler::spawn_scheduler_with_handler().unwrap();
-    std::thread::sleep(Duration::from_millis(500));
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
-    let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
-
-    let result = rt
-        .block_on(async {
-            // We pass a simple string just for testing, in the real implementation it would be part of
-            // the info contained in the task field
-            jrpc_client.schedule(format!("{}", client.pid)).await
-        })
-        .map_err(|e| ClientError::RpcError(e.to_string()))?;
-    handle.close();
-    result.map_err(|e| ClientError::RpcError(e.to_string()))
 }
 
 #[cfg(test)]
@@ -117,8 +119,7 @@ mod tests {
         let client_id: u64 = rng.gen();
         let token = register(pid, client_id);
 
-        let res = schedule_test(token, task, Default::default());
-        assert!(res.is_ok());
+        let res = schedule(token, task, Default::default());
         assert_eq!(res.unwrap().parse::<u32>().unwrap(), pid);
     }
 }
