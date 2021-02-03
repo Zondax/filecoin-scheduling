@@ -31,6 +31,15 @@ impl Scheduler {
         // A simple echo
         SchedulerResponse::Schedule(Ok(alloc))
     }
+
+    fn list_resources(&self) -> SchedulerResponse {
+        let gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let resources = gpu_ids
+            .iter()
+            .map(|id| format!("GPU{}", id))
+            .collect::<Vec<String>>();
+        SchedulerResponse::ListResources(resources)
+    }
 }
 
 impl Handler for Scheduler {
@@ -39,6 +48,7 @@ impl Handler for Scheduler {
         let response = match request.method {
             RequestMethod::Schedule(s) => self.schedule(s),
             RequestMethod::SchedulePreemptive(s) => SchedulerResponse::SchedulePreemptive(s),
+            RequestMethod::ListResources => self.list_resources(),
         };
         let _ = sender.send(response);
     }

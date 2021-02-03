@@ -1,10 +1,9 @@
-use common::Error;
-use common::ResourceAlloc;
-use common::TaskRequirements;
+use common::{Error, ResourceAlloc, TaskRequirements};
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
     async fn schedule_one_of(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
+    async fn list_resources(&self) -> Result<Vec<String>, Error>;
 
     async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
 }
