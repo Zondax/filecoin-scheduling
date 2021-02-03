@@ -1,8 +1,10 @@
-use crate::error::ClientError;
+use common::Error;
+use common::ResourceAlloc;
+use common::TaskRequirements;
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
-    async fn schedule(&self, task: String) -> Result<String, String>;
+    async fn schedule_one_of(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
 
     async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
 }
@@ -14,10 +16,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(base_url: &str) -> std::result::Result<Self, ClientError> {
+    pub fn new(base_url: &str) -> std::result::Result<Self, Error> {
         let base_url = base_url
             .parse::<jsonrpc_client::Url>()
-            .map_err(|e| ClientError::RpcError(e.to_string()))?;
+            .map_err(|e| Error::RpcError(e.to_string()))?;
         let inner = reqwest::Client::new();
         Ok(Self { inner, base_url })
     }

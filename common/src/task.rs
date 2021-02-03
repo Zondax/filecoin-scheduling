@@ -15,7 +15,7 @@ pub enum TaskResult<T> {
 }
 
 /// Deadline struct to configure when the task should be started and finished
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Deadline(DateTime<Utc>, DateTime<Utc>);
 
 impl Deadline {
@@ -24,12 +24,12 @@ impl Deadline {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskRequirements {
-    pub(crate) req: ResourceReq,
-    pub(crate) time_per_iter: Duration,
-    pub(crate) exec_time: Duration,
-    pub(crate) deadline: Deadline,
+    pub req: Vec<ResourceReq>,
+    pub time_per_iter: Duration,
+    pub exec_time: Duration,
+    pub deadline: Deadline,
 }
 
 pub struct Task<T> {
@@ -41,7 +41,7 @@ pub struct Task<T> {
 impl<T: Serialize + DeserializeOwned> Task<T> {
     pub fn new(
         func: impl Fn(Vec<ResourceAlloc>) -> TaskResult<T> + 'static,
-        req: ResourceReq,
+        req: Vec<ResourceReq>,
         time_per_iter: Duration,
         exec_time: Duration,
         deadline: Deadline,

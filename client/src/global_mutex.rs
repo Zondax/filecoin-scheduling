@@ -7,7 +7,7 @@ use raw_sync::locks::*;
 use raw_sync::Timeout;
 use shared_memory::*;
 
-use crate::error::ClientError;
+use common::Error as ClientError;
 
 // We will not use this for anything except hosting a global mutex
 const SHARED_MEM_SIZE: usize = 2048;
@@ -78,10 +78,12 @@ impl GlobalMutex {
             // Initialize the mutex
             let (lock, _bytes_used) = unsafe {
                 Mutex::new(
-                    raw_ptr,                                    // Base address of Mutex
-                    raw_ptr.add(Mutex::size_of(Some(raw_ptr))), // Address of data protected by mutex
+                    // Base address of Mutex
+                    raw_ptr,
+                    // Address of data protected by mutex
+                    raw_ptr.add(Mutex::size_of(Some(raw_ptr))),
                 )
-                .unwrap()
+                .map_err(|e| ClientError::GlobalMutexError(e.to_string()))?
             };
             is_init.store(1, Ordering::Relaxed);
             lock
@@ -91,11 +93,8 @@ impl GlobalMutex {
             while is_init.load(Ordering::Relaxed) != 1 {}
             // Load existing mutex
             let (lock, _bytes_used) = unsafe {
-                Mutex::from_existing(
-                    raw_ptr,                                    // Base address of Mutex
-                    raw_ptr.add(Mutex::size_of(Some(raw_ptr))), // Address of data  protected by mutex
-                )
-                .unwrap()
+                Mutex::from_existing(raw_ptr, raw_ptr.add(Mutex::size_of(Some(raw_ptr))))
+                    .map_err(|e| ClientError::GlobalMutexError(e.to_string()))?
             };
             lock
         };
@@ -135,10 +134,17 @@ mod tests {
         Owned,
         // Other threads should report that the mutex is locked
         Locked,
+        Error,
     }
 
     #[test]
-    fn test_mutex_contention_threads() {
+    fn test_mutex_contention() {
+        mutex_contention_threads();
+        #[cfg(target_os = "linux")]
+        mutex_contention_processes();
+    }
+
+    fn mutex_contention_threads() {
         use std::sync::mpsc;
 
         let (tx, rx) = mpsc::channel::<MutexState>();
@@ -151,7 +157,7 @@ mod tests {
                 .spawn(move || {
                     // Pass a name to the mutex because so that it is exclusive to this test
                     let mutex = GlobalMutex::new_with_name("threads").unwrap();
-                    let mut guard = mutex.try_lock();
+                    let guard = mutex.try_lock();
                     if let Ok(_) = guard {
                         sender.send(MutexState::Owned).unwrap();
                         // Ensures that this threads owns the mutex along the test
@@ -180,36 +186,48 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    #[test]
-    fn test_mutex_contention_processes() {
+    fn mutex_contention_processes() {
         use ipmpsc::{Receiver, Sender, SharedRingBuffer};
         use nix::unistd::{fork, ForkResult};
         use std::path::Path;
+
+        if Path::new(IPC_PATH).exists() {
+            std::fs::remove_file(IPC_PATH).unwrap();
+        }
 
         //Lets run 4 threads instead of processes
         match unsafe { fork() } {
             Ok(ForkResult::Parent { .. }) => {
                 // checks if the file buffer exists
                 if !Path::new(IPC_PATH).exists() {
-                    SharedRingBuffer::create(IPC_PATH, 2048).unwrap();
+                    SharedRingBuffer::create(IPC_PATH, SHARED_MEM_SIZE as _).unwrap();
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = GlobalMutex::new().unwrap();
+                let mutex = if let Ok(mutex) = GlobalMutex::new_with_name("process") {
+                    mutex
+                } else {
+                    sender.send(&MutexState::Error).unwrap();
+                    return;
+                };
                 let guard = mutex.try_lock();
                 if let Ok(_) = guard {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(300));
                 } else {
                     sender.send(&MutexState::Locked).unwrap();
                 }
+                drop(guard);
 
                 let mut res: Vec<MutexState> = vec![];
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let rx = Receiver::new(shared);
                 for _ in 0..2 {
                     if let Ok(state) = rx.recv::<MutexState>() {
+                        if state == MutexState::Error {
+                            break;
+                        }
                         res.push(state);
                     }
                 }
@@ -222,19 +240,25 @@ mod tests {
             Ok(ForkResult::Child) => {
                 // checks if the file buffer exists
                 if !Path::new(IPC_PATH).exists() {
-                    SharedRingBuffer::create(IPC_PATH, 1024).unwrap();
+                    SharedRingBuffer::create(IPC_PATH, SHARED_MEM_SIZE as _).unwrap();
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = GlobalMutex::new().unwrap();
-                let mut guard = mutex.try_lock();
+                let mutex = if let Ok(mutex) = GlobalMutex::new_with_name("process") {
+                    mutex
+                } else {
+                    sender.send(&MutexState::Error).unwrap();
+                    return;
+                };
+                let guard = mutex.try_lock();
                 if let Ok(_) = guard {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(300));
                 } else {
                     sender.send(&MutexState::Locked).unwrap();
                 }
+                drop(guard);
             }
             Err(e) => panic!(e.to_string()),
         }

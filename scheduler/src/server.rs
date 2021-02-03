@@ -5,12 +5,16 @@ use futures::channel::oneshot;
 use futures::FutureExt;
 
 use crate::handler::Handler;
-use crate::requests::{RequestMethod, SchedulerRequest, SchedulerResponse};
+use crate::requests::{SchedulerRequest, SchedulerResponse};
+use common::{Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
 #[rpc(server)]
 pub trait RpcMethods {
-    #[rpc(name = "schedule")]
-    fn schedule(&self, task: String) -> BoxFuture<Result<std::result::Result<String, String>>>;
+    #[rpc(name = "schedule_one_of")]
+    fn schedule_one_of(
+        &self,
+        requirements: TaskRequirements,
+    ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>>;
 
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
@@ -28,8 +32,11 @@ where
 }
 
 impl<H: Handler> RpcMethods for Server<H> {
-    fn schedule(&self, task: String) -> BoxFuture<Result<std::result::Result<String, String>>> {
-        let method = RequestMethod::Schedule(task);
+    fn schedule_one_of(
+        &self,
+        requirements: TaskRequirements,
+    ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>> {
+        let method = RequestMethod::Schedule(requirements);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
         self.0.process_request(request);

@@ -6,13 +6,11 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 mod client;
-mod error;
 mod global_mutex;
 pub mod rpc_client;
 
 pub use crate::client::ClientToken;
 pub use common::{Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult};
-pub use error::ClientError;
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
 pub use scheduler::run_scheduler;
@@ -20,6 +18,7 @@ pub use scheduler::run_scheduler;
 use jsonrpc_client::Error as RpcError;
 use tokio::runtime::Runtime;
 
+use common::Error as ClientError;
 use common::SERVER_ADDRESS;
 use rpc_client::{Client as RpcClient, RpcClient as RpcClientTrait};
 
@@ -32,18 +31,18 @@ pub fn register(pid: u32, client_id: u64) -> ClientToken {
 }
 
 #[tracing::instrument(level = "info", skip(task))]
-pub fn schedule<T: Debug + Clone>(
+pub fn schedule_one_of<T: Debug + Clone>(
     client: ClientToken,
     task: Task<T>,
     _timeout: Duration,
-) -> Result<String, ClientError> {
+) -> Result<(), ClientError> {
     let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
-    let result = rt.block_on(async { jrpc_client.schedule(format!("{}", client.pid)).await });
+    let result = rt.block_on(async { jrpc_client.schedule_one_of(task.task_req.clone()).await });
 
     if let Ok(r) = result {
-        return r.map_err(|e| ClientError::Other(e));
+        return r.map(|_| ());
     }
 
     let e = result.unwrap_err();
@@ -61,15 +60,14 @@ pub fn schedule<T: Debug + Clone>(
 
             std::thread::sleep(Duration::from_millis(500));
 
-            let result =
-                rt.block_on(async { jrpc_client.schedule(format!("{}", client.pid)).await });
+            let result = rt.block_on(async { jrpc_client.schedule_one_of(task.task_req).await });
 
             #[cfg(test)]
             handle.close();
 
             return result
                 .map_err(|e| ClientError::RpcError(e.to_string()))?
-                .map_err(|e| ClientError::RpcError(e));
+                .map(|_| ());
         }
     }
     Err(ClientError::Other(e.to_string()))
@@ -112,14 +110,21 @@ mod tests {
         let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let deadline = Deadline::new(start, end);
-        let task = Task::new(task_fn, req, time_per_iteration, exec_time, deadline);
+        let task = Task::new(
+            task_fn,
+            vec![req.clone()],
+            time_per_iteration,
+            exec_time,
+            deadline,
+        );
 
         let mut rng = rand::thread_rng();
         let pid: u32 = rng.gen();
         let client_id: u64 = rng.gen();
         let token = register(pid, client_id);
 
-        let res = schedule(token, task, Default::default());
-        assert_eq!(res.unwrap().parse::<u32>().unwrap(), pid);
+        let res = schedule_one_of(token, task, Default::default());
+        assert!(res.is_ok());
+        //assert_eq!(res.unwrap().parse::<u32>().unwrap(), pid);
     }
 }
