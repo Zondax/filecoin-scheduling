@@ -52,6 +52,16 @@ pub fn spawn_scheduler_with_handler() -> Result<CloseHandle, Box<dyn Error>> {
     Ok(close_handle)
 }
 
+pub fn list_resources() -> Vec<String> {
+    // This is a dummy implementation that has already a formal implementation on another related
+    // project
+    let gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    gpu_ids
+        .iter()
+        .map(|id| format!("GPU{}", id))
+        .collect::<Vec<String>>()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

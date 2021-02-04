@@ -73,6 +73,7 @@ pub fn schedule_one_of<T: Debug + Clone>(
     Err(ClientError::Other(e.to_string()))
 }
 
+#[allow(dead_code)]
 fn launch_scheduler_process() -> Result<(), ClientError> {
     use nix::unistd::{fork, ForkResult};
     match unsafe { fork() } {
@@ -87,6 +88,10 @@ fn launch_scheduler_process() -> Result<(), ClientError> {
         }
         Err(e) => Err(ClientError::Other(e.to_string())),
     }
+}
+
+pub fn list_resources() -> Vec<String> {
+    scheduler::list_resources()
 }
 
 #[cfg(test)]

@@ -16,9 +16,6 @@ pub trait RpcMethods {
         requirements: TaskRequirements,
     ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>>;
 
-    #[rpc(name = "list_resources")]
-    fn list_resources(&self) -> BoxFuture<Result<Vec<String>>>;
-
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
 }
@@ -47,21 +44,6 @@ impl<H: Handler> RpcMethods for Server<H> {
             receiver
                 .map(|e| match e {
                     Ok(SchedulerResponse::Schedule(res)) => Ok(res),
-                    _ => unreachable!(),
-                })
-                .boxed(),
-        )
-    }
-
-    fn list_resources(&self) -> BoxFuture<Result<Vec<String>>> {
-        let method = RequestMethod::ListResources;
-        let (sender, receiver) = oneshot::channel();
-        let request = SchedulerRequest { sender, method };
-        self.0.process_request(request);
-        Box::pin(
-            receiver
-                .map(|e| match e {
-                    Ok(SchedulerResponse::ListResources(res)) => Ok(res),
                     _ => unreachable!(),
                 })
                 .boxed(),
