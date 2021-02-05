@@ -18,6 +18,9 @@ pub trait RpcMethods {
 
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
+
+    #[rpc(name = "wait_preemptive")]
+    fn wait_preemptive(&self, task: String) -> BoxFuture<Result<bool>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -52,6 +55,25 @@ impl<H: Handler> RpcMethods for Server<H> {
 
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>> {
         let method = RequestMethod::SchedulePreemptive(task);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::SchedulePreemptive(res)) => Ok(res),
+                    _ => Ok("Preemptive".to_string()),
+                })
+                .boxed(),
+        )
+    }
+
+    fn wait_preemptive(
+        &self,
+        client: CLientTOken,
+        t: std::time::Duration,
+    ) -> BoxFuture<Result<bool>> {
+        let method = RequestMethod::WaitPreemptive(client, t);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
         self.0.process_request(request);

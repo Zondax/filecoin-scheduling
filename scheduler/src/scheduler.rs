@@ -39,6 +39,7 @@ impl Handler for Scheduler {
         let response = match request.method {
             RequestMethod::Schedule(s) => self.schedule(s),
             RequestMethod::SchedulePreemptive(s) => SchedulerResponse::SchedulePreemptive(s),
+            RequestMethod::WaitPreemptive(client, timeout) => self.wait_preemptive(client, timeout),
         };
         let _ = sender.send(response);
     }
