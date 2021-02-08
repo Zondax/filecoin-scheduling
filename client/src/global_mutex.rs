@@ -13,9 +13,9 @@ use common::Error as ClientError;
 const SHARED_MEM_SIZE: usize = 2048;
 
 // The path to were the shared_mem file-link would be stored
-const SHARED_MEM_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_shm");
+const SHARED_MEM_PATH: &str = concat!(env!("OUT_DIR"), "/scheduler_shm");
 #[cfg(test)]
-const IPC_PATH: &str = concat!(env!("CARGO_TARGET_DIR"), "/ipc_buffer");
+const IPC_PATH: &str = concat!(env!("OUT_DIR"), "/ipc_buffer");
 
 // The time in milliseconds to wait until an error is returned when trying to lock a global mutex
 const TIMEOUT: u64 = 10;
