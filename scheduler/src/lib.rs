@@ -17,7 +17,7 @@ use jsonrpc_http_server::ServerBuilder;
 
 use common::SERVER_ADDRESS;
 
-const STATE_FILE_PATH: &'static str = concat!(env!("CARGO_TARGET_DIR"), "/scheduler_state");
+const STATE_FILE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.scheduler_state");
 
 /// Starts a json-rpc server listening to *addr*
 pub fn run_scheduler() -> Result<(), Box<dyn Error>> {
