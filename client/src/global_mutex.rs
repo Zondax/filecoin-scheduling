@@ -31,7 +31,7 @@ impl GlobalMutex {
         Self::_new(None)
     }
 
-    pub fn new_with_name<'a>(name: &'a str) -> Result<Self, ClientError> {
+    pub fn new_with_name(name: &str) -> Result<Self, ClientError> {
         Self::_new(Some(name))
     }
 
