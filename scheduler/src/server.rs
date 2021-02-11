@@ -6,7 +6,7 @@ use futures::FutureExt;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use common::{Error, RequestMethod, ResourceAlloc, TaskRequirements, ClientToken};
+use common::{ClientToken, Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
 #[rpc(server)]
 pub trait RpcMethods {
@@ -20,8 +20,8 @@ pub trait RpcMethods {
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
 
     #[rpc(name = "wait_preemptive")]
-    fn wait_preemptive(&self, task: ClientToken,
-                       t: std::time::Duration,) -> BoxFuture<Result<bool>>;
+    fn wait_preemptive(&self, task: ClientToken, t: std::time::Duration)
+        -> BoxFuture<Result<bool>>;
 }
 
 pub struct Server<H: Handler>(H);

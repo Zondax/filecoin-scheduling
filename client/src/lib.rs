@@ -8,7 +8,9 @@ use std::time::Duration;
 mod global_mutex;
 pub mod rpc_client;
 
-pub use common::{Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult,ClientToken};
+pub use common::{
+    ClientToken, Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult,
+};
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
 pub use scheduler::run_scheduler;
