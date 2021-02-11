@@ -3,6 +3,9 @@ mod error;
 mod requests;
 mod resource;
 mod task;
+mod client;
+
+pub use client::ClientToken;
 pub use error::Error;
 //pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use requests::RequestMethod;

@@ -5,12 +5,10 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::time::Duration;
 
-mod client;
 mod global_mutex;
 pub mod rpc_client;
 
-pub use crate::client::ClientToken;
-pub use common::{Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult};
+pub use common::{Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult,ClientToken};
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
 pub use scheduler::run_scheduler;
