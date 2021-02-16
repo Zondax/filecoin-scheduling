@@ -62,8 +62,6 @@ pub fn schedule_one_of<T: Debug + Clone>(
             std::thread::sleep(Duration::from_millis(500));
 
             let result = rt.block_on(async { jrpc_client.wait_allocation(task.task_req).await });
-            let result2 = rt.block_on(async { jrpc_client.check_server().await });
-            println!("{:?}", result2);
 
             #[cfg(test)]
             handle.close();
@@ -100,10 +98,8 @@ pub fn list_all_resources() -> Devices {
 pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
     let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
-    let result = rt
-        .block_on(async { jrpc_client.list_allocations().await })
-        .map_err(|e| ClientError::Other(e.to_string()))?;
-    result
+    rt.block_on(async { jrpc_client.list_allocations().await })
+        .map_err(|e| ClientError::Other(e.to_string()))?
 }
 
 #[cfg(test)]

@@ -10,6 +10,10 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
+      - name: Install opencl
+        run: |
+          sudo apt-get update
+          sudo apt-get install ocl-icd-opencl-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -24,6 +28,10 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
+      - name: Install opencl
+        run: |
+          sudo apt-get update
+          sudo apt-get install ocl-icd-opencl-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -39,6 +47,10 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
+      - name: Install opencl
+        run: |
+          sudo apt-get update
+          sudo apt-get install ocl-icd-opencl-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:

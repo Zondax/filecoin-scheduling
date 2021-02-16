@@ -5,7 +5,7 @@ use std::sync::RwLock;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use common::{Device, Devices, Error, RequestMethod, ResourceAlloc, TaskRequirements};
+use common::{Devices, Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
 pub(crate) struct Scheduler {
     _state_path: PathBuf,

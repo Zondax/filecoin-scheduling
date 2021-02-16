@@ -43,7 +43,7 @@ impl Devices {
 /// It includes the GPUs and the number of logical CPUs
 pub fn list_devices() -> Devices {
     let gpu_devices = opencl::Device::all_iter()
-        .map(|dev| Device(dev))
+        .map(Device)
         .collect::<Vec<Device>>();
     let num_cpus = num_cpus::get();
     Devices {
