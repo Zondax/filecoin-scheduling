@@ -8,6 +8,7 @@ pub enum SchedulerResponse {
     Schedule(Result<ResourceAlloc, Error>),
     SchedulePreemptive(String),
     SchedulerWaitPreemptive(bool),
+    ListAllocations(Vec<u32>),
 }
 
 pub struct SchedulerRequest {
