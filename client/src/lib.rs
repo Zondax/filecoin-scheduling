@@ -5,14 +5,12 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::time::Duration;
 
-mod client;
 mod global_mutex;
 pub mod rpc_client;
 
-pub use crate::client::ClientToken;
 pub use common::{
-    list_devices, Deadline, Devices, Error as ClientError, ResourceAlloc, ResourceReq, Task,
-    TaskRequirements, TaskResult, SERVER_ADDRESS,
+    list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc, ResourceReq,
+    Task, TaskRequirements, TaskResult, SERVER_ADDRESS,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;

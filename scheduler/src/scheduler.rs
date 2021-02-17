@@ -70,6 +70,9 @@ impl Handler for Scheduler {
             RequestMethod::Schedule(s) => self.schedule(s),
             RequestMethod::SchedulePreemptive(s) => SchedulerResponse::SchedulePreemptive(s),
             RequestMethod::ListAllocations => self.list_allocations(),
+            RequestMethod::WaitPreemptive(_client, _timeout) => {
+                SchedulerResponse::SchedulerWaitPreemptive(true)
+            }
         };
         let _ = sender.send(response);
     }

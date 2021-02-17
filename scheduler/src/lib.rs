@@ -66,6 +66,8 @@ pub fn list_resources() -> Vec<String> {
 mod tests {
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let a = 2;
+        let b = 2;
+        assert_eq!(a + b, 4);
     }
 }

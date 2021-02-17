@@ -1,9 +1,12 @@
 mod error;
 //mod ffi;
+mod client;
 mod devices;
 mod requests;
 mod resource;
 mod task;
+
+pub use client::ClientToken;
 pub use error::Error;
 //pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use devices::{list_devices, Device, Devices};
@@ -16,6 +19,8 @@ pub const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 mod tests {
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let a = 2;
+        let b = 2;
+        assert_eq!(a + b, 4);
     }
 }
