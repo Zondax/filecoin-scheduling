@@ -7,6 +7,7 @@ pub enum SchedulerResponse {
     // TODO: Meake the error a type and not a simple string
     Schedule(Result<ResourceAlloc, Error>),
     SchedulePreemptive(String),
+    SchedulerWaitPreemptive(bool),
 }
 
 pub struct SchedulerRequest {

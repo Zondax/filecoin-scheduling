@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ClientToken {
     pub(crate) pid: u32,
     pub(crate) client_id: u64,

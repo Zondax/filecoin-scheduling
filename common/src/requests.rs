@@ -1,3 +1,4 @@
+use crate::ClientToken;
 use crate::TaskRequirements;
 use serde::{Deserialize, Serialize};
 
@@ -5,4 +6,5 @@ use serde::{Deserialize, Serialize};
 pub enum RequestMethod {
     Schedule(TaskRequirements),
     SchedulePreemptive(String),
+    WaitPreemptive(ClientToken, std::time::Duration),
 }

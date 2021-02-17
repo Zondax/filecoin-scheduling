@@ -6,7 +6,7 @@ use futures::FutureExt;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use common::{Error, RequestMethod, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
 #[rpc(server)]
 pub trait RpcMethods {
@@ -18,6 +18,10 @@ pub trait RpcMethods {
 
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
+
+    #[rpc(name = "wait_preemptive")]
+    fn wait_preemptive(&self, task: ClientToken, t: std::time::Duration)
+        -> BoxFuture<Result<bool>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -60,6 +64,25 @@ impl<H: Handler> RpcMethods for Server<H> {
                 .map(|e| match e {
                     Ok(SchedulerResponse::SchedulePreemptive(res)) => Ok(res),
                     _ => Ok("Preemptive".to_string()),
+                })
+                .boxed(),
+        )
+    }
+
+    fn wait_preemptive(
+        &self,
+        client: ClientToken,
+        t: std::time::Duration,
+    ) -> BoxFuture<Result<bool>> {
+        let method = RequestMethod::WaitPreemptive(client, t);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::SchedulerWaitPreemptive(res)) => Ok(res),
+                    _ => Ok(true),
                 })
                 .boxed(),
         )

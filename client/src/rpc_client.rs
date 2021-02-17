@@ -5,6 +5,11 @@ pub trait RpcClient {
     async fn schedule_one_of(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
 
     async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
+    async fn wait_preemptive(
+        &self,
+        task: crate::ClientToken,
+        t: std::time::Duration,
+    ) -> Result<bool, Error>;
 }
 
 #[jsonrpc_client::implement(RpcClient)]
