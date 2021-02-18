@@ -2,9 +2,14 @@ use common::{Error, ResourceAlloc, TaskRequirements};
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
-    async fn schedule_one_of(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
+    async fn wait_allocation(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
+
+    async fn check_server(&self) -> Result<(), Error>;
+
+    async fn list_allocations(&self) -> Result<Vec<u32>, Error>;
 
     async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
+
     async fn wait_preemptive(
         &self,
         task: crate::ClientToken,

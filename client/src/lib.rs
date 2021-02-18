@@ -9,7 +9,8 @@ mod global_mutex;
 pub mod rpc_client;
 
 pub use common::{
-    ClientToken, Deadline, ResourceAlloc, ResourceReq, Task, TaskRequirements, TaskResult,
+    list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc, ResourceReq,
+    Task, TaskRequirements, TaskResult, SERVER_ADDRESS,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -18,8 +19,6 @@ pub use scheduler::run_scheduler;
 use jsonrpc_client::Error as RpcError;
 use tokio::runtime::Runtime;
 
-use common::Error as ClientError;
-use common::SERVER_ADDRESS;
 use rpc_client::{Client as RpcClient, RpcClient as RpcClientTrait};
 
 pub fn abort() -> Result<(), Box<dyn Error>> {
@@ -39,7 +38,7 @@ pub fn schedule_one_of<T: Debug + Clone>(
     let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
-    let result = rt.block_on(async { jrpc_client.schedule_one_of(task.task_req.clone()).await });
+    let result = rt.block_on(async { jrpc_client.wait_allocation(task.task_req.clone()).await });
 
     if let Ok(r) = result {
         return r.map(|_| ());
@@ -60,7 +59,7 @@ pub fn schedule_one_of<T: Debug + Clone>(
 
             std::thread::sleep(Duration::from_millis(500));
 
-            let result = rt.block_on(async { jrpc_client.schedule_one_of(task.task_req).await });
+            let result = rt.block_on(async { jrpc_client.wait_allocation(task.task_req).await });
 
             #[cfg(test)]
             handle.close();
@@ -90,8 +89,15 @@ fn launch_scheduler_process() -> Result<(), ClientError> {
     }
 }
 
-pub fn list_resources() -> Vec<String> {
-    scheduler::list_resources()
+pub fn list_all_resources() -> Devices {
+    common::list_devices()
+}
+
+pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
+    let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
+    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
+    rt.block_on(async { jrpc_client.list_allocations().await })
+        .map_err(|e| ClientError::Other(e.to_string()))?
 }
 
 #[cfg(test)]
@@ -106,7 +112,7 @@ mod tests {
         let task_fn =
             Box::new(|_data: Vec<ResourceAlloc>| TaskResult::Done(Ok("HelloWorld".to_string())));
         let req = ResourceReq {
-            resource: "Gpu".to_string(),
+            resource: common::ResourceType::Gpu,
             quantity: 2,
             preemptible: false,
         };

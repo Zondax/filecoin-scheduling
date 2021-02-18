@@ -10,8 +10,8 @@ use common::{ClientToken, Error, RequestMethod, ResourceAlloc, TaskRequirements}
 
 #[rpc(server)]
 pub trait RpcMethods {
-    #[rpc(name = "schedule_one_of")]
-    fn schedule_one_of(
+    #[rpc(name = "wait_allocation")]
+    fn wait_allocation(
         &self,
         requirements: TaskRequirements,
     ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>>;
@@ -19,9 +19,15 @@ pub trait RpcMethods {
     #[rpc(name = "schedule_preemptive")]
     fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
 
+    #[rpc(name = "list_allocations")]
+    fn list_allocations(&self) -> BoxFuture<Result<Vec<u32>>>;
+
     #[rpc(name = "wait_preemptive")]
     fn wait_preemptive(&self, task: ClientToken, t: std::time::Duration)
         -> BoxFuture<Result<bool>>;
+
+    #[rpc(name = "check_server")]
+    fn health_check(&self) -> BoxFuture<Result<()>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -36,7 +42,7 @@ where
 }
 
 impl<H: Handler> RpcMethods for Server<H> {
-    fn schedule_one_of(
+    fn wait_allocation(
         &self,
         requirements: TaskRequirements,
     ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>> {
@@ -69,6 +75,21 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
+    fn list_allocations(&self) -> BoxFuture<Result<Vec<u32>>> {
+        let method = RequestMethod::ListAllocations;
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::ListAllocations(res)) => Ok(res),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
     fn wait_preemptive(
         &self,
         client: ClientToken,
@@ -86,5 +107,10 @@ impl<H: Handler> RpcMethods for Server<H> {
                 })
                 .boxed(),
         )
+    }
+
+    // Endpoint for clients to check if the server instance is running
+    fn health_check(&self) -> BoxFuture<Result<()>> {
+        Box::pin(async { Ok(()) })
     }
 }
