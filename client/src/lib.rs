@@ -10,7 +10,7 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc, ResourceReq,
-    Task, TaskRequirements, TaskResult, SERVER_ADDRESS,
+    Task, TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -20,6 +20,22 @@ use jsonrpc_client::Error as RpcError;
 use tokio::runtime::Runtime;
 
 use rpc_client::{Client as RpcClient, RpcClient as RpcClientTrait};
+
+const SERVER_ADDRESS: &str = "127.0.0.1:5000";
+
+// The initial idea for testing addresses was using std::net::TcpListener::bind(x.x.x.x:0)
+// that returns a random port that is not being used, but considering that we may have multiple
+// processes running on tests, having a static address is the best approach
+const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
+
+fn server_address() -> String {
+    if !cfg!(test) {
+        // This can change so the address might come from a configuration file along other settings
+        SERVER_ADDRESS.to_string()
+    } else {
+        TEST_SERVER_ADDRESS.to_string()
+    }
+}
 
 pub fn abort() -> Result<(), Box<dyn Error>> {
     Ok(())
@@ -35,7 +51,8 @@ pub fn schedule_one_of<T: Debug + Clone>(
     task: Task<T>,
     _timeout: Duration,
 ) -> Result<(), ClientError> {
-    let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
+    let address = server_address();
+    let jrpc_client = RpcClient::new(&address)?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
     let result = rt.block_on(async { jrpc_client.wait_allocation(task.task_req.clone()).await });
@@ -52,10 +69,10 @@ pub fn schedule_one_of<T: Debug + Clone>(
         // A connection type error that means the scheduler is offline
         if e.is_connect() || e.is_timeout() {
             #[cfg(not(test))]
-            launch_scheduler_process()?;
+            launch_scheduler_process(address)?;
 
             #[cfg(test)]
-            let handle = scheduler::spawn_scheduler_with_handler().unwrap();
+            let handle = scheduler::spawn_scheduler_with_handler(&address).unwrap();
 
             std::thread::sleep(Duration::from_millis(500));
 
@@ -73,14 +90,14 @@ pub fn schedule_one_of<T: Debug + Clone>(
 }
 
 #[allow(dead_code)]
-fn launch_scheduler_process() -> Result<(), ClientError> {
+fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
     use nix::unistd::{fork, ForkResult};
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => Ok(()),
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
             if let Ok(_guard) = mutex.try_lock() {
-                let _ = run_scheduler();
+                let _ = run_scheduler(&address);
                 mutex.release().unwrap();
             }
             Ok(())
@@ -94,7 +111,7 @@ pub fn list_all_resources() -> Devices {
 }
 
 pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
-    let jrpc_client = RpcClient::new(&format!("http://{}", SERVER_ADDRESS))?;
+    let jrpc_client = RpcClient::new(&server_address())?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
     rt.block_on(async { jrpc_client.list_allocations().await })
         .map_err(|e| ClientError::Other(e.to_string()))?
@@ -136,6 +153,5 @@ mod tests {
 
         let res = schedule_one_of(token, task, Default::default());
         assert!(res.is_ok());
-        //assert_eq!(res.unwrap().parse::<u32>().unwrap(), pid);
     }
 }

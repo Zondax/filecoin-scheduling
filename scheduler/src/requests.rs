@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum SchedulerResponse {
     Schedule(Result<ResourceAlloc, Error>),
     SchedulePreemptive(String),
-    ListAllocations(Vec<u32>),
     SchedulerWaitPreemptive(bool),
+    ListAllocations(Vec<u32>),
 }
 
 pub struct SchedulerRequest {
