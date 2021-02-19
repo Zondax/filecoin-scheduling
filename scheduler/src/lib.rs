@@ -15,17 +15,15 @@ use jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
 
-use common::SERVER_ADDRESS;
-
 const STATE_FILE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.scheduler_state");
 
 /// Starts a json-rpc server listening to *addr*
-pub fn run_scheduler() -> Result<(), Box<dyn Error>> {
+pub fn run_scheduler(address: &str) -> Result<(), Box<dyn Error>> {
     let handler = scheduler::Scheduler::new(STATE_FILE_PATH);
     let server = server::Server::new(handler);
     let mut io = IoHandler::new();
 
-    let address: SocketAddr = SERVER_ADDRESS.parse()?;
+    let address: SocketAddr = address.parse()?;
     io.extend_with(server.to_delegate());
 
     let server = ServerBuilder::new(io).start_http(&address)?;
@@ -34,12 +32,12 @@ pub fn run_scheduler() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn spawn_scheduler_with_handler() -> Result<CloseHandle, Box<dyn Error>> {
+pub fn spawn_scheduler_with_handler(address: &str) -> Result<CloseHandle, Box<dyn Error>> {
     let handler = scheduler::Scheduler::new(STATE_FILE_PATH);
     let server = server::Server::new(handler);
     let mut io = IoHandler::new();
 
-    let address: SocketAddr = SERVER_ADDRESS.parse()?;
+    let address: SocketAddr = address.parse()?;
     io.extend_with(server.to_delegate());
 
     let server = ServerBuilder::new(io).start_http(&address)?;

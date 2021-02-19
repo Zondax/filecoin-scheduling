@@ -260,7 +260,7 @@ mod tests {
                 }
                 drop(guard);
             }
-            Err(e) => panic!(e.to_string()),
+            Err(e) => panic!("{}", e.to_string()),
         }
     }
 }

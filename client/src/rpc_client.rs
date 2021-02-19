@@ -23,8 +23,11 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a json_rpc client
+    /// `base_url` must be an address like: ip:port
     pub fn new(base_url: &str) -> std::result::Result<Self, Error> {
-        let base_url = base_url
+        let address = format!("http://{}", base_url);
+        let base_url = address
             .parse::<jsonrpc_client::Url>()
             .map_err(|e| Error::RpcError(e.to_string()))?;
         let inner = reqwest::Client::new();
