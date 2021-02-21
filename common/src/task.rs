@@ -2,7 +2,7 @@ use chrono::{offset::Utc, DateTime};
 use std::error::Error;
 use std::time::Duration;
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{ResourceAlloc, ResourceReq};
 
@@ -38,7 +38,7 @@ pub struct Task<T> {
     pub task_req: TaskRequirements,
 }
 
-impl<T: Serialize + DeserializeOwned> Task<T> {
+impl<T> Task<T> {
     pub fn new(
         func: impl Fn(Vec<ResourceAlloc>) -> TaskResult<T> + 'static,
         req: Vec<ResourceReq>,

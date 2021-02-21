@@ -15,5 +15,5 @@ pub struct ResourceReq {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResourceAlloc {
     pub resource: ResourceReq,
-    pub resource_id: usize,
+    pub resource_id: u32,
 }

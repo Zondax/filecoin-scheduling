@@ -1,20 +1,20 @@
-use common::{Error, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, Error, ResourceAlloc, TaskRequirements};
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
-    async fn wait_allocation(&self, task: TaskRequirements) -> Result<ResourceAlloc, Error>;
-
-    async fn schedule_preemptive(&self, task: String) -> Result<String, String>;
-
-    async fn wait_preemptive(
+    async fn wait_allocation(
         &self,
-        task: crate::ClientToken,
-        t: std::time::Duration,
-    ) -> Result<bool, Error>;
+        client: ClientToken,
+        task: TaskRequirements,
+    ) -> Result<Option<ResourceAlloc>, Error>;
+
+    async fn wait_preemptive(&self, task: crate::ClientToken, t: std::time::Duration) -> bool;
 
     async fn check_server(&self) -> Result<(), Error>;
 
-    async fn list_allocations(&self) -> Result<Vec<u32>, Error>;
+    async fn list_allocations(&self) -> Vec<u32>;
+
+    async fn release(&self, alloc: ResourceAlloc) -> Result<(), Error>;
 }
 
 #[jsonrpc_client::implement(RpcClient)]
