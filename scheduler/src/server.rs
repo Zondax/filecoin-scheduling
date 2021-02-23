@@ -13,11 +13,9 @@ pub trait RpcMethods {
     #[rpc(name = "wait_allocation")]
     fn wait_allocation(
         &self,
+        client: ClientToken,
         requirements: TaskRequirements,
-    ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>>;
-
-    #[rpc(name = "schedule_preemptive")]
-    fn preemptive(&self, task: String) -> BoxFuture<Result<String>>;
+    ) -> BoxFuture<Result<std::result::Result<Option<ResourceAlloc>, Error>>>;
 
     #[rpc(name = "wait_preemptive")]
     fn wait_preemptive(&self, task: ClientToken, t: std::time::Duration)
@@ -27,7 +25,10 @@ pub trait RpcMethods {
     fn list_allocations(&self) -> BoxFuture<Result<Vec<u32>>>;
 
     #[rpc(name = "check_server")]
-    fn health_check(&self) -> BoxFuture<Result<()>>;
+    fn health_check(&self) -> BoxFuture<Result<std::result::Result<(), Error>>>;
+
+    #[rpc(name = "release")]
+    fn release(&self, alloc: ResourceAlloc) -> BoxFuture<Result<std::result::Result<(), Error>>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -44,9 +45,10 @@ where
 impl<H: Handler> RpcMethods for Server<H> {
     fn wait_allocation(
         &self,
+        client: ClientToken,
         requirements: TaskRequirements,
-    ) -> BoxFuture<Result<std::result::Result<ResourceAlloc, Error>>> {
-        let method = RequestMethod::Schedule(requirements);
+    ) -> BoxFuture<Result<std::result::Result<Option<ResourceAlloc>, Error>>> {
+        let method = RequestMethod::Schedule(client, requirements);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
         self.0.process_request(request);
@@ -55,21 +57,6 @@ impl<H: Handler> RpcMethods for Server<H> {
                 .map(|e| match e {
                     Ok(SchedulerResponse::Schedule(res)) => Ok(res),
                     _ => unreachable!(),
-                })
-                .boxed(),
-        )
-    }
-
-    fn preemptive(&self, task: String) -> BoxFuture<Result<String>> {
-        let method = RequestMethod::SchedulePreemptive(task);
-        let (sender, receiver) = oneshot::channel();
-        let request = SchedulerRequest { sender, method };
-        self.0.process_request(request);
-        Box::pin(
-            receiver
-                .map(|e| match e {
-                    Ok(SchedulerResponse::SchedulePreemptive(res)) => Ok(res),
-                    _ => Ok("Preemptive".to_string()),
                 })
                 .boxed(),
         )
@@ -109,8 +96,28 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
+    // For some reason we can not return () here, the is a bug on the client library that
+    // expects a Result, Option or a Sized type.
+    fn release(&self, alloc: ResourceAlloc) -> BoxFuture<Result<std::result::Result<(), Error>>> {
+        let method = RequestMethod::Release(alloc);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::Release) => Ok(Ok(())),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
     // Endpoint for clients to check if the server instance is running
-    fn health_check(&self) -> BoxFuture<Result<()>> {
-        Box::pin(async { Ok(()) })
+
+    // For some reason we can not return () here, there is a bug on the client library that
+    // expects a Result, Option or a Sized type.
+    fn health_check(&self) -> BoxFuture<Result<std::result::Result<(), Error>>> {
+        Box::pin(async { Ok(Ok(())) })
     }
 }

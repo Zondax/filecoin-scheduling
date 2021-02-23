@@ -246,6 +246,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
+ "futures 0.3.12",
  "ipmpsc",
  "jsonrpc-http-server",
  "jsonrpc_client",

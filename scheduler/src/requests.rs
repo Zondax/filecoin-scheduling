@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub enum SchedulerResponse {
-    Schedule(Result<ResourceAlloc, Error>),
-    SchedulePreemptive(String),
+    Schedule(Result<Option<ResourceAlloc>, Error>),
     SchedulerWaitPreemptive(bool),
     ListAllocations(Vec<u32>),
+    Release,
 }
 
 pub struct SchedulerRequest {

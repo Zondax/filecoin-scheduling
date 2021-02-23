@@ -5,13 +5,12 @@ use std::sync::RwLock;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use common::{Devices, Error, RequestMethod, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, Devices, Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
 pub(crate) struct Scheduler {
     _state_path: PathBuf,
     _task_queue: VecDeque<SchedulerRequest>,
-    //State where the device with bus_id is associated to an optional process that is using the
-    //resource, If the process is None means that the resource is not in used
+    // List the resources and in the case the resource is being used, the id of the client using it
     state: RwLock<HashMap<u32, Option<u32>>>,
     _devices: Devices,
 }
@@ -39,16 +38,42 @@ impl Scheduler {
         }
     }
 
-    fn schedule(&self, requirements: TaskRequirements) -> SchedulerResponse {
+    fn schedule(&self, client: ClientToken, requirements: TaskRequirements) -> SchedulerResponse {
         if requirements.req.is_empty() {
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
         }
+
+        // Here we call our MIP solver that returns the bus_id of the GPU
+        // for now we use a default value;
+        let bus_id: u32 = Default::default();
         let alloc = ResourceAlloc {
             // For now just use the first req
             resource: requirements.req[0].clone(),
-            resource_id: 0,
+            resource_id: bus_id,
         };
-        SchedulerResponse::Schedule(Ok(alloc))
+
+        // Update the scheduler state so that, the resource identified by bus_id gets updated with the
+        // process ID to whom it is assigned to.
+        if let Some(v) = self
+            .state
+            .write()
+            .expect("Should be called once")
+            .get_mut(&bus_id)
+        {
+            // Only free resources can be assigned
+            if !v.is_some() {
+                v.replace(client.process_id());
+                SchedulerResponse::Schedule(Ok(Some(alloc)))
+            } else {
+                // TODO: The resource is being used.
+                // should this be reported as an error to the client?
+                SchedulerResponse::Schedule(Ok(None))
+            }
+        } else {
+            // The resource doesnt exists or the system doesnt have GPU devices
+            // we return None here
+            SchedulerResponse::Schedule(Ok(None))
+        }
     }
 
     fn list_allocations(&self) -> SchedulerResponse {
@@ -61,18 +86,32 @@ impl Scheduler {
                 .collect::<Vec<u32>>(),
         )
     }
+
+    fn release(&self, alloc: ResourceAlloc) {
+        if let Some(state) = self
+            .state
+            .write()
+            .expect("Should be called once")
+            .get_mut(&alloc.resource_id)
+        {
+            state.take();
+        }
+    }
 }
 
 impl Handler for Scheduler {
     fn process_request(&self, request: SchedulerRequest) {
         let sender = request.sender;
         let response = match request.method {
-            RequestMethod::Schedule(s) => self.schedule(s),
-            RequestMethod::SchedulePreemptive(s) => SchedulerResponse::SchedulePreemptive(s),
+            RequestMethod::Schedule(client, req) => self.schedule(client, req),
+            RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(_client, _timeout) => {
                 SchedulerResponse::SchedulerWaitPreemptive(true)
             }
-            RequestMethod::ListAllocations => self.list_allocations(),
+            RequestMethod::Release(alloc) => {
+                self.release(alloc);
+                SchedulerResponse::Release
+            }
         };
         let _ = sender.send(response);
     }
