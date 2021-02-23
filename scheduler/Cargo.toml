@@ -15,3 +15,4 @@ jsonrpc-http-server = "17.0.0"
 serde = { version = "1.0.120", features = ["serde_derive"] }
 coin_cbc = "0.1.2"
 itertools = "0.10.0"
+array_tool = "1.0.3"
