@@ -1,4 +1,5 @@
 mod handler;
+mod linearsolver;
 mod requests;
 mod scheduler;
 mod server;
