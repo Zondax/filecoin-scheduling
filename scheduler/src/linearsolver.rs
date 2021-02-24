@@ -1,6 +1,8 @@
+#![allow(dead_code)]
 use array_tool::vec::Intersect;
 use coin_cbc::{raw::Status, Model, Sense};
-use itertools::Itertools;
+
+const ERROR_MARGIN: f64 = 1e-20;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobConstraint {
@@ -31,7 +33,7 @@ pub struct JobPlan {
 }
 
 pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time: usize) -> JobPlan {
-    let input_data = input.jobs.clone();
+    let input_data = input.jobs;
     let mut num_machines: usize = 0;
     let mut big_num: f64 = 0.;
     for job in input_data.iter() {
@@ -44,23 +46,23 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
     }
     num_machines += 1;
 
-    let mut jobs_data = input_data.clone();
+    let mut jobs_data = input_data;
     for machine in (0..num_machines).rev() {
         jobs_data.insert(
             0,
             JobDescription {
                 options: vec![JobConstraint {
                     machine: machine as usize,
-                    duration: setup_time.clone(),
+                    duration: setup_time,
                 }],
             },
         );
     }
-    for machine in (0..num_machines) {
+    for machine in 0..num_machines {
         jobs_data.push(JobDescription {
             options: vec![JobConstraint {
                 machine: machine as usize,
-                duration: finish_time.clone(),
+                duration: finish_time,
             }],
         });
     }
@@ -84,10 +86,10 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
             columns.push(m.add_binary());
         }
         let index_sv = m.num_cols() as usize;
-        indexes_sv.push(index_sv.clone());
+        indexes_sv.push(index_sv);
         columns.push(m.add_integer()); //s_v
         let index_ev = m.num_cols() as usize;
-        indexes_ev.push(index_ev.clone());
+        indexes_ev.push(index_ev);
         columns.push(m.add_integer()); //e_v
         let index_pv = m.num_cols() as usize;
         columns.push(m.add_integer()); //p_v
@@ -98,13 +100,13 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
         //sum_{k} x_{k,w} * dur - pv_w == 0
         for machine in 0..num_machines {
             let options = job.options.clone();
-            for i in 0..options.len() {
-                if options[i].machine == machine {
-                    m.set_weight(row_onemachine, columns[index.clone() + machine], 1.0);
+            for option in options {
+                if option.machine == machine {
+                    m.set_weight(row_onemachine, columns[index + machine], 1.0);
                     m.set_weight(
                         row_onetime,
-                        columns[index.clone() + machine],
-                        options[i].duration as f64,
+                        columns[index + machine],
+                        option.duration as f64,
                     );
                 }
             }
@@ -113,29 +115,29 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
         m.set_row_lower(row_onemachine, 1.0);
         m.set_row_upper(row_onemachine, 1.0);
 
-        m.set_weight(row_onetime, columns[index_pv.clone()], -1.0);
+        m.set_weight(row_onetime, columns[index_pv], -1.0);
         m.set_row_lower(row_onetime, 0.0);
         m.set_row_upper(row_onetime, 0.0);
 
         //s_v >= 0
         row = m.add_row();
         m.set_row_lower(row, 0.0);
-        m.set_weight(row, columns[index_sv.clone()], 1.0);
-        if i < num_machines.clone() {
+        m.set_weight(row, columns[index_sv], 1.0);
+        if i < num_machines {
             m.set_row_upper(row, 0.0);
         }
-        if i >= num_jobs - num_machines.clone() {
+        if i >= num_jobs - num_machines {
             m.set_weight(row, columns[0], -1.0);
         }
 
         //-ev + sv + pv == 0
-        if i >= num_machines.clone() && i < num_jobs - num_machines.clone() {
+        if i >= num_machines && i < num_jobs - num_machines {
             row = m.add_row();
             m.set_row_lower(row, 0.0);
             m.set_row_upper(row, 0.0);
-            m.set_weight(row, columns[index_ev.clone()], -1.0);
-            m.set_weight(row, columns[index_sv.clone()], 1.0);
-            m.set_weight(row, columns[index_pv.clone()], 1.0);
+            m.set_weight(row, columns[index_ev], -1.0);
+            m.set_weight(row, columns[index_sv], 1.0);
+            m.set_weight(row, columns[index_pv], 1.0);
         }
         //FIXME: we need some way to tell if jobs have to be processed sequentially
         /*
@@ -143,34 +145,31 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
             row = m.add_row();
             m.set_row_upper(row, 0.0);
             m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv.clone()], -1.0);
+            m.set_weight(row, columns[index_sv], -1.0);
         }
 
         if i >= 10 && i < 12 {
             row = m.add_row();
             m.set_row_upper(row, 0.0);
             m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv.clone()], -1.0);
+            m.set_weight(row, columns[index_sv], -1.0);
         }
 
         if i == 13 {
             row = m.add_row();
             m.set_row_upper(row, 0.0);
             m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv.clone()], -1.0);
+            m.set_weight(row, columns[index_sv], -1.0);
         }
          */
         //e_v - makespan <= 0
         row = m.add_row();
         m.set_row_upper(row, 0.0);
         m.set_weight(row, columns[0], -1.0);
-        m.set_weight(row, columns[index_ev.clone()], 1.0);
+        m.set_weight(row, columns[index_ev], 1.0);
     }
     //
-    assert_eq!(
-        m.num_cols() as usize,
-        1 + num_jobs * (num_machines.clone() + 3)
-    );
+    assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
     //
     let index = m.num_cols() as usize;
     for _ in 0..(num_machines * num_jobs * num_jobs) {
@@ -199,18 +198,18 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
                         //&& jobs_data[v].0.intersect(jobs_data[w].0.clone()).len() > 0
                         m.set_weight(
                             row,
-                            columns[index.clone() + k * num_jobs * num_jobs + v * num_jobs + w],
+                            columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
                             1.0,
                         );
                     }
                 }
-                m.set_weight(row, columns[1 + w * (num_machines.clone() + 3) + k], -1.);
+                m.set_weight(row, columns[1 + w * (num_machines + 3) + k], -1.);
                 m.set_row_lower(row, 0.0);
                 m.set_row_upper(row, 0.0);
             }
         }
         //v has a successor on machine k
-        for v in 0..num_jobs - num_machines.clone() {
+        for v in 0..num_jobs - num_machines {
             if jobs_data[v].options.iter().any(
                 |JobConstraint {
                      machine: i,
@@ -230,12 +229,12 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
                     {
                         m.set_weight(
                             row,
-                            columns[index.clone() + k * num_jobs * num_jobs + v * num_jobs + w],
+                            columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
                             1.0,
                         );
                     }
                 }
-                m.set_weight(row, columns[1 + v * (num_machines.clone() + 3) + k], -1.);
+                m.set_weight(row, columns[1 + v * (num_machines + 3) + k], -1.);
                 m.set_row_lower(row, 0.0);
                 m.set_row_upper(row, 0.0);
             }
@@ -245,11 +244,10 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
     for v in 0..num_jobs {
         for w in 0..num_jobs {
             if v != w
-                && jobs_data[v]
+                && !jobs_data[v]
                     .options
                     .intersect_if(jobs_data[w].options.clone(), |l, r| l.machine == r.machine)
-                    .len()
-                    > 0
+                    .is_empty()
             {
                 //L*sum_{k : job_v(k) && job_w(k)} y_{k,v,w} + e_v - s_w <= L
                 row = m.add_row();
@@ -263,14 +261,14 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
                 for machine_index in machines {
                     m.set_weight(
                         row,
-                        columns[index.clone()
+                        columns[index
                             + machine_index.machine * num_jobs * num_jobs
                             + v * num_jobs
                             + w],
-                        big_num.clone() as f64,
+                        big_num as f64,
                     );
                 }
-                m.set_row_upper(row, big_num.clone() as f64);
+                m.set_row_upper(row, big_num as f64);
             }
         }
     }
@@ -287,11 +285,11 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
     let solution = sol.raw().obj_value() as usize;
 
     let mut allocs = vec![];
-    let start_index = 1 + num_machines.clone() * (num_machines.clone() + 3);
+    let start_index = 1 + num_machines * (num_machines + 3);
     for i in 0..num_jobs {
         for k in 0..num_machines {
-            let index = start_index + i * (num_machines.clone() + 3);
-            if sol.col(columns[index + k]).round() == 1.0 {
+            let index = start_index + i * (num_machines + 3);
+            if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
                 let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
                 allocs.push(JobAllocation {
                     machine: k,
@@ -300,10 +298,10 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
             }
         }
     }
-    return JobPlan {
+    JobPlan {
         makespan: solution,
         plan: allocs,
-    };
+    }
 }
 
 #[cfg(test)]
@@ -474,10 +472,10 @@ mod tests {
                 columns.push(m.add_binary());
             }
             let index_sv = m.num_cols() as usize;
-            indexes_sv.push(index_sv.clone());
+            indexes_sv.push(index_sv);
             columns.push(m.add_integer()); //s_v
             let index_ev = m.num_cols() as usize;
-            indexes_ev.push(index_ev.clone());
+            indexes_ev.push(index_ev);
             columns.push(m.add_integer()); //e_v
             let index_pv = m.num_cols() as usize;
             columns.push(m.add_integer()); //p_v
@@ -488,12 +486,8 @@ mod tests {
             for machine in 0..num_machines {
                 for i in 0..job.0.len() {
                     if job.0[i] == machine {
-                        m.set_weight(row_onemachine, columns[index.clone() + machine], 1.0);
-                        m.set_weight(
-                            row_onetime,
-                            columns[index.clone() + machine],
-                            job.1[i] as f64,
-                        );
+                        m.set_weight(row_onemachine, columns[index + machine], 1.0);
+                        m.set_weight(row_onetime, columns[index + machine], job.1[i] as f64);
                     }
                 }
             }
@@ -501,14 +495,14 @@ mod tests {
             m.set_row_lower(row_onemachine, 1.0);
             m.set_row_upper(row_onemachine, 1.0);
 
-            m.set_weight(row_onetime, columns[index_pv.clone()], -1.0);
+            m.set_weight(row_onetime, columns[index_pv], -1.0);
             m.set_row_lower(row_onetime, 0.0);
             m.set_row_upper(row_onetime, 0.0);
 
             //s_v >= 0
             row = m.add_row();
             m.set_row_lower(row, 0.0);
-            m.set_weight(row, columns[index_sv.clone()], 1.0);
+            m.set_weight(row, columns[index_sv], 1.0);
             if i < 6 {
                 m.set_row_upper(row, 0.0);
             }
@@ -521,36 +515,36 @@ mod tests {
                 row = m.add_row();
                 m.set_row_lower(row, 0.0);
                 m.set_row_upper(row, 0.0);
-                m.set_weight(row, columns[index_ev.clone()], -1.0);
-                m.set_weight(row, columns[index_sv.clone()], 1.0);
-                m.set_weight(row, columns[index_pv.clone()], 1.0);
+                m.set_weight(row, columns[index_ev], -1.0);
+                m.set_weight(row, columns[index_sv], 1.0);
+                m.set_weight(row, columns[index_pv], 1.0);
             }
 
             if i >= 7 && i < 9 {
                 row = m.add_row();
                 m.set_row_upper(row, 0.0);
                 m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-                m.set_weight(row, columns[index_sv.clone()], -1.0);
+                m.set_weight(row, columns[index_sv], -1.0);
             }
 
             if i >= 10 && i < 12 {
                 row = m.add_row();
                 m.set_row_upper(row, 0.0);
                 m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-                m.set_weight(row, columns[index_sv.clone()], -1.0);
+                m.set_weight(row, columns[index_sv], -1.0);
             }
 
             if i == 13 {
                 row = m.add_row();
                 m.set_row_upper(row, 0.0);
                 m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-                m.set_weight(row, columns[index_sv.clone()], -1.0);
+                m.set_weight(row, columns[index_sv], -1.0);
             }
             //e_v - makespan <= 0
             row = m.add_row();
             m.set_row_upper(row, 0.0);
             m.set_weight(row, columns[0], -1.0);
-            m.set_weight(row, columns[index_ev.clone()], 1.0);
+            m.set_weight(row, columns[index_ev], 1.0);
         }
 
         assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
@@ -570,7 +564,7 @@ mod tests {
                             //&& jobs_data[v].0.intersect(jobs_data[w].0.clone()).len() > 0
                             m.set_weight(
                                 row,
-                                columns[index.clone() + k * num_jobs * num_jobs + v * num_jobs + w],
+                                columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
                                 1.0,
                             );
                         }
@@ -592,7 +586,7 @@ mod tests {
                         if v != w && jobs_data[w].0.iter().any(|&i| i == k) {
                             m.set_weight(
                                 row,
-                                columns[index.clone() + k * num_jobs * num_jobs + v * num_jobs + w],
+                                columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
                                 1.0,
                             );
                         }
@@ -617,10 +611,7 @@ mod tests {
                     for machine_index in machines.iter() {
                         m.set_weight(
                             row,
-                            columns[index.clone()
-                                + machine_index * num_jobs * num_jobs
-                                + v * num_jobs
-                                + w],
+                            columns[index + machine_index * num_jobs * num_jobs + v * num_jobs + w],
                             BIG_NUM,
                         );
                     }
@@ -683,7 +674,7 @@ mod tests {
         let mut index: usize = 1;
         for joblist in input_data.iter() {
             for job in joblist.iter() {
-                result.push((job.0, job.1, index.clone()));
+                result.push((job.0, job.1, index));
                 index += 1;
             }
         }
@@ -719,7 +710,7 @@ mod tests {
                 //c_{ij} + d_j <= makespan
                 let duration: f64 = -job.1 as f64;
                 row = m.add_row();
-                m.set_row_upper(row, duration.clone());
+                m.set_row_upper(row, duration);
                 m.set_weight(row, columns[0], -1.0);
                 m.set_weight(row, columns[n + i], 1.0);
 
