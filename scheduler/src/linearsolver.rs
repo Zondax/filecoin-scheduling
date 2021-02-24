@@ -34,6 +34,7 @@ pub struct JobPlan {
 }
 
 impl JobPlan {
+    #[allow(clippy::suspicious_operation_groupings)]
     pub fn is_valid(&self) -> bool {
         let n = self.plan.len();
         let allocs = self.plan.clone();
