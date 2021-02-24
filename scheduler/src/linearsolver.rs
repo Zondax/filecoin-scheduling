@@ -14,6 +14,7 @@ pub struct JobConstraint {
 pub struct JobAllocation {
     pub machine: usize,
     pub starting_time: usize,
+    pub end_time: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,6 +31,29 @@ pub struct JobRequirements {
 pub struct JobPlan {
     pub makespan: usize, //total execution time
     pub plan: Vec<JobAllocation>,
+}
+
+impl JobPlan {
+    pub fn is_valid(&self) -> bool {
+        let n = self.plan.len();
+        let allocs = self.plan.clone();
+        for i in 0..n {
+            let job_i = allocs[i].clone();
+            if job_i.end_time > self.makespan {
+                return false;
+            }
+            for (j, job_j) in allocs.iter().enumerate() {
+                if i != j
+                    && job_i.machine == job_j.machine
+                    && (job_i.starting_time <= job_j.starting_time
+                        && job_j.starting_time < job_i.end_time)
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time: usize) -> JobPlan {
@@ -285,15 +309,16 @@ pub fn solve_jobschedule(input: JobRequirements, setup_time: usize, finish_time:
     let solution = sol.raw().obj_value() as usize;
 
     let mut allocs = vec![];
-    let start_index = 1 + num_machines * (num_machines + 3);
-    for i in 0..num_jobs {
+    for i in num_machines..(num_jobs - num_machines) {
         for k in 0..num_machines {
-            let index = start_index + i * (num_machines + 3);
+            let index = 1 + i * (num_machines + 3);
             if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
                 let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
+                let endtime = sol.col(columns[indexes_ev[i]]).round() as usize;
                 allocs.push(JobAllocation {
                     machine: k,
                     starting_time: starttime,
+                    end_time: endtime,
                 });
             }
         }
@@ -313,11 +338,6 @@ mod tests {
 
     #[test]
     fn test_solverfunction() {
-        /*let jobs_data = vec![JobWithID(0,3,0),JobWithID(1,3,0), JobWithID(2,3,0) JobWithID(1, 2, 1), JobWithID(2, 2, 2),
-        JobWithID(0, 2, 3), JobWithID(2, 1, 4), JobWithID(1, 4, 5),
-        JobWithID(1, 4, 6), JobWithID(2, 3, 7)];
-         */
-
         let jobs_data = vec![
             JobDescription {
                 options: vec![JobConstraint {
@@ -369,10 +389,78 @@ mod tests {
             },
         ];
 
-        let reqs = JobRequirements { jobs: jobs_data };
+        let reqs = JobRequirements {
+            jobs: jobs_data.clone(),
+        };
 
         let plan: JobPlan = solve_jobschedule(reqs, 0, 0);
+        assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
+        assert_eq!(
+            plan.plan[0],
+            JobAllocation {
+                machine: 0,
+                starting_time: 0,
+                end_time: 3
+            }
+        );
+        assert_eq!(
+            plan.plan[1],
+            JobAllocation {
+                machine: 1,
+                starting_time: 4,
+                end_time: 6
+            }
+        );
+        assert_eq!(
+            plan.plan[2],
+            JobAllocation {
+                machine: 2,
+                starting_time: 0,
+                end_time: 2
+            }
+        );
+        assert_eq!(
+            plan.plan[3],
+            JobAllocation {
+                machine: 0,
+                starting_time: 3,
+                end_time: 5
+            }
+        );
+        assert_eq!(
+            plan.plan[4],
+            JobAllocation {
+                machine: 2,
+                starting_time: 2,
+                end_time: 3
+            }
+        );
+        assert_eq!(
+            plan.plan[5],
+            JobAllocation {
+                machine: 1,
+                starting_time: 6,
+                end_time: 10
+            }
+        );
+        assert_eq!(
+            plan.plan[6],
+            JobAllocation {
+                machine: 1,
+                starting_time: 0,
+                end_time: 4
+            }
+        );
+        assert_eq!(
+            plan.plan[7],
+            JobAllocation {
+                machine: 2,
+                starting_time: 3,
+                end_time: 6
+            }
+        );
+        assert!(plan.is_valid());
     }
 
     /*
