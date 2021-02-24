@@ -314,41 +314,6 @@ mod tests {
         assert_eq!(sol.col(columns[1 + 7 * (num_machines + 3) + 1]).round(), 1.);
         assert_eq!(sol.col(columns[1 + 8 * (num_machines + 3) + 2]).round(), 1.);
 
-        assert_eq!(
-            sol.col(columns[1 + 6 * (num_machines + 3) + num_machines]),
-            0.
-        );
-        assert_eq!(
-            sol.col(columns[1 + 7 * (num_machines + 3) + num_machines]),
-            4.
-        );
-        assert_eq!(
-            sol.col(columns[1 + 8 * (num_machines + 3) + num_machines]),
-            9.
-        );
-
-        assert_eq!(
-            sol.col(columns[1 + 9 * (num_machines + 3) + num_machines]),
-            3.
-        );
-        assert_eq!(
-            sol.col(columns[1 + 10 * (num_machines + 3) + num_machines]),
-            5.
-        );
-        assert_eq!(
-            sol.col(columns[1 + 11 * (num_machines + 3) + num_machines]),
-            7.
-        );
-
-        assert_eq!(
-            sol.col(columns[1 + 12 * (num_machines + 3) + num_machines]),
-            0.
-        );
-        assert_eq!(
-            sol.col(columns[1 + 13 * (num_machines + 3) + num_machines]),
-            6.
-        );
-
         // Machine 0: job_0_0   job_1_0
         // Machine 1: job_2_0   job_0_1   job_1_2
         // Machine 2: job_1_1   job_2_1   job_0_2  //job_2_1   job_0_2 swapped with jobshop example below
