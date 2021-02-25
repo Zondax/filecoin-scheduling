@@ -294,11 +294,12 @@ mod tests {
         ));
 
         // If there are not gpu devices attached to the system we expect a timeout error
-        if list_all_resources().gpu_devices().is_empty() {
-            assert_eq!(result.unwrap_err(), ClientError::Timeout);
-        } else {
-            assert!(result.is_ok());
-        }
+        //if list_all_resources().gpu_devices().is_empty() {
+        //    assert_eq!(result.unwrap_err(), ClientError::Timeout);
+        //} else {
+        //    assert!(result.is_ok());
+        //}
+        assert!(result.is_ok());
 
         handle.close();
     }
