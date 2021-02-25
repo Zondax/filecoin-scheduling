@@ -20,7 +20,7 @@ pub struct JobAllocation {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobDescription {
     pub options: Vec<JobConstraint>,
-    pub deadline: Option<usize>
+    pub deadline: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,15 +36,15 @@ pub struct JobPlan {
 
 impl JobPlan {
     #[allow(clippy::suspicious_operation_groupings)]
-    pub fn is_valid(&self,reqs: &JobRequirements) -> bool {
+    pub fn is_valid(&self, reqs: &JobRequirements) -> bool {
         let n = self.plan.len();
         let allocs = self.plan.clone();
         for i in 0..n {
             let job_i = allocs[i].clone();
-            if job_i.end_time > self.makespan{
+            if job_i.end_time > self.makespan {
                 return false;
             }
-            if reqs.jobs[i].deadline.is_some() && job_i.end_time > reqs.jobs[i].deadline.unwrap(){
+            if reqs.jobs[i].deadline.is_some() && job_i.end_time > reqs.jobs[i].deadline.unwrap() {
                 return false;
             }
             for (j, job_j) in allocs.iter().enumerate() {
@@ -61,7 +61,11 @@ impl JobPlan {
     }
 }
 
-pub fn solve_jobschedule(input: &JobRequirements, setup_time: usize, finish_time: usize) -> JobPlan {
+pub fn solve_jobschedule(
+    input: &JobRequirements,
+    setup_time: usize,
+    finish_time: usize,
+) -> JobPlan {
     let input_data = input.jobs.clone();
     let mut num_machines: usize = 0;
     let mut big_num: f64 = 0.;
@@ -199,12 +203,11 @@ pub fn solve_jobschedule(input: &JobRequirements, setup_time: usize, finish_time
         m.set_weight(row, columns[0], -1.0);
         m.set_weight(row, columns[index_ev], 1.0);
 
-        if job.deadline.is_some(){
+        if job.deadline.is_some() {
             row = m.add_row();
             m.set_row_upper(row, job.deadline.unwrap() as f64);
             m.set_weight(row, columns[index_ev], 1.0);
         }
-
     }
     //
     assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
@@ -528,7 +531,7 @@ mod tests {
                     machine: 1,
                     duration: 4,
                 }],
-                deadline: Some(4),            //this should move this job to the start
+                deadline: Some(4), //this should move this job to the start
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -553,7 +556,7 @@ mod tests {
         let plan: JobPlan = solve_jobschedule(&reqs, 0, 0);
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
-        assert_eq!(plan.plan[5].starting_time,0);
+        assert_eq!(plan.plan[5].starting_time, 0);
         assert!(plan.is_valid(&reqs));
     }
     /*
