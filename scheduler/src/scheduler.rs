@@ -43,17 +43,24 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
         }
 
-        // Here we call our MIP solver that returns the bus_id of the GPU
+        // Here we call our MIP solver that returns the bus_id of the GPU(s)
         // for now we use a default value;
+
         let bus_id: u32 = Default::default();
-        let alloc = ResourceAlloc {
+        let alloc = vec![ResourceAlloc {
             // For now just use the first req
             resource: requirements.req[0].clone(),
             resource_id: bus_id,
-        };
+        }];
+        // Check that the resources are available and chooses the right number of resources according to client requirement
+
+        if self.state.read().expect("Read state panics").is_empty() {
+            // returns and dummy allocation
+            return SchedulerResponse::Schedule(Ok(Some(alloc)));
+        }
 
         // Update the scheduler state so that, the resource identified by bus_id gets updated with the
-        // process ID to whom it is assigned to.
+        // process ID to whom the resource is assigned to.
         if let Some(v) = self
             .state
             .write()
@@ -87,15 +94,21 @@ impl Scheduler {
         )
     }
 
-    fn release(&self, alloc: ResourceAlloc) {
-        if let Some(state) = self
-            .state
-            .write()
-            .expect("Should be called once")
-            .get_mut(&alloc.resource_id)
-        {
-            state.take();
+    fn release(&self, alloc: Vec<ResourceAlloc>) {
+        for resource in alloc.iter() {
+            if let Some(state) = self
+                .state
+                .write()
+                .expect("Should be called once")
+                .get_mut(&resource.resource_id)
+            {
+                state.take();
+            }
         }
+    }
+
+    fn release_preemptive(&self, _alloc: Vec<ResourceAlloc>) {
+        //TODO
     }
 }
 
@@ -106,11 +119,15 @@ impl Handler for Scheduler {
             RequestMethod::Schedule(client, req) => self.schedule(client, req),
             RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(_client, _timeout) => {
-                SchedulerResponse::SchedulerWaitPreemptive(true)
+                SchedulerResponse::SchedulerWaitPreemptive(false)
             }
             RequestMethod::Release(alloc) => {
                 self.release(alloc);
                 SchedulerResponse::Release
+            }
+            RequestMethod::ReleasePreemptive(alloc) => {
+                self.release_preemptive(alloc);
+                SchedulerResponse::ReleasePreemptive
             }
         };
         let _ = sender.send(response);

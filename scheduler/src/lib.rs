@@ -16,7 +16,7 @@ use jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
 
-const STATE_FILE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.scheduler_state");
+pub const STATE_FILE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.scheduler_state");
 
 /// Starts a json-rpc server listening to *addr*
 pub fn run_scheduler(address: &str) -> Result<(), Box<dyn Error>> {

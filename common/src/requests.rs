@@ -6,5 +6,6 @@ pub enum RequestMethod {
     Schedule(ClientToken, TaskRequirements),
     ListAllocations,
     WaitPreemptive(ClientToken, std::time::Duration),
-    Release(ResourceAlloc),
+    Release(Vec<ResourceAlloc>),
+    ReleasePreemptive(Vec<ResourceAlloc>),
 }
