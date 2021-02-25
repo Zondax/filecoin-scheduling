@@ -2,7 +2,11 @@
 ![stability-wip](https://img.shields.io/badge/stability-work_in_progress-lightgrey.svg)                                                                        
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-![Build status Actions Status](https://github.com/Zondax/filecoin-scheduling/workflows/rust/badge.svg)
+
+
+[![Actions Status](https://github.com/Zondax/filecoin-scheduling/workflows/Rust/badge.svg)](https://github.com/Zondax/filecoin-scheduling/actions)
+
+
 
 **This project is still work in progress !**
 
