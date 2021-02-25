@@ -4,6 +4,8 @@ use coin_cbc::{raw::Status, Model, Sense};
 
 const ERROR_MARGIN: f64 = 1e-20;
 
+pub type JobIndex = usize;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobConstraint {
     pub machine: usize,
@@ -26,6 +28,7 @@ pub struct JobDescription {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobRequirements {
     pub jobs: Vec<JobDescription>,
+    pub sequences: Vec<(JobIndex, JobIndex)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -165,6 +168,16 @@ pub fn solve_jobschedule(
             m.set_weight(row, columns[0], -1.0);
         }
 
+        //e_v >= 0
+        row = m.add_row();
+        m.set_row_lower(row, 0.0);
+        m.set_weight(row, columns[index_ev], 1.0);
+
+        //p_v >= 0
+        row = m.add_row();
+        m.set_row_lower(row, 0.0);
+        m.set_weight(row, columns[index_pv], 1.0);
+
         //-ev + sv + pv == 0
         if i >= num_machines && i < num_jobs - num_machines {
             row = m.add_row();
@@ -174,35 +187,14 @@ pub fn solve_jobschedule(
             m.set_weight(row, columns[index_sv], 1.0);
             m.set_weight(row, columns[index_pv], 1.0);
         }
-        //FIXME: we need some way to tell if jobs have to be processed sequentially
-        /*
-        if i >= 7 && i < 9 {
-            row = m.add_row();
-            m.set_row_upper(row, 0.0);
-            m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv], -1.0);
-        }
 
-        if i >= 10 && i < 12 {
-            row = m.add_row();
-            m.set_row_upper(row, 0.0);
-            m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv], -1.0);
-        }
-
-        if i == 13 {
-            row = m.add_row();
-            m.set_row_upper(row, 0.0);
-            m.set_weight(row, columns[indexes_ev[i - 1]], 1.0);
-            m.set_weight(row, columns[index_sv], -1.0);
-        }
-         */
         //e_v - makespan <= 0
         row = m.add_row();
         m.set_row_upper(row, 0.0);
         m.set_weight(row, columns[0], -1.0);
         m.set_weight(row, columns[index_ev], 1.0);
 
+        //e_v <= deadline
         if job.deadline.is_some() {
             row = m.add_row();
             m.set_row_upper(row, job.deadline.unwrap() as f64);
@@ -211,6 +203,17 @@ pub fn solve_jobschedule(
     }
     //
     assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
+
+    //process i before j
+    for (i, j) in input.sequences.iter() {
+        row = m.add_row();
+        m.set_row_upper(row, 0.0);
+        let index_i = num_machines + (*i);
+        let index_j = num_machines + (*j);
+        m.set_weight(row, columns[indexes_ev[index_i]], 1.0);
+        m.set_weight(row, columns[indexes_sv[index_j]], -1.0);
+    }
+
     //
     let index = m.num_cols() as usize;
     for _ in 0..(num_machines * num_jobs * num_jobs) {
@@ -416,11 +419,22 @@ mod tests {
 
         let reqs = JobRequirements {
             jobs: jobs_data.clone(),
+            sequences: vec![],
         };
 
         let plan: JobPlan = solve_jobschedule(&reqs, 0, 0);
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
+        assert!(plan.is_valid(&reqs));
+
+        let reqs_with_sequence = JobRequirements {
+            jobs: jobs_data.clone(),
+            sequences: vec![(0, 1), (1, 2), (3, 4), (4, 5), (6, 7)],
+        };
+        let plan: JobPlan = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        assert_eq!(plan.plan.len(), jobs_data.len());
+        assert_eq!(plan.makespan, 11);
+        assert!(plan.is_valid(&reqs_with_sequence));
         // assert_eq!(
         //     plan.plan[0],
         //     JobAllocation {
@@ -485,7 +499,6 @@ mod tests {
         //         end_time: 6
         //     }
         // );
-        assert!(plan.is_valid(&reqs));
     }
 
     #[test]
@@ -551,6 +564,7 @@ mod tests {
 
         let reqs = JobRequirements {
             jobs: jobs_data.clone(),
+            sequences: vec![],
         };
 
         let plan: JobPlan = solve_jobschedule(&reqs, 0, 0);
@@ -558,6 +572,15 @@ mod tests {
         assert_eq!(plan.makespan, 10);
         assert_eq!(plan.plan[5].starting_time, 0);
         assert!(plan.is_valid(&reqs));
+
+        let reqs_with_sequence = JobRequirements {
+            jobs: jobs_data.clone(),
+            sequences: vec![(5, 6), (6, 7), (7, 0)],
+        };
+        let plan: JobPlan = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        assert_eq!(plan.plan.len(), jobs_data.len());
+        assert_eq!(plan.makespan, 14);
+        assert!(plan.is_valid(&reqs_with_sequence));
     }
     /*
     Job shop problem.
