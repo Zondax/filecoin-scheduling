@@ -1,9 +1,9 @@
 //use std::fs::File;
 //use std::io::prelude::*;
 
-use std::error::Error;
 use std::fmt::Debug;
 use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 mod global_mutex;
 pub mod rpc_client;
@@ -14,7 +14,8 @@ pub use common::{
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
-pub use scheduler::run_scheduler;
+use scheduler::run_scheduler;
+pub use scheduler::spawn_scheduler_with_handler;
 
 use tokio::runtime::Runtime;
 
@@ -36,66 +37,134 @@ fn server_address() -> String {
     }
 }
 
-pub fn abort() -> Result<(), Box<dyn Error>> {
+#[tracing::instrument(level = "info")]
+pub fn abort(_client: ClientToken) -> Result<(), ClientError> {
     Ok(())
 }
 
+#[tracing::instrument(level = "info", skip(pid, client_id))]
 pub fn register(pid: u32, client_id: u64) -> ClientToken {
+    info!("new client: {} - with process_id: {}", client_id, pid);
     ClientToken::new(pid, client_id)
 }
 
-#[tracing::instrument(level = "info", skip(task))]
+#[tracing::instrument(
+    level="info", skip(timeout, task, client),
+    fields(process_id=client.process_id(), task_duration=task.task_req.exec_time.as_secs_f64().to_string().as_str()),
+)]
 pub fn schedule_one_of<T: Debug + Clone>(
     client: ClientToken,
     task: Task<T>,
     timeout: Duration,
-) -> Result<(), ClientError> {
+) -> Result<T, ClientError> {
     let address = server_address();
-    let mut jrpc_client = RpcClient::new(&address)?;
+    let jrpc_client = RpcClient::new(&address)?;
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
-    let result = rt.block_on(async {
+    rt.block_on(async {
         let allocation = if jrpc_client.check_server().await.is_ok() {
-            wait_allocation(&mut jrpc_client, client, task.task_req, timeout).await
+            wait_allocation(&jrpc_client, client, task.task_req.clone(), timeout).await
         } else {
             launch_scheduler_process(address)?;
             std::thread::sleep(Duration::from_millis(500));
-            wait_allocation(&mut jrpc_client, client, task.task_req, timeout).await
+            wait_allocation(&jrpc_client, client, task.task_req.clone(), timeout).await
         };
         // TODO: implement the next parts of this function
-        allocation
-    });
-    result.map(|_| ())
+        match allocation {
+            Err(e) => Err(e),
+            Ok(alloc) => {
+                let result = execute_task(&jrpc_client, client, timeout, task, &alloc)
+                    .await
+                    .map(|res| {
+                        res.get_result()
+                            .expect("TaskResult variant is unreachable")
+                            .map_err(|e| ClientError::ClientTask(e.to_string()))
+                    })?;
+                release(&jrpc_client, alloc).await?;
+                result
+            }
+        }
+    })
 }
 
+#[tracing::instrument(level = "info", skip(rpc_client, client, timeout, task, alloc))]
+async fn execute_task<T>(
+    rpc_client: &RpcClient,
+    client: ClientToken,
+    timeout: Duration,
+    task: Task<T>,
+    alloc: &[ResourceAlloc],
+) -> Result<TaskResult<T>, ClientError> {
+    let mut result = TaskResult::Continue;
+    // Initialize user resources
+    if let Some(init) = task.init {
+        init(alloc).map_err(|e| ClientError::ClientInit(e.to_string()))?;
+    }
+    while result.is_continue() {
+        while wait_preemptive(rpc_client, client, timeout).await? {}
+        result = (task.task)(alloc);
+        debug!("Client {} task iteration completed", client.process_id());
+        release_preemptive(rpc_client, client, alloc).await?;
+    }
+
+    if let Some(end) = task.end {
+        end(alloc).map_err(|e| ClientError::ClientEnd(e.to_string()))?;
+    }
+    Ok(result)
+}
+
+#[tracing::instrument(level = "info", skip(rpc_client, client, timeout))]
+async fn wait_preemptive(
+    rpc_client: &RpcClient,
+    client: ClientToken,
+    timeout: Duration,
+) -> Result<bool, ClientError> {
+    info!("client: {} - wait_preemptive", client.process_id());
+    rpc_client
+        .wait_preemptive(client, timeout)
+        .await
+        .map_err(|e| ClientError::RpcError(e.to_string()))
+}
+
+#[tracing::instrument(level = "info", skip(rpc_client, client, requirements, timeout))]
 async fn wait_allocation(
-    rpc_client: &mut RpcClient,
+    rpc_client: &RpcClient,
     client: ClientToken,
     requirements: TaskRequirements,
     timeout: std::time::Duration,
-) -> Result<ResourceAlloc, ClientError> {
+) -> Result<Vec<ResourceAlloc>, ClientError> {
     tokio::select! {
         _ = tokio::time::timeout(timeout, futures::future::pending::<()>()) => {
-            return Err(ClientError::Timeout);
+            error!("Wait allocation timeout");
+            Err(ClientError::Timeout)
         }
         call_res = async {
             loop {
                 match rpc_client.wait_allocation(client, requirements.clone()).await {
                     Ok(Ok(dev)) => {
                         if let Some(alloc) = dev {
+                            info!("Client: {} - got allocations", client.process_id());
                             return Ok(alloc);
                         } else {
                             // There are not available resources at this point so we have to try
                             // again.
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            warn!("No available resources for client: {} - waiting", client.process_id());
                             continue
                         }
                     }
-                    Ok(Err(e)) => return Err(e),
-                    Err(e) => return Err(ClientError::RpcError(e.to_string())),
+                    Ok(Err(e)) => {
+                        error!("{}", e.to_string());
+                        return Err(e)
+                    },
+                    Err(e) => {
+                        error!("{}", e.to_string());
+                        return Err(ClientError::RpcError(e.to_string()))
+                    },
                 }
             }
         } => {
-            return call_res;
+            call_res
         }
     }
 }
@@ -108,6 +177,7 @@ fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
             if let Ok(_guard) = mutex.try_lock() {
+                debug!("Scheduler service running");
                 let _ = run_scheduler(&address);
                 mutex.release().unwrap();
             }
@@ -128,10 +198,33 @@ pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
         .map_err(|e| ClientError::Other(e.to_string()))
 }
 
-pub fn release(alloc: ResourceAlloc) -> Result<(), ClientError> {
-    let jrpc_client = RpcClient::new(&server_address())?;
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
-    rt.block_on(async { jrpc_client.release(alloc).await })
+#[tracing::instrument(level = "info", skip(rpc_client, client, alloc))]
+async fn release_preemptive(
+    rpc_client: &RpcClient,
+    client: ClientToken,
+    alloc: &[ResourceAlloc],
+) -> Result<(), ClientError> {
+    info!("Release preemptive for client {}", client.process_id());
+    rpc_client
+        .release_preemptive(alloc.to_owned())
+        .await
+        .map_err(|e| ClientError::RpcError(e.to_string()))?
+}
+
+#[tracing::instrument(level = "info", skip(alloc, rpc_client))]
+async fn release(rpc_client: &RpcClient, alloc: Vec<ResourceAlloc>) -> Result<(), ClientError> {
+    info!(
+        "Releasing resources: {:?}",
+        alloc
+            .as_slice()
+            .iter()
+            .map(|a| a.resource_id)
+            .collect::<Vec<_>>()
+            .as_slice()
+    );
+    rpc_client
+        .release(alloc)
+        .await
         .map_err(|e| ClientError::RpcError(e.to_string()))?
 }
 
@@ -139,7 +232,7 @@ pub fn release(alloc: ResourceAlloc) -> Result<(), ClientError> {
 mod tests {
     use super::*;
 
-    fn task<T>(t: impl Fn(Vec<ResourceAlloc>) -> TaskResult<T> + 'static) -> Task<T> {
+    fn task<T>(t: impl Fn(&[ResourceAlloc]) -> TaskResult<T> + 'static) -> Task<T> {
         use chrono::{DateTime, NaiveDateTime, Utc};
 
         let task_fn = Box::new(t);
@@ -153,13 +246,13 @@ mod tests {
         let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let deadline = Deadline::new(start, end);
-        Task::new(
-            task_fn,
-            vec![req.clone()],
-            time_per_iteration,
+        let reqs = TaskRequirements {
+            time_per_iter: time_per_iteration,
             exec_time,
             deadline,
-        )
+            req: vec![req],
+        };
+        Task::new(task_fn, None, None, reqs)
     }
 
     #[test]
@@ -173,7 +266,7 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let task = task(|_data: Vec<ResourceAlloc>| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let task = task(|_data: &[ResourceAlloc]| TaskResult::Done(Ok("HelloWorld".to_string())));
 
         let res = schedule_one_of(token, task, Default::default());
         // Accept just this type of error
@@ -190,7 +283,7 @@ mod tests {
         let handle = scheduler::spawn_scheduler_with_handler(&address).unwrap();
         let rt = Runtime::new().unwrap();
         let client = register(10, 25);
-        let task = task(|_data: Vec<ResourceAlloc>| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let task = task(|_data: &[ResourceAlloc]| TaskResult::Done(Ok("HelloWorld".to_string())));
 
         let result = rt.block_on(wait_allocation(
             &mut jrpc_client,
@@ -201,11 +294,12 @@ mod tests {
         ));
 
         // If there are not gpu devices attached to the system we expect a timeout error
-        if list_all_resources().gpu_devices().is_empty() {
-            assert_eq!(result.unwrap_err(), ClientError::Timeout);
-        } else {
-            assert!(result.is_ok());
-        }
+        //if list_all_resources().gpu_devices().is_empty() {
+        //    assert_eq!(result.unwrap_err(), ClientError::Timeout);
+        //} else {
+        //    assert!(result.is_ok());
+        //}
+        assert!(result.is_ok());
 
         handle.close();
     }
@@ -228,7 +322,7 @@ mod tests {
         };
 
         let res = rt
-            .block_on(async { jrpc_client.release(res_alloc).await })
+            .block_on(async { jrpc_client.release(vec![res_alloc]).await })
             .map_err(|e| ClientError::RpcError(e.to_string()))
             .unwrap();
 

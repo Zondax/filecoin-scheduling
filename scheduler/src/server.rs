@@ -15,7 +15,7 @@ pub trait RpcMethods {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-    ) -> BoxFuture<Result<std::result::Result<Option<ResourceAlloc>, Error>>>;
+    ) -> BoxFuture<Result<std::result::Result<Option<Vec<ResourceAlloc>>, Error>>>;
 
     #[rpc(name = "wait_preemptive")]
     fn wait_preemptive(&self, task: ClientToken, t: std::time::Duration)
@@ -28,7 +28,16 @@ pub trait RpcMethods {
     fn health_check(&self) -> BoxFuture<Result<std::result::Result<(), Error>>>;
 
     #[rpc(name = "release")]
-    fn release(&self, alloc: ResourceAlloc) -> BoxFuture<Result<std::result::Result<(), Error>>>;
+    fn release(
+        &self,
+        alloc: Vec<ResourceAlloc>,
+    ) -> BoxFuture<Result<std::result::Result<(), Error>>>;
+
+    #[rpc(name = "release_preemptive")]
+    fn release_preemptive(
+        &self,
+        alloc: Vec<ResourceAlloc>,
+    ) -> BoxFuture<Result<std::result::Result<(), Error>>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -47,7 +56,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-    ) -> BoxFuture<Result<std::result::Result<Option<ResourceAlloc>, Error>>> {
+    ) -> BoxFuture<Result<std::result::Result<Option<Vec<ResourceAlloc>>, Error>>> {
         let method = RequestMethod::Schedule(client, requirements);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -98,7 +107,10 @@ impl<H: Handler> RpcMethods for Server<H> {
 
     // For some reason we can not return () here, the is a bug on the client library that
     // expects a Result, Option or a Sized type.
-    fn release(&self, alloc: ResourceAlloc) -> BoxFuture<Result<std::result::Result<(), Error>>> {
+    fn release(
+        &self,
+        alloc: Vec<ResourceAlloc>,
+    ) -> BoxFuture<Result<std::result::Result<(), Error>>> {
         let method = RequestMethod::Release(alloc);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -107,6 +119,24 @@ impl<H: Handler> RpcMethods for Server<H> {
             receiver
                 .map(|e| match e {
                     Ok(SchedulerResponse::Release) => Ok(Ok(())),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
+    fn release_preemptive(
+        &self,
+        alloc: Vec<ResourceAlloc>,
+    ) -> BoxFuture<Result<std::result::Result<(), Error>>> {
+        let method = RequestMethod::ReleasePreemptive(alloc);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::ReleasePreemptive) => Ok(Ok(())),
                     _ => unreachable!(),
                 })
                 .boxed(),
