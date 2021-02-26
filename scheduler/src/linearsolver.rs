@@ -334,6 +334,11 @@ pub fn solve_jobschedule(
     }
 
     let solution = sol.raw().obj_value() as usize;
+    if solution > big_num as usize {
+        return Err(Error::Other(
+            "Solver did not find correct solution (conflicting constraints?)".to_string(),
+        ));
+    }
 
     let mut allocs = vec![];
     let mut processtimes: Vec<usize> = vec![0; num_machines];
