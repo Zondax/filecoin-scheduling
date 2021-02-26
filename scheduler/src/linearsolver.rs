@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use array_tool::vec::Intersect;
 use coin_cbc::{raw::Status, Model, Sense};
+use common::Error;
 
 const ERROR_MARGIN: f64 = 1e-20;
 
@@ -33,7 +34,9 @@ pub struct JobRequirements {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobPlan {
-    pub makespan: usize, //total execution time
+    pub makespan: usize,                  //total execution time
+    pub idletime: usize,                  //todal idle time
+    pub machine_finish_times: Vec<usize>, //finishing time per machine
     pub plan: Vec<JobAllocation>,
 }
 
@@ -68,7 +71,7 @@ pub fn solve_jobschedule(
     input: &JobRequirements,
     setup_time: usize,
     finish_time: usize,
-) -> JobPlan {
+) -> Result<JobPlan, Error> {
     let input_data = input.jobs.clone();
     let mut num_machines: usize = 0;
     let mut big_num: f64 = 0.;
@@ -324,17 +327,27 @@ pub fn solve_jobschedule(
     // Solve the problem. Returns the solution
     let sol = m.solve();
 
-    assert_eq!(Status::Finished, sol.raw().status());
+    if Status::Finished != sol.raw().status() {
+        return Err(Error::Other(
+            "Solver did not find solution (bad constraints?)".to_string(),
+        ));
+    }
 
     let solution = sol.raw().obj_value() as usize;
 
     let mut allocs = vec![];
+    let mut processtimes: Vec<usize> = vec![0; num_machines];
+    let mut finishtimes: Vec<usize> = vec![0; num_machines];
     for i in num_machines..(num_jobs - num_machines) {
         for k in 0..num_machines {
             let index = 1 + i * (num_machines + 3);
             if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
                 let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
                 let endtime = sol.col(columns[indexes_ev[i]]).round() as usize;
+                processtimes[k] += endtime - starttime;
+                if endtime > finishtimes[k] {
+                    finishtimes[k] = endtime;
+                }
                 allocs.push(JobAllocation {
                     machine: k,
                     starting_time: starttime,
@@ -343,10 +356,16 @@ pub fn solve_jobschedule(
             }
         }
     }
-    JobPlan {
+    let mut total_idle_time = 0;
+    for k in 0..num_machines {
+        total_idle_time += finishtimes[k] - processtimes[k];
+    }
+    Ok(JobPlan {
         makespan: solution,
         plan: allocs,
-    }
+        machine_finish_times: finishtimes,
+        idletime: total_idle_time,
+    })
 }
 
 #[cfg(test)]
@@ -422,16 +441,21 @@ mod tests {
             sequences: vec![],
         };
 
-        let plan: JobPlan = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
+        assert_eq!(plan.idletime, 0);
         assert!(plan.is_valid(&reqs));
 
         let reqs_with_sequence = JobRequirements {
             jobs: jobs_data.clone(),
             sequences: vec![(0, 1), (1, 2), (3, 4), (4, 5), (6, 7)],
         };
-        let plan: JobPlan = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        let result = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 11);
         assert!(plan.is_valid(&reqs_with_sequence));
@@ -567,7 +591,9 @@ mod tests {
             sequences: vec![],
         };
 
-        let plan: JobPlan = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
         assert_eq!(plan.plan[5].starting_time, 0);
@@ -577,9 +603,78 @@ mod tests {
             jobs: jobs_data.clone(),
             sequences: vec![(5, 6), (6, 7), (7, 0)],
         };
-        let plan: JobPlan = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        let result = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+
+        // assert_eq!(
+        //     plan.plan[0],
+        //     JobAllocation {
+        //         machine: 0,
+        //         starting_time: 11,
+        //         end_time: 14
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[1],
+        //     JobAllocation {
+        //         machine: 1,
+        //         starting_time: 8,
+        //         end_time: 10
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[2],
+        //     JobAllocation {
+        //         machine: 2,
+        //         starting_time: 1,
+        //         end_time: 3
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[3],
+        //     JobAllocation {
+        //         machine: 0,
+        //         starting_time: 0,
+        //         end_time: 2
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[4],
+        //     JobAllocation {
+        //         machine: 2,
+        //         starting_time: 0,
+        //         end_time: 1
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[5],
+        //     JobAllocation {
+        //         machine: 1,
+        //         starting_time: 0,
+        //         end_time: 4
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[6],
+        //     JobAllocation {
+        //         machine: 1,
+        //         starting_time: 4,
+        //         end_time: 8
+        //     }
+        // );
+        // assert_eq!(
+        //     plan.plan[7],
+        //     JobAllocation {
+        //         machine: 2,
+        //         starting_time: 8,
+        //         end_time: 11
+        //     }
+        // );
+
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 14);
+        assert_eq!(plan.idletime, 14);
         assert!(plan.is_valid(&reqs_with_sequence));
     }
     /*
