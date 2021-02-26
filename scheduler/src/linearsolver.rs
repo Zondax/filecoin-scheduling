@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use array_tool::vec::Intersect;
-use coin_cbc::{raw::Status, Col, Model, Sense};
+use coin_cbc::{raw::Status, Col, Model, Sense, Solution};
 use common::Error;
 
 const ERROR_MARGIN: f64 = 1e-20;
@@ -67,270 +67,342 @@ impl JobPlan {
     }
 }
 
-fn find_upper_bounds(input: &JobRequirements) -> (usize, f64) {
-    let input_data = input.jobs.clone();
-    let mut num_machines: usize = 0;
-    let mut big_num: f64 = 0.;
-    for job in input_data.iter() {
-        for constraint in job.options.clone() {
-            big_num += constraint.duration as f64;
-            if constraint.machine > num_machines {
-                num_machines = constraint.machine;
-            }
-        }
-    }
-    num_machines += 1;
-    (num_machines, big_num)
+#[derive(Default)]
+struct LinearSolverModel {
+    pub m: Model,
+    pub jobs_data: Vec<JobDescription>,
+    pub columns: Vec<Col>,
+    pub big_num: f64,
+    pub num_machines: usize,
+    pub indexes_sv: Vec<usize>,
+    pub indexes_ev: Vec<usize>,
 }
 
-fn add_dummy_jobs(
-    jobs_data: &mut Vec<JobDescription>,
-    num_machines: usize,
-    setup_time: usize,
-    finish_time: usize,
-) {
-    for machine in (0..num_machines).rev() {
-        jobs_data.insert(
-            0,
-            JobDescription {
+impl LinearSolverModel {
+    pub fn initialize(input: &[JobDescription]) -> LinearSolverModel {
+        let mut m = Model::default();
+        let mut columns = vec![];
+
+        //makespan = col[0] >= 0
+        columns.push(m.add_integer());
+        let row = m.add_row();
+        m.set_row_lower(row, 0.0);
+        m.set_weight(row, columns[0], 1.0);
+        m.set_obj_coeff(columns[0], 1.);
+        // Set objective sense.
+        m.set_obj_sense(Sense::Minimize);
+        LinearSolverModel {
+            m,
+            jobs_data: input.to_owned(),
+            columns,
+            big_num: 0.0,
+            num_machines: 0,
+            indexes_sv: vec![],
+            indexes_ev: vec![],
+        }
+    }
+
+    pub fn find_upper_bounds(&mut self) {
+        let mut num_machines: usize = 0;
+        let mut big_num: f64 = 0.;
+        for job in self.jobs_data.iter() {
+            for constraint in job.options.clone() {
+                big_num += constraint.duration as f64;
+                if constraint.machine > num_machines {
+                    num_machines = constraint.machine;
+                }
+            }
+        }
+        num_machines += 1;
+        self.num_machines = num_machines;
+        self.big_num = big_num;
+    }
+
+    pub fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
+        let num_machines = self.num_machines;
+        for machine in (0..num_machines).rev() {
+            self.jobs_data.insert(
+                0,
+                JobDescription {
+                    options: vec![JobConstraint {
+                        machine: machine as usize,
+                        duration: setup_time,
+                    }],
+                    deadline: None,
+                },
+            );
+        }
+        for machine in 0..num_machines {
+            self.jobs_data.push(JobDescription {
                 options: vec![JobConstraint {
                     machine: machine as usize,
-                    duration: setup_time,
+                    duration: finish_time,
                 }],
                 deadline: None,
-            },
-        );
-    }
-    for machine in 0..num_machines {
-        jobs_data.push(JobDescription {
-            options: vec![JobConstraint {
-                machine: machine as usize,
-                duration: finish_time,
-            }],
-            deadline: None,
-        });
-    }
-}
-
-fn add_constraints_per_job(
-    m: &mut Model,
-    columns: &mut Vec<Col>,
-    jobs_data: &[JobDescription],
-    num_machines: usize,
-) -> (Vec<usize>, Vec<usize>) {
-    let mut indexes_sv: Vec<usize> = vec![];
-    let mut indexes_ev: Vec<usize> = vec![];
-
-    for (i, job) in jobs_data.iter().enumerate() {
-        let index = m.num_cols() as usize;
-        for _ in 0..num_machines {
-            columns.push(m.add_binary());
+            });
         }
-        let index_sv = m.num_cols() as usize;
-        indexes_sv.push(index_sv);
-        columns.push(m.add_integer()); //s_v
-        let index_ev = m.num_cols() as usize;
-        indexes_ev.push(index_ev);
-        columns.push(m.add_integer()); //e_v
-        let index_pv = m.num_cols() as usize;
-        columns.push(m.add_integer()); //p_v
+    }
 
-        let row_onemachine = m.add_row();
-        let row_onetime = m.add_row();
-        //sum_{k} x_{k,w} == 1
-        //sum_{k} x_{k,w} * dur - pv_w == 0
-        for machine in 0..num_machines {
-            let options = job.options.clone();
-            for option in options {
-                if option.machine == machine {
-                    m.set_weight(row_onemachine, columns[index + machine], 1.0);
-                    m.set_weight(
-                        row_onetime,
-                        columns[index + machine],
-                        option.duration as f64,
-                    );
-                }
+    pub fn add_constraints_per_job(&mut self) {
+        let num_machines = self.num_machines;
+        for (i, job) in self.jobs_data.iter().enumerate() {
+            let index = self.m.num_cols() as usize;
+            for _ in 0..num_machines {
+                self.columns.push(self.m.add_binary());
             }
-        }
+            let index_sv = self.m.num_cols() as usize;
+            self.indexes_sv.push(index_sv);
+            self.columns.push(self.m.add_integer()); //s_v
+            let index_ev = self.m.num_cols() as usize;
+            self.indexes_ev.push(index_ev);
+            self.columns.push(self.m.add_integer()); //e_v
+            let index_pv = self.m.num_cols() as usize;
+            self.columns.push(self.m.add_integer()); //p_v
 
-        m.set_row_lower(row_onemachine, 1.0);
-        m.set_row_upper(row_onemachine, 1.0);
-
-        m.set_weight(row_onetime, columns[index_pv], -1.0);
-        m.set_row_lower(row_onetime, 0.0);
-        m.set_row_upper(row_onetime, 0.0);
-
-        //s_v >= 0
-        let mut row = m.add_row();
-        m.set_row_lower(row, 0.0);
-        m.set_weight(row, columns[index_sv], 1.0);
-        if i < num_machines {
-            m.set_row_upper(row, 0.0);
-        }
-
-        //e_v >= 0
-        row = m.add_row();
-        m.set_row_lower(row, 0.0);
-        m.set_weight(row, columns[index_ev], 1.0);
-
-        //p_v >= 0
-        row = m.add_row();
-        m.set_row_lower(row, 0.0);
-        m.set_weight(row, columns[index_pv], 1.0);
-
-        //-ev + sv + pv == 0
-        row = m.add_row();
-        m.set_row_lower(row, 0.0);
-        m.set_row_upper(row, 0.0);
-        m.set_weight(row, columns[index_ev], -1.0);
-        m.set_weight(row, columns[index_sv], 1.0);
-        m.set_weight(row, columns[index_pv], 1.0);
-
-        //e_v - makespan <= 0
-        row = m.add_row();
-        m.set_row_upper(row, 0.0);
-        m.set_weight(row, columns[0], -1.0);
-        m.set_weight(row, columns[index_ev], 1.0);
-
-        //e_v <= deadline
-        if job.deadline.is_some() {
-            row = m.add_row();
-            m.set_row_upper(row, job.deadline.unwrap() as f64);
-            m.set_weight(row, columns[index_ev], 1.0);
-        }
-    }
-    (indexes_sv, indexes_ev)
-}
-
-fn add_sequential_constraints(
-    m: &mut Model,
-    columns: &[Col],
-    sequences: &[(JobIndex, JobIndex)],
-    indexes_sv: &[usize],
-    indexes_ev: &[usize],
-    num_machines: usize,
-) {
-    for (i, j) in sequences.iter() {
-        let row = m.add_row();
-        m.set_row_upper(row, 0.0);
-        let index_i = num_machines + (*i);
-        let index_j = num_machines + (*j);
-        m.set_weight(row, columns[indexes_ev[index_i]], 1.0);
-        m.set_weight(row, columns[indexes_sv[index_j]], -1.0);
-    }
-}
-
-fn add_machine_constraints(
-    m: &mut Model,
-    columns: &mut Vec<Col>,
-    jobs_data: &[JobDescription],
-    indexes_sv: &[usize],
-    indexes_ev: &[usize],
-    num_machines: usize,
-    big_num: f64,
-) {
-    //
-    let num_jobs = jobs_data.len();
-    let index = m.num_cols() as usize;
-    for _ in 0..(num_machines * num_jobs * num_jobs) {
-        columns.push(m.add_binary());
-    }
-    //w has a predecessor on machine k
-    let mut row;
-    for k in 0..num_machines {
-        for w in num_machines..num_jobs {
-            if jobs_data[w].options.iter().any(
-                |JobConstraint {
-                     machine: i,
-                     duration: _,
-                 }| i == &k,
-            ) {
-                row = m.add_row();
-                //\sum_{v | v \neq w} y_{k,v,w} - x_{k,w} == 0
-                for v in 0..num_jobs {
-                    if v != w
-                        && jobs_data[v].options.iter().any(
-                            |JobConstraint {
-                                 machine: i,
-                                 duration: _,
-                             }| i == &k,
-                        )
-                    {
-                        //&& jobs_data[v].0.intersect(jobs_data[w].0.clone()).len() > 0
-                        m.set_weight(
-                            row,
-                            columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
-                            1.0,
+            let row_onemachine = self.m.add_row();
+            let row_onetime = self.m.add_row();
+            //sum_{k} x_{k,w} == 1
+            //sum_{k} x_{k,w} * dur - pv_w == 0
+            for machine in 0..num_machines {
+                let options = job.options.clone();
+                for option in options {
+                    if option.machine == machine {
+                        self.m
+                            .set_weight(row_onemachine, self.columns[index + machine], 1.0);
+                        self.m.set_weight(
+                            row_onetime,
+                            self.columns[index + machine],
+                            option.duration as f64,
                         );
                     }
                 }
-                m.set_weight(row, columns[1 + w * (num_machines + 3) + k], -1.);
-                m.set_row_lower(row, 0.0);
-                m.set_row_upper(row, 0.0);
             }
-        }
-        //v has a successor on machine k
-        for v in 0..num_jobs - num_machines {
-            if jobs_data[v].options.iter().any(
-                |JobConstraint {
-                     machine: i,
-                     duration: _,
-                 }| i == &k,
-            ) {
-                row = m.add_row();
-                for w in 0..num_jobs {
-                    //\sum_{w | w \neq v} y_{k,v,w} - x_{k,v} == 0
-                    if v != w
-                        && jobs_data[w].options.iter().any(
-                            |JobConstraint {
-                                 machine: i,
-                                 duration: _,
-                             }| i == &k,
-                        )
-                    {
-                        m.set_weight(
-                            row,
-                            columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
-                            1.0,
-                        );
-                    }
-                }
-                m.set_weight(row, columns[1 + v * (num_machines + 3) + k], -1.);
-                m.set_row_lower(row, 0.0);
-                m.set_row_upper(row, 0.0);
+
+            self.m.set_row_equal(row_onemachine, 1.0);
+
+            self.m.set_weight(row_onetime, self.columns[index_pv], -1.0);
+            self.m.set_row_equal(row_onetime, 0.0);
+
+            //s_v >= 0
+            let mut row = self.m.add_row();
+            self.m.set_row_lower(row, 0.0);
+            self.m.set_weight(row, self.columns[index_sv], 1.0);
+            if i < num_machines {
+                self.m.set_row_upper(row, 0.0);
+            }
+
+            //e_v >= 0
+            row = self.m.add_row();
+            self.m.set_row_lower(row, 0.0);
+            self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+            //p_v >= 0
+            row = self.m.add_row();
+            self.m.set_row_lower(row, 0.0);
+            self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+            //-ev + sv + pv == 0
+            row = self.m.add_row();
+            self.m.set_row_lower(row, 0.0);
+            self.m.set_row_upper(row, 0.0);
+            self.m.set_weight(row, self.columns[index_ev], -1.0);
+            self.m.set_weight(row, self.columns[index_sv], 1.0);
+            self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+            //e_v - makespan <= 0
+            row = self.m.add_row();
+            self.m.set_row_upper(row, 0.0);
+            self.m.set_weight(row, self.columns[0], -1.0);
+            self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+            //e_v <= deadline
+            if job.deadline.is_some() {
+                row = self.m.add_row();
+                self.m.set_row_upper(row, job.deadline.unwrap() as f64);
+                self.m.set_weight(row, self.columns[index_ev], 1.0);
             }
         }
     }
 
-    for v in 0..num_jobs {
-        for w in 0..num_jobs {
-            if v != w
-                && !jobs_data[v]
-                    .options
-                    .intersect_if(jobs_data[w].options.clone(), |l, r| l.machine == r.machine)
-                    .is_empty()
-            {
-                //L*sum_{k : job_v(k) && job_w(k)} y_{k,v,w} + e_v - s_w <= L
-                row = m.add_row();
-                let machines = jobs_data[v]
-                    .options
-                    .intersect_if(jobs_data[w].options.clone(), |l, r| l.machine == r.machine);
-                //e_v
-                m.set_weight(row, columns[indexes_ev[v]], 1.0);
-                //-s_w
-                m.set_weight(row, columns[indexes_sv[w]], -1.0);
-                for machine_index in machines {
-                    m.set_weight(
-                        row,
-                        columns[index
-                            + machine_index.machine * num_jobs * num_jobs
-                            + v * num_jobs
-                            + w],
-                        big_num as f64,
-                    );
+    fn add_sequential_constraints(&mut self, sequences: &[(JobIndex, JobIndex)]) {
+        let num_machines = self.num_machines;
+        let columns = &self.columns;
+        for (i, j) in sequences.iter() {
+            let row = self.m.add_row();
+            self.m.set_row_upper(row, 0.0);
+            let index_i = num_machines + (*i);
+            let index_j = num_machines + (*j);
+            self.m
+                .set_weight(row, columns[self.indexes_ev[index_i]], 1.0);
+            self.m
+                .set_weight(row, columns[self.indexes_sv[index_j]], -1.0);
+        }
+    }
+
+    pub fn add_constraints_per_machine(&mut self) {
+        //
+        let num_machines = self.num_machines;
+        let num_jobs = self.jobs_data.len();
+        let index = self.m.num_cols() as usize;
+        for _ in 0..(num_machines * num_jobs * num_jobs) {
+            self.columns.push(self.m.add_binary());
+        }
+        //w has a predecessor on machine k
+        let mut row;
+        for k in 0..num_machines {
+            for w in num_machines..num_jobs {
+                if self.jobs_data[w].options.iter().any(
+                    |JobConstraint {
+                         machine: i,
+                         duration: _,
+                     }| i == &k,
+                ) {
+                    row = self.m.add_row();
+                    //\sum_{v | v \neq w} y_{k,v,w} - x_{k,w} == 0
+                    for v in 0..num_jobs {
+                        if v != w
+                            && self.jobs_data[v].options.iter().any(
+                                |JobConstraint {
+                                     machine: i,
+                                     duration: _,
+                                 }| i == &k,
+                            )
+                        {
+                            //&& jobs_data[v].0.intersect(jobs_data[w].0.clone()).len() > 0
+                            self.m.set_weight(
+                                row,
+                                self.columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
+                                1.0,
+                            );
+                        }
+                    }
+                    self.m
+                        .set_weight(row, self.columns[1 + w * (num_machines + 3) + k], -1.);
+                    self.m.set_row_equal(row, 0.0);
                 }
-                m.set_row_upper(row, big_num as f64);
             }
+            //v has a successor on machine k
+            for v in 0..num_jobs - num_machines {
+                if self.jobs_data[v].options.iter().any(
+                    |JobConstraint {
+                         machine: i,
+                         duration: _,
+                     }| i == &k,
+                ) {
+                    row = self.m.add_row();
+                    for w in 0..num_jobs {
+                        //\sum_{w | w \neq v} y_{k,v,w} - x_{k,v} == 0
+                        if v != w
+                            && self.jobs_data[w].options.iter().any(
+                                |JobConstraint {
+                                     machine: i,
+                                     duration: _,
+                                 }| i == &k,
+                            )
+                        {
+                            self.m.set_weight(
+                                row,
+                                self.columns[index + k * num_jobs * num_jobs + v * num_jobs + w],
+                                1.0,
+                            );
+                        }
+                    }
+                    self.m
+                        .set_weight(row, self.columns[1 + v * (num_machines + 3) + k], -1.);
+                    self.m.set_row_lower(row, 0.0);
+                    self.m.set_row_upper(row, 0.0);
+                }
+            }
+        }
+
+        for v in 0..num_jobs {
+            for w in 0..num_jobs {
+                let machines = self.jobs_data[v]
+                    .options
+                    .intersect_if(self.jobs_data[w].options.clone(), |l, r| {
+                        l.machine == r.machine
+                    });
+                if v != w && !machines.is_empty() {
+                    //L*sum_{k : job_v(k) && job_w(k)} y_{k,v,w} + e_v - s_w <= L
+                    row = self.m.add_row();
+                    //e_v
+                    self.m
+                        .set_weight(row, self.columns[self.indexes_ev[v]], 1.0);
+                    //-s_w
+                    self.m
+                        .set_weight(row, self.columns[self.indexes_sv[w]], -1.0);
+                    for machine_index in machines {
+                        self.m.set_weight(
+                            row,
+                            self.columns[index
+                                + machine_index.machine * num_jobs * num_jobs
+                                + v * num_jobs
+                                + w],
+                            self.big_num as f64,
+                        );
+                    }
+                    self.m.set_row_upper(row, self.big_num as f64);
+                }
+            }
+        }
+    }
+
+    pub fn solve_and_check(&self) -> Result<Solution, Error> {
+        let sol = self.m.solve();
+
+        if Status::Finished != sol.raw().status() {
+            return Err(Error::Other(
+                "Solver did not find solution (conflicting constraints?)".to_string(),
+            ));
+        }
+
+        let solution = sol.raw().obj_value() as usize;
+        if solution > self.big_num as usize {
+            return Err(Error::Other(
+                "Solver did not find correct solution (conflicting constraints?)".to_string(),
+            ));
+        }
+        Ok(sol)
+    }
+
+    pub fn make_jobplan(&self, sol: Solution) -> JobPlan {
+        let num_jobs = self.jobs_data.len();
+        let num_machines = self.num_machines;
+        let indexes_sv = &self.indexes_sv;
+        let indexes_ev = &self.indexes_ev;
+        let columns = &self.columns;
+        let solution = sol.raw().obj_value() as usize;
+        let mut allocs = vec![];
+        let mut processtimes: Vec<usize> = vec![0; num_machines];
+        let mut finishtimes: Vec<usize> = vec![0; num_machines];
+        for i in num_machines..(num_jobs - num_machines) {
+            for k in 0..num_machines {
+                let index = 1 + i * (num_machines + 3);
+                if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
+                    let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
+                    let endtime = sol.col(columns[indexes_ev[i]]).round() as usize;
+                    processtimes[k] += endtime - starttime;
+                    if endtime > finishtimes[k] {
+                        finishtimes[k] = endtime;
+                    }
+                    allocs.push(JobAllocation {
+                        machine: k,
+                        starting_time: starttime,
+                        end_time: endtime,
+                    });
+                }
+            }
+        }
+        let mut total_idle_time = 0;
+        for k in 0..num_machines {
+            total_idle_time += finishtimes[k] - processtimes[k];
+        }
+
+        JobPlan {
+            makespan: solution,
+            plan: allocs,
+            machine_finish_times: finishtimes,
+            idletime: total_idle_time,
         }
     }
 }
@@ -340,99 +412,22 @@ pub fn solve_jobschedule(
     setup_time: usize,
     finish_time: usize,
 ) -> Result<JobPlan, Error> {
-    let (num_machines, big_num) = find_upper_bounds(input);
+    let mut model: LinearSolverModel = LinearSolverModel::initialize(&input.jobs);
 
-    let mut jobs_data = input.jobs.clone();
+    model.find_upper_bounds();
 
-    add_dummy_jobs(&mut jobs_data, num_machines, setup_time, finish_time);
+    model.add_dummy_jobs(setup_time, finish_time);
 
-    let num_jobs = jobs_data.len();
-    let mut m = Model::default();
+    model.add_constraints_per_job();
 
-    let mut columns = vec![];
+    model.add_sequential_constraints(&input.sequences);
 
-    //makespan = col[0] >= 0
-    columns.push(m.add_integer());
-    let row = m.add_row();
-    m.set_row_lower(row, 0.0);
-    m.set_weight(row, columns[0], 1.0);
+    model.add_constraints_per_machine();
 
-    let (indexes_sv, indexes_ev) =
-        add_constraints_per_job(&mut m, &mut columns, &jobs_data, num_machines);
-    //
-    assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
+    // Solve the problem. Returns the solution if ok
+    let sol = model.solve_and_check()?;
 
-    add_sequential_constraints(
-        &mut m,
-        &columns,
-        &input.sequences,
-        &indexes_sv,
-        &indexes_ev,
-        num_machines,
-    );
-
-    add_machine_constraints(
-        &mut m,
-        &mut columns,
-        &jobs_data,
-        &indexes_sv,
-        &indexes_ev,
-        num_machines,
-        big_num,
-    );
-    //
-
-    m.set_obj_coeff(columns[0], 1.);
-    // Set objective sense.
-    m.set_obj_sense(Sense::Minimize);
-
-    // Solve the problem. Returns the solution
-    let sol = m.solve();
-
-    if Status::Finished != sol.raw().status() {
-        return Err(Error::Other(
-            "Solver did not find solution (conflicting constraints?)".to_string(),
-        ));
-    }
-
-    let solution = sol.raw().obj_value() as usize;
-    if solution > big_num as usize {
-        return Err(Error::Other(
-            "Solver did not find correct solution (conflicting constraints?)".to_string(),
-        ));
-    }
-
-    let mut allocs = vec![];
-    let mut processtimes: Vec<usize> = vec![0; num_machines];
-    let mut finishtimes: Vec<usize> = vec![0; num_machines];
-    for i in num_machines..(num_jobs - num_machines) {
-        for k in 0..num_machines {
-            let index = 1 + i * (num_machines + 3);
-            if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
-                let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
-                let endtime = sol.col(columns[indexes_ev[i]]).round() as usize;
-                processtimes[k] += endtime - starttime;
-                if endtime > finishtimes[k] {
-                    finishtimes[k] = endtime;
-                }
-                allocs.push(JobAllocation {
-                    machine: k,
-                    starting_time: starttime,
-                    end_time: endtime,
-                });
-            }
-        }
-    }
-    let mut total_idle_time = 0;
-    for k in 0..num_machines {
-        total_idle_time += finishtimes[k] - processtimes[k];
-    }
-    Ok(JobPlan {
-        makespan: solution,
-        plan: allocs,
-        machine_finish_times: finishtimes,
-        idletime: total_idle_time,
-    })
+    Ok(model.make_jobplan(sol))
 }
 
 #[cfg(test)]
