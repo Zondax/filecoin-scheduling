@@ -167,9 +167,6 @@ pub fn solve_jobschedule(
         if i < num_machines {
             m.set_row_upper(row, 0.0);
         }
-        if i >= num_jobs - num_machines {
-            m.set_weight(row, columns[0], -1.0);
-        }
 
         //e_v >= 0
         row = m.add_row();
@@ -182,14 +179,12 @@ pub fn solve_jobschedule(
         m.set_weight(row, columns[index_pv], 1.0);
 
         //-ev + sv + pv == 0
-        if i >= num_machines && i < num_jobs - num_machines {
-            row = m.add_row();
-            m.set_row_lower(row, 0.0);
-            m.set_row_upper(row, 0.0);
-            m.set_weight(row, columns[index_ev], -1.0);
-            m.set_weight(row, columns[index_sv], 1.0);
-            m.set_weight(row, columns[index_pv], 1.0);
-        }
+        row = m.add_row();
+        m.set_row_lower(row, 0.0);
+        m.set_row_upper(row, 0.0);
+        m.set_weight(row, columns[index_ev], -1.0);
+        m.set_weight(row, columns[index_sv], 1.0);
+        m.set_weight(row, columns[index_pv], 1.0);
 
         //e_v - makespan <= 0
         row = m.add_row();
@@ -421,7 +416,7 @@ mod tests {
         ];
         let reqs = JobRequirements {
             jobs: jobs_data2.clone(),
-            sequences: vec![(0,1),(1,0)],
+            sequences: vec![(0, 1), (1, 0)],
         };
 
         let result = solve_jobschedule(&reqs, 0, 0);
@@ -445,12 +440,35 @@ mod tests {
         ];
         let reqs = JobRequirements {
             jobs: jobs_data3.clone(),
-            sequences: vec![(1,0)],
+            sequences: vec![(1, 0)],
         };
 
         let result = solve_jobschedule(&reqs, 0, 0);
-        assert!(!result.is_ok()); //cannot meet deadline i if i processed after j and process j > deadline i
+        assert!(!result.is_ok()); //cannot meet deadline i if i processed after j and duration process j > deadline i
 
+        let jobs_data4 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: Some(3),
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data4.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 3, 0);
+        assert!(!result.is_ok()); //cannot meet deadline i if setup_time >= deadline
     }
 
     #[test]
