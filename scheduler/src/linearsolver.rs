@@ -115,7 +115,7 @@ fn add_dummy_jobs(
 fn add_constraints_per_job(
     m: &mut Model,
     columns: &mut Vec<Col>,
-    jobs_data: &Vec<JobDescription>,
+    jobs_data: &[JobDescription],
     num_machines: usize,
 ) -> (Vec<usize>, Vec<usize>) {
     let mut indexes_sv: Vec<usize> = vec![];
@@ -204,10 +204,10 @@ fn add_constraints_per_job(
 
 fn add_sequential_constraints(
     m: &mut Model,
-    columns: &Vec<Col>,
-    sequences: &Vec<(JobIndex, JobIndex)>,
-    indexes_sv: &Vec<usize>,
-    indexes_ev: &Vec<usize>,
+    columns: &[Col],
+    sequences: &[(JobIndex, JobIndex)],
+    indexes_sv: &[usize],
+    indexes_ev: &[usize],
     num_machines: usize,
 ) {
     for (i, j) in sequences.iter() {
@@ -223,9 +223,9 @@ fn add_sequential_constraints(
 fn add_machine_constraints(
     m: &mut Model,
     columns: &mut Vec<Col>,
-    jobs_data: &Vec<JobDescription>,
-    indexes_sv: &Vec<usize>,
-    indexes_ev: &Vec<usize>,
+    jobs_data: &[JobDescription],
+    indexes_sv: &[usize],
+    indexes_ev: &[usize],
     num_machines: usize,
     big_num: f64,
 ) {
