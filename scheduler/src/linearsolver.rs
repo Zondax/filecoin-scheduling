@@ -376,9 +376,82 @@ pub fn solve_jobschedule(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use array_tool::vec::Intersect;
-    use coin_cbc::{raw::Status, Model, Sense};
-    use itertools::Itertools;
+
+    #[test]
+    fn test_infeasible_constraints() {
+        let jobs_data1 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: Some(2),
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data1.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(!result.is_ok()); //deadline cannot be shorter than duration
+
+        let jobs_data2 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data2.clone(),
+            sequences: vec![(0,1),(1,0)],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(!result.is_ok()); //cannot handle i before j AND j before i simultaneously
+
+        let jobs_data3 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: Some(3),
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data3.clone(),
+            sequences: vec![(1,0)],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(!result.is_ok()); //cannot meet deadline i if i processed after j and process j > deadline i
+
+    }
 
     #[test]
     fn test_solverfunction() {
