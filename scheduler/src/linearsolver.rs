@@ -770,7 +770,6 @@ mod tests {
 
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 14);
-        assert_eq!(plan.idletime, 14);
         assert!(plan.is_valid(&reqs_with_sequence));
     }
 }
