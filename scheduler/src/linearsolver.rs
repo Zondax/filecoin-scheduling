@@ -79,6 +79,9 @@ struct LinearSolverModel {
 }
 
 impl LinearSolverModel {
+    /// This function initializes the Linear Model solver
+    /// It sets the target for the makespan (the total execution time)
+    /// The objective is to minimize that
     pub fn initialize(input: &[JobDescription]) -> LinearSolverModel {
         let mut m = Model::default();
         let mut columns = vec![];
@@ -102,6 +105,9 @@ impl LinearSolverModel {
         }
     }
 
+    /// This function calculates some upper bounds we need a lot later
+    /// The number of machines available
+    /// A big upper bound on all execution times we need for the linear solver later
     pub fn find_upper_bounds(&mut self) {
         let mut num_machines: usize = 0;
         let mut big_num: f64 = 0.;
@@ -118,6 +124,9 @@ impl LinearSolverModel {
         self.big_num = big_num;
     }
 
+    /// This function adds dummy starting and dummy finishing jobs
+    /// We need this mostly for the solver
+    /// But we can also set setup times / finish times if needed (both can be 0)
     pub fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
         let num_machines = self.num_machines;
         for machine in (0..num_machines).rev() {
@@ -143,6 +152,12 @@ impl LinearSolverModel {
         }
     }
 
+    /// In this function we set some constraints per job
+    /// Mainly:
+    /// - A job is allocated to one machine only
+    /// - A job is only allocated to machines it is allowed to be processed
+    /// - Starting time + processing time == ending time
+    /// - If a job has a deadline, then ending_time <= deadline
     pub fn add_constraints_per_job(&mut self) {
         let num_machines = self.num_machines;
         for (i, job) in self.jobs_data.iter().enumerate() {
@@ -224,6 +239,9 @@ impl LinearSolverModel {
         }
     }
 
+    /// In this function we set the constraints for sequential jobs
+    /// On input of a vector of indices (a,b), we constraint the model to process a before b
+    /// Meaning: ending time of a <= starting time of b
     fn add_sequential_constraints(&mut self, sequences: &[(JobIndex, JobIndex)]) {
         let num_machines = self.num_machines;
         let columns = &self.columns;
@@ -239,6 +257,11 @@ impl LinearSolverModel {
         }
     }
 
+    /// In this function we set the constraints per machine
+    /// That is :
+    /// - No more than one job at any time on a given machine
+    /// - Every job has another job before it (except the dummy starting jobs)
+    /// - Evey job has another job after it (except the dummy finishing jobs)
     pub fn add_constraints_per_machine(&mut self) {
         //
         let num_machines = self.num_machines;
@@ -315,6 +338,7 @@ impl LinearSolverModel {
             }
         }
 
+        //if v and w processed on machine k, then they are not processed at the same times
         for v in 0..num_jobs {
             for w in 0..num_jobs {
                 let machines = self.jobs_data[v]
@@ -347,6 +371,7 @@ impl LinearSolverModel {
         }
     }
 
+    ///This function executes the solver and checks for feasibility
     pub fn solve_and_check(&self) -> Result<Solution, Error> {
         let sol = self.m.solve();
 
@@ -365,6 +390,7 @@ impl LinearSolverModel {
         Ok(sol)
     }
 
+    ///This function transforms the solution into readable output (a Jobplan)
     pub fn make_jobplan(&self, sol: Solution) -> JobPlan {
         let num_jobs = self.jobs_data.len();
         let num_machines = self.num_machines;
