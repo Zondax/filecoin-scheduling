@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use array_tool::vec::Intersect;
-use coin_cbc::{raw::Status, Model, Sense};
+use coin_cbc::{raw::Status, Col, Model, Sense};
 use common::Error;
 
 const ERROR_MARGIN: f64 = 1e-20;
@@ -67,11 +67,7 @@ impl JobPlan {
     }
 }
 
-pub fn solve_jobschedule(
-    input: &JobRequirements,
-    setup_time: usize,
-    finish_time: usize,
-) -> Result<JobPlan, Error> {
+fn find_upper_bounds(input: &JobRequirements) -> (usize, f64) {
     let input_data = input.jobs.clone();
     let mut num_machines: usize = 0;
     let mut big_num: f64 = 0.;
@@ -84,8 +80,15 @@ pub fn solve_jobschedule(
         }
     }
     num_machines += 1;
+    (num_machines, big_num)
+}
 
-    let mut jobs_data = input_data;
+fn add_dummy_jobs(
+    jobs_data: &mut Vec<JobDescription>,
+    num_machines: usize,
+    setup_time: usize,
+    finish_time: usize,
+) {
     for machine in (0..num_machines).rev() {
         jobs_data.insert(
             0,
@@ -107,17 +110,14 @@ pub fn solve_jobschedule(
             deadline: None,
         });
     }
-    let num_jobs = jobs_data.len();
-    let mut m = Model::default();
+}
 
-    let mut columns = vec![];
-
-    //makespan = col[0] >= 0
-    columns.push(m.add_integer());
-    let mut row = m.add_row();
-    m.set_row_lower(row, 0.0);
-    m.set_weight(row, columns[0], 1.0);
-
+fn add_constraints_per_job(
+    m: &mut Model,
+    columns: &mut Vec<Col>,
+    jobs_data: &Vec<JobDescription>,
+    num_machines: usize,
+) -> (Vec<usize>, Vec<usize>) {
     let mut indexes_sv: Vec<usize> = vec![];
     let mut indexes_ev: Vec<usize> = vec![];
 
@@ -161,7 +161,7 @@ pub fn solve_jobschedule(
         m.set_row_upper(row_onetime, 0.0);
 
         //s_v >= 0
-        row = m.add_row();
+        let mut row = m.add_row();
         m.set_row_lower(row, 0.0);
         m.set_weight(row, columns[index_sv], 1.0);
         if i < num_machines {
@@ -199,25 +199,44 @@ pub fn solve_jobschedule(
             m.set_weight(row, columns[index_ev], 1.0);
         }
     }
-    //
-    assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
+    (indexes_sv, indexes_ev)
+}
 
-    //process i before j
-    for (i, j) in input.sequences.iter() {
-        row = m.add_row();
+fn add_sequential_constraints(
+    m: &mut Model,
+    columns: &Vec<Col>,
+    sequences: &Vec<(JobIndex, JobIndex)>,
+    indexes_sv: &Vec<usize>,
+    indexes_ev: &Vec<usize>,
+    num_machines: usize,
+) {
+    for (i, j) in sequences.iter() {
+        let row = m.add_row();
         m.set_row_upper(row, 0.0);
         let index_i = num_machines + (*i);
         let index_j = num_machines + (*j);
         m.set_weight(row, columns[indexes_ev[index_i]], 1.0);
         m.set_weight(row, columns[indexes_sv[index_j]], -1.0);
     }
+}
 
+fn add_machine_constraints(
+    m: &mut Model,
+    columns: &mut Vec<Col>,
+    jobs_data: &Vec<JobDescription>,
+    indexes_sv: &Vec<usize>,
+    indexes_ev: &Vec<usize>,
+    num_machines: usize,
+    big_num: f64,
+) {
     //
+    let num_jobs = jobs_data.len();
     let index = m.num_cols() as usize;
     for _ in 0..(num_machines * num_jobs * num_jobs) {
         columns.push(m.add_binary());
     }
     //w has a predecessor on machine k
+    let mut row;
     for k in 0..num_machines {
         for w in num_machines..num_jobs {
             if jobs_data[w].options.iter().any(
@@ -314,6 +333,54 @@ pub fn solve_jobschedule(
             }
         }
     }
+}
+
+pub fn solve_jobschedule(
+    input: &JobRequirements,
+    setup_time: usize,
+    finish_time: usize,
+) -> Result<JobPlan, Error> {
+    let (num_machines, big_num) = find_upper_bounds(input);
+
+    let mut jobs_data = input.jobs.clone();
+
+    add_dummy_jobs(&mut jobs_data, num_machines, setup_time, finish_time);
+
+    let num_jobs = jobs_data.len();
+    let mut m = Model::default();
+
+    let mut columns = vec![];
+
+    //makespan = col[0] >= 0
+    columns.push(m.add_integer());
+    let row = m.add_row();
+    m.set_row_lower(row, 0.0);
+    m.set_weight(row, columns[0], 1.0);
+
+    let (indexes_sv, indexes_ev) =
+        add_constraints_per_job(&mut m, &mut columns, &jobs_data, num_machines);
+    //
+    assert_eq!(m.num_cols() as usize, 1 + num_jobs * (num_machines + 3));
+
+    add_sequential_constraints(
+        &mut m,
+        &columns,
+        &input.sequences,
+        &indexes_sv,
+        &indexes_ev,
+        num_machines,
+    );
+
+    add_machine_constraints(
+        &mut m,
+        &mut columns,
+        &jobs_data,
+        &indexes_sv,
+        &indexes_ev,
+        num_machines,
+        big_num,
+    );
+    //
 
     m.set_obj_coeff(columns[0], 1.);
     // Set objective sense.
