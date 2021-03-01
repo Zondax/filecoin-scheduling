@@ -1,7 +1,8 @@
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 use array_tool::vec::Intersect;
 use coin_cbc::{raw::Status, Col, Model, Sense, Solution};
 use common::Error;
+use more_asserts::*;
 
 const ERROR_MARGIN: f64 = 1e-20;
 
@@ -23,6 +24,7 @@ pub struct JobAllocation {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobDescription {
     pub options: Vec<JobConstraint>,
+    pub starttime: Option<usize>,
     pub deadline: Option<usize>,
 }
 
@@ -53,11 +55,22 @@ impl JobPlan {
             if reqs.jobs[i].deadline.is_some() && job_i.end_time > reqs.jobs[i].deadline.unwrap() {
                 return false;
             }
+
+            if reqs.jobs[i].starttime.is_some()
+                && job_i.starting_time < reqs.jobs[i].starttime.unwrap()
+            {
+                return false;
+            }
             for (j, job_j) in allocs.iter().enumerate() {
                 if i != j
                     && job_i.machine == job_j.machine
                     && (job_i.starting_time <= job_j.starting_time
                         && job_j.starting_time < job_i.end_time)
+                {
+                    return false;
+                }
+                if reqs.sequences.iter().any(|(k, l)| &i == k && &j == l)
+                    && job_i.end_time > job_j.starting_time
                 {
                     return false;
                 }
@@ -138,6 +151,7 @@ impl LinearSolverModel {
                         duration: setup_time,
                     }],
                     deadline: None,
+                    starttime: None,
                 },
             );
         }
@@ -148,6 +162,7 @@ impl LinearSolverModel {
                     duration: finish_time,
                 }],
                 deadline: None,
+                starttime: None,
             });
         }
     }
@@ -235,6 +250,13 @@ impl LinearSolverModel {
                 row = self.m.add_row();
                 self.m.set_row_upper(row, job.deadline.unwrap() as f64);
                 self.m.set_weight(row, self.columns[index_ev], 1.0);
+            }
+
+            //s_v >= starttime
+            if job.starttime.is_some() {
+                row = self.m.add_row();
+                self.m.set_row_lower(row, job.starttime.unwrap() as f64);
+                self.m.set_weight(row, self.columns[index_sv], 1.0);
             }
         }
     }
@@ -469,6 +491,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: Some(2),
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -476,6 +499,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
         let reqs = JobRequirements {
@@ -493,6 +517,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -500,6 +525,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
         let reqs = JobRequirements {
@@ -517,6 +543,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: Some(3),
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -524,6 +551,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
         let reqs = JobRequirements {
@@ -541,6 +569,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: Some(3),
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -548,6 +577,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
         let reqs = JobRequirements {
@@ -557,6 +587,32 @@ mod tests {
 
         let result = solve_jobschedule(&reqs, 3, 0);
         assert!(!result.is_ok()); //cannot meet deadline i if setup_time >= deadline
+
+        let jobs_data5 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: Some(3),
+                starttime: Some(1),
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: None,
+                starttime: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data5.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0);
+        assert!(!result.is_ok()); //cannot meet deadline starting time is too late
     }
 
     #[test]
@@ -568,6 +624,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -575,6 +632,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -582,6 +640,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -589,6 +648,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -596,6 +656,7 @@ mod tests {
                     duration: 1,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -603,6 +664,7 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -610,6 +672,7 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -617,6 +680,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
 
@@ -718,6 +782,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -725,6 +790,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: Some(5),
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -732,6 +798,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -739,6 +806,7 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -746,6 +814,7 @@ mod tests {
                     duration: 1,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -753,6 +822,7 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: Some(4), //this should move this job to the start
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -760,6 +830,7 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: None,
+                starttime: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -767,6 +838,7 @@ mod tests {
                     duration: 3,
                 }],
                 deadline: None,
+                starttime: None,
             },
         ];
 
@@ -780,7 +852,8 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
-        assert_eq!(plan.plan[5].starting_time, 0);
+        assert_le!(plan.plan[5].end_time, 4); //did we make the deadline?
+        assert_ge!(plan.plan[1].starting_time, 5); //did this job start late enough?
         assert!(plan.is_valid(&reqs));
 
         let reqs_with_sequence = JobRequirements {
@@ -789,6 +862,7 @@ mod tests {
         };
         let result = solve_jobschedule(&reqs_with_sequence, 0, 0);
         assert!(result.is_ok());
+        assert_ge!(plan.plan[1].starting_time, 5);
         let plan = result.unwrap();
 
         // assert_eq!(
