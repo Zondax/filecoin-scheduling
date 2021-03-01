@@ -67,6 +67,11 @@ impl JobPlan {
                 {
                     return false;
                 }
+                if reqs.sequences.iter().any(
+                    |(k,l)| &i == k && &j == l
+                ) && job_i.end_time > job_j.starting_time {
+                    return false;
+                }
             }
         }
         true
