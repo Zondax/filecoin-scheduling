@@ -19,12 +19,13 @@ pub struct JobAllocation {
     pub machine: usize,
     pub starting_time: usize,
     pub end_time: usize,
+    pub job_id: usize,
 }
 
 /* Notes:
 * if a job is preemtive, all jobs take same time on all possible machines, so we take options[0].duration as total duration
 * if a job is preemtive, then the number inside the option denotes the number of pieces ( >= 2)
-* if has_started is some: the number inside it is the allocated machine
+* if has_started is some: the numbers inside it is the allocated machine and the minimal number of time it should continue before interupt (can be 0)
  */
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +34,8 @@ pub struct JobDescription {
     pub starttime: Option<usize>,
     pub deadline: Option<usize>,
     pub preemtive: Option<usize>,
-    pub has_started: Option<usize>,
+    pub has_started: Option<(usize, usize)>,
+    pub job_id: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -97,6 +99,7 @@ struct LinearSolverModel {
     pub num_machines: usize,
     pub indexes_sv: Vec<usize>,
     pub indexes_ev: Vec<usize>,
+
     pub swapping_costs: f64,
 }
 
@@ -151,7 +154,9 @@ impl LinearSolverModel {
     /// We need this mostly for the solver
     /// But we can also set setup times / finish times if needed (both can be 0)
     pub fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
+        let num_jobs = self.jobs_data.len();
         let num_machines = self.num_machines;
+        let mut index: usize = 0;
         for machine in (0..num_machines).rev() {
             self.jobs_data.insert(
                 0,
@@ -164,8 +169,10 @@ impl LinearSolverModel {
                     starttime: None,
                     preemtive: None,
                     has_started: None,
+                    job_id: num_jobs + index,
                 },
             );
+            index += 1;
         }
         for machine in 0..num_machines {
             self.jobs_data.push(JobDescription {
@@ -177,7 +184,9 @@ impl LinearSolverModel {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: num_jobs + index,
             });
+            index += 1;
         }
     }
 
@@ -286,8 +295,14 @@ impl LinearSolverModel {
                 self.m.set_row_equal(row, 0.0);
                 self.m.set_weight(row, self.columns[index_sv], 1.0);
 
+                let (machine, min_time) = job.has_started.unwrap();
+
+                //start first part at time 0
+                row = self.m.add_row();
+                self.m.set_row_lower(row, min_time as f64);
+                self.m.set_weight(row, self.columns[index_ev], 1.0);
+
                 //set first part machine at machine k
-                let machine = job.has_started.unwrap();
                 row = self.m.add_row();
                 self.m.set_row_equal(row, 1.0);
                 self.m.set_weight(row, self.columns[index + machine], 1.0);
@@ -325,6 +340,7 @@ impl LinearSolverModel {
                             deadline: None,
                             preemtive: None,
                             has_started: None,
+                            job_id: job.job_id,
                         },
                     );
                     let index = self.m.num_cols() as usize;
@@ -341,8 +357,18 @@ impl LinearSolverModel {
                             1.0,
                         );
 
+                        let (machine, min_time) = job.has_started.unwrap();
+
+                        //start first part at time 0
+                        row = self.m.add_row();
+                        self.m.set_row_lower(row, min_time as f64);
+                        self.m.set_weight(
+                            row,
+                            self.columns[self.indexes_ev[indexes_index + preempt_index]],
+                            1.0,
+                        );
+
                         //set first part machine at machine k
-                        let machine = job.has_started.unwrap();
                         row = self.m.add_row();
                         self.m.set_row_equal(row, 1.0);
                         self.m.set_weight(row, self.columns[index + machine], 1.0);
@@ -374,6 +400,20 @@ impl LinearSolverModel {
                         self.m.set_weight(
                             row,
                             self.columns[self.indexes_ev[indexes_index + preempt_index]],
+                            -1.0,
+                        );
+
+                        //e_v_i <= s_v_{i+1}
+                        row = self.m.add_row();
+                        self.m.set_row_upper(row, 0.0);
+                        self.m.set_weight(
+                            row,
+                            self.columns[self.indexes_ev[indexes_index + preempt_index - 1]],
+                            1.0,
+                        );
+                        self.m.set_weight(
+                            row,
+                            self.columns[self.indexes_sv[indexes_index + preempt_index]],
                             -1.0,
                         );
                     }
@@ -503,6 +543,7 @@ impl LinearSolverModel {
                 let costs;
                 if (v < num_machines || v >= num_jobs - num_machines)
                     || (w < num_machines || w >= num_jobs - num_machines)
+                    || (self.jobs_data[v].job_id == self.jobs_data[w].job_id)
                 {
                     costs = 0.0
                 } else {
@@ -569,6 +610,9 @@ impl LinearSolverModel {
                 if (sol.col(columns[index + k]).round() - 1.0).abs() < ERROR_MARGIN {
                     let starttime = sol.col(columns[indexes_sv[i]]).round() as usize;
                     let endtime = sol.col(columns[indexes_ev[i]]).round() as usize;
+                    if endtime - starttime == 0 {
+                        continue;
+                    }
                     processtimes[k] += endtime - starttime;
                     if endtime > finishtimes[k] {
                         finishtimes[k] = endtime;
@@ -577,6 +621,7 @@ impl LinearSolverModel {
                         machine: k,
                         starting_time: starttime,
                         end_time: endtime,
+                        job_id: self.jobs_data[i].job_id,
                     });
                 }
             }
@@ -630,22 +675,24 @@ mod tests {
             JobDescription {
                 options: vec![JobConstraint {
                     machine: 0,
-                    duration: 20,
-                }],
-                deadline: None,
-                starttime: None,
-                preemtive: Some(2),
-                has_started: Some(0),
-            },
-            JobDescription {
-                options: vec![JobConstraint {
-                    machine: 0,
                     duration: 3,
                 }],
                 deadline: Some(8),
                 starttime: Some(5),
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 20,
+                }],
+                deadline: None,
+                starttime: None,
+                preemtive: Some(3),
+                has_started: Some((0, 2)),
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -657,7 +704,7 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 25);
-        assert_eq!(plan.plan[0].end_time, 4);
+        assert_eq!(plan.plan[1].end_time, 4);
     }
 
     #[test]
@@ -672,6 +719,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -682,6 +730,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -702,6 +751,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -712,6 +762,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -732,6 +783,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -742,6 +794,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -762,6 +815,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -772,6 +826,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -792,6 +847,7 @@ mod tests {
                 starttime: Some(1),
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -802,6 +858,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
         ];
         let reqs = JobRequirements {
@@ -825,6 +882,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -835,6 +893,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -845,6 +904,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 2,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -855,6 +915,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 3,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -865,6 +926,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 4,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -875,6 +937,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 5,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -885,6 +948,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 6,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -895,6 +959,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 7,
             },
         ];
 
@@ -999,6 +1064,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 0,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1009,6 +1075,7 @@ mod tests {
                 starttime: Some(5),
                 preemtive: None,
                 has_started: None,
+                job_id: 1,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1019,6 +1086,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 2,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1029,6 +1097,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 3,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1039,6 +1108,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 4,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1049,6 +1119,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 5,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1059,6 +1130,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 6,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1069,6 +1141,7 @@ mod tests {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
+                job_id: 7,
             },
         ];
 
