@@ -154,7 +154,6 @@ impl LinearSolverModel {
     /// We need this mostly for the solver
     /// But we can also set setup times / finish times if needed (both can be 0)
     pub fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
-        let num_jobs = self.jobs_data.len();
         let num_machines = self.num_machines;
         let mut index: usize = 0;
         for machine in (0..num_machines).rev() {
@@ -325,7 +324,6 @@ impl LinearSolverModel {
     pub fn add_constraints_per_job(&mut self) {
         let num_machines = self.num_machines;
         let jobdata = self.jobs_data.clone();
-        let num_jobs = jobdata.len();
         let mut preemt_job_index = 0;
         for (i, job) in jobdata.iter().enumerate() {
             if job.preemtive.is_some() {
@@ -335,7 +333,7 @@ impl LinearSolverModel {
                 let mut indexes_preemt_pv = vec![];
                 for preempt_index in 0..num_preemtive {
                     self.jobs_data.insert(
-                        preemt_job_index+i+1,
+                        preemt_job_index + i + 1,
                         JobDescription {
                             options: job.options.clone(),
                             starttime: None,
@@ -426,15 +424,14 @@ impl LinearSolverModel {
                 for preemt_index in indexes_preemt_pv {
                     self.m.set_weight(row, self.columns[preemt_index], 1.0);
                 }
-                self.jobs_data.remove(preemt_job_index+i);
-                preemt_job_index+=num_preemtive;
+                self.jobs_data.remove(preemt_job_index + i);
+                preemt_job_index += num_preemtive - 1;
             //               assert_eq!(self.jobs_data, jobdata);
             } else {
                 let b = i < num_machines;
                 self.add_general_job_constraints(job, b, false);
             }
         }
-        //assert_eq!(self.jobs_data, jobdata);
     }
 
     /// In this function we set the constraints for sequential jobs
@@ -812,7 +809,7 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemtive: None,
+                preemtive: Some(2),
                 has_started: None,
                 job_id: 1,
             },
