@@ -21,11 +21,19 @@ pub struct JobAllocation {
     pub end_time: usize,
 }
 
+/* Notes:
+* if a job is preemtive, all jobs take same time on all possible machines, so we take options[0].duration as total duration
+* if a job is preemtive, then the number inside the option denotes the number of pieces ( >= 2)
+* if has_started is some: the number inside it is the allocated machine
+ */
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobDescription {
     pub options: Vec<JobConstraint>,
     pub starttime: Option<usize>,
     pub deadline: Option<usize>,
+    pub preemtive: Option<usize>,
+    pub has_started: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,13 +97,14 @@ struct LinearSolverModel {
     pub num_machines: usize,
     pub indexes_sv: Vec<usize>,
     pub indexes_ev: Vec<usize>,
+    pub swapping_costs: f64,
 }
 
 impl LinearSolverModel {
     /// This function initializes the Linear Model solver
     /// It sets the target for the makespan (the total execution time)
     /// The objective is to minimize that
-    pub fn initialize(input: &[JobDescription]) -> LinearSolverModel {
+    pub fn initialize(input: &[JobDescription], swapping_costs: f64) -> LinearSolverModel {
         let mut m = Model::default();
         let mut columns = vec![];
 
@@ -115,6 +124,7 @@ impl LinearSolverModel {
             num_machines: 0,
             indexes_sv: vec![],
             indexes_ev: vec![],
+            swapping_costs
         }
     }
 
@@ -134,7 +144,7 @@ impl LinearSolverModel {
         }
         num_machines += 1;
         self.num_machines = num_machines;
-        self.big_num = big_num;
+        self.big_num = big_num + 100000.;
     }
 
     /// This function adds dummy starting and dummy finishing jobs
@@ -152,6 +162,8 @@ impl LinearSolverModel {
                     }],
                     deadline: None,
                     starttime: None,
+                    preemtive: None,
+                    has_started: None,
                 },
             );
         }
@@ -163,6 +175,8 @@ impl LinearSolverModel {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             });
         }
     }
@@ -175,88 +189,233 @@ impl LinearSolverModel {
     /// - If a job has a deadline, then ending_time <= deadline
     pub fn add_constraints_per_job(&mut self) {
         let num_machines = self.num_machines;
-        for (i, job) in self.jobs_data.iter().enumerate() {
-            let index = self.m.num_cols() as usize;
-            for _ in 0..num_machines {
-                self.columns.push(self.m.add_binary());
-            }
-            let index_sv = self.m.num_cols() as usize;
-            self.indexes_sv.push(index_sv);
-            self.columns.push(self.m.add_integer()); //s_v
-            let index_ev = self.m.num_cols() as usize;
-            self.indexes_ev.push(index_ev);
-            self.columns.push(self.m.add_integer()); //e_v
-            let index_pv = self.m.num_cols() as usize;
-            self.columns.push(self.m.add_integer()); //p_v
+        let num_jobs = self.jobs_data.len();
+        //assert_eq!(num_jobs, 4);
+        let mut jobdata = self.jobs_data.clone();
+        for (i, job) in jobdata.iter().enumerate() {
+            if job.preemtive.is_some() {
+                let num_preemtive = job.preemtive.unwrap();
+                let indexes_index = self.indexes_ev.len();
 
-            let row_onemachine = self.m.add_row();
-            let row_onetime = self.m.add_row();
-            //sum_{k} x_{k,w} == 1
-            //sum_{k} x_{k,w} * dur - pv_w == 0
-            for machine in 0..num_machines {
-                let options = job.options.clone();
-                for option in options {
-                    if option.machine == machine {
-                        self.m
-                            .set_weight(row_onemachine, self.columns[index + machine], 1.0);
-                        self.m.set_weight(
-                            row_onetime,
-                            self.columns[index + machine],
-                            option.duration as f64,
-                        );
+                let mut indexes_preemt_pv = vec![];
+                for preempt_index in 0..num_preemtive {
+                    self.jobs_data.insert(i + 1,
+                        JobDescription {
+                            options: job.options.clone(),
+                            starttime: None,
+                            deadline: None,
+                            preemtive: None,
+                            has_started: None,
+                    });
+                    let index = self.m.num_cols() as usize;
+                    for _ in 0..num_machines {
+                        self.columns.push(self.m.add_binary());
+                    }
+                    let index_sv = self.m.num_cols() as usize;
+                    self.indexes_sv.push(index_sv);
+                    self.columns.push(self.m.add_integer()); //s_v
+                    let index_ev = self.m.num_cols() as usize;
+                    self.indexes_ev.push(index_ev);
+                    self.columns.push(self.m.add_integer()); //e_v
+                    let index_pv = self.m.num_cols() as usize;
+                    indexes_preemt_pv.push(index_pv);
+                    self.columns.push(self.m.add_integer()); //p_v
+
+                    let row_onemachine = self.m.add_row();
+                    //sum_{k} x_{k,w} == 1
+                    for machine in 0..num_machines {
+                        let options = job.options.clone();
+                        for option in options {
+                            if option.machine == machine {
+                                self.m
+                                    .set_weight(row_onemachine, self.columns[index + machine], 1.0);
+                            }
+                        }
+                    }
+
+                    self.m.set_row_equal(row_onemachine, 1.0);
+
+
+                    //e_v >= 0
+                    let mut row = self.m.add_row();
+                    self.m.set_row_lower(row, 0.0);
+                    self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+                    //e_v - makespan <= 0
+                    row = self.m.add_row();
+                    self.m.set_row_upper(row, 0.0);
+                    self.m.set_weight(row, self.columns[0], -1.0);
+                    self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+                    //e_v <= deadline
+                    if job.deadline.is_some() {
+                        row = self.m.add_row();
+                        self.m.set_row_upper(row, job.deadline.unwrap() as f64);
+                        self.m.set_weight(row, self.columns[index_ev], 1.0);
+                    }
+
+                    //s_v >= starttime
+                    if job.starttime.is_some() {
+                        row = self.m.add_row();
+                        self.m.set_row_lower(row, job.starttime.unwrap() as f64);
+                        self.m.set_weight(row, self.columns[index_sv], 1.0);
+                    }
+
+                    //p_v >= 0
+                    row = self.m.add_row();
+                    self.m.set_row_lower(row, 0.0);
+                    self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+                    //-ev + sv + pv == 0
+                    row = self.m.add_row();
+                    self.m.set_row_lower(row, 0.0);
+                    self.m.set_row_upper(row, 0.0);
+                    self.m.set_weight(row, self.columns[index_ev], -1.0);
+                    self.m.set_weight(row, self.columns[index_sv], 1.0);
+                    self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+                    //s_v >= starttime
+                    if job.starttime.is_some() {
+                        row = self.m.add_row();
+                        self.m.set_row_lower(row, job.starttime.unwrap() as f64);
+                        self.m.set_weight(row, self.columns[index_sv], 1.0);
+                    }
+
+                    if preempt_index == 0 && job.has_started.is_some() {
+                        //start first part at time 0
+                        row = self.m.add_row();
+                        self.m.set_row_equal(row, 0.0);
+                        self.m.set_weight(row, self.columns[index_sv], 1.0);
+
+                        //set first part machine at machine k
+                        let machine = job.has_started.unwrap();
+                        row = self.m.add_row();
+                        self.m.set_row_equal(row, 1.0);
+                        self.m.set_weight(row, self.columns[index + machine], 1.0);
+                    }
+
+                    if preempt_index > 0 {
+                        //s_v_i <= s_v_{i+1}
+                        row = self.m.add_row();
+                        self.m.set_row_upper(row, 0.0);
+                        self.m.set_weight(row, self.columns[self.indexes_sv[indexes_index + preempt_index - 1]], 1.0);
+                        self.m.set_weight(row, self.columns[index_sv], -1.0);
+
+                        //e_v_i <= e_v_{i+1}
+                        row = self.m.add_row();
+                        self.m.set_row_upper(row, 0.0);
+                        self.m.set_weight(row, self.columns[self.indexes_ev[indexes_index + preempt_index - 1]], 1.0);
+                        self.m.set_weight(row, self.columns[index_ev], -1.0);
                     }
                 }
-            }
+                //p1 + p2 + ... = p
+                let row = self.m.add_row();
+                self.m.set_row_equal(row, job.options[0].duration as f64);
+                for preemt_index in 0..num_preemtive {
+                    self.m.set_weight(row, self.columns[indexes_preemt_pv[preemt_index]], 1.0);
+                }
+                self.jobs_data.remove(i);
+  //              assert_eq!(self.jobs_data, jobdata);
+            } else {
 
-            self.m.set_row_equal(row_onemachine, 1.0);
+                //ELSE
 
-            self.m.set_weight(row_onetime, self.columns[index_pv], -1.0);
-            self.m.set_row_equal(row_onetime, 0.0);
+                let index = self.m.num_cols() as usize;
+                for _ in 0..num_machines {
+                    self.columns.push(self.m.add_binary());
+                }
+                let index_sv = self.m.num_cols() as usize;
+                self.indexes_sv.push(index_sv);
+                self.columns.push(self.m.add_integer()); //s_v
+                let index_ev = self.m.num_cols() as usize;
+                self.indexes_ev.push(index_ev);
+                self.columns.push(self.m.add_integer()); //e_v
+                let index_pv = self.m.num_cols() as usize;
+                self.columns.push(self.m.add_integer()); //p_v
 
-            //s_v >= 0
-            let mut row = self.m.add_row();
-            self.m.set_row_lower(row, 0.0);
-            self.m.set_weight(row, self.columns[index_sv], 1.0);
-            if i < num_machines {
-                self.m.set_row_upper(row, 0.0);
-            }
+                let row_onemachine = self.m.add_row();
+                let row_onetime = self.m.add_row();
+                //sum_{k} x_{k,w} == 1
+                //sum_{k} x_{k,w} * dur - pv_w == 0
+                for machine in 0..num_machines {
+                    let options = job.options.clone();
+                    for option in options {
+                        if option.machine == machine {
+                            self.m
+                                .set_weight(row_onemachine, self.columns[index + machine], 1.0);
+                            self.m.set_weight(
+                                row_onetime,
+                                self.columns[index + machine],
+                                option.duration as f64,
+                            );
+                        }
+                    }
+                }
 
-            //e_v >= 0
-            row = self.m.add_row();
-            self.m.set_row_lower(row, 0.0);
-            self.m.set_weight(row, self.columns[index_ev], 1.0);
+                self.m.set_row_equal(row_onemachine, 1.0);
 
-            //p_v >= 0
-            row = self.m.add_row();
-            self.m.set_row_lower(row, 0.0);
-            self.m.set_weight(row, self.columns[index_pv], 1.0);
+                self.m.set_weight(row_onetime, self.columns[index_pv], -1.0);
+                self.m.set_row_equal(row_onetime, 0.0);
 
-            //-ev + sv + pv == 0
-            row = self.m.add_row();
-            self.m.set_row_lower(row, 0.0);
-            self.m.set_row_upper(row, 0.0);
-            self.m.set_weight(row, self.columns[index_ev], -1.0);
-            self.m.set_weight(row, self.columns[index_sv], 1.0);
-            self.m.set_weight(row, self.columns[index_pv], 1.0);
-
-            //e_v - makespan <= 0
-            row = self.m.add_row();
-            self.m.set_row_upper(row, 0.0);
-            self.m.set_weight(row, self.columns[0], -1.0);
-            self.m.set_weight(row, self.columns[index_ev], 1.0);
-
-            //e_v <= deadline
-            if job.deadline.is_some() {
-                row = self.m.add_row();
-                self.m.set_row_upper(row, job.deadline.unwrap() as f64);
-                self.m.set_weight(row, self.columns[index_ev], 1.0);
-            }
-
-            //s_v >= starttime
-            if job.starttime.is_some() {
-                row = self.m.add_row();
-                self.m.set_row_lower(row, job.starttime.unwrap() as f64);
+                //s_v >= 0
+                let mut row = self.m.add_row();
+                self.m.set_row_lower(row, 0.0);
                 self.m.set_weight(row, self.columns[index_sv], 1.0);
+                if i < num_machines {
+                    self.m.set_row_upper(row, 0.0);
+                }
+
+                //e_v >= 0
+                row = self.m.add_row();
+                self.m.set_row_lower(row, 0.0);
+                self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+                //p_v >= 0
+                row = self.m.add_row();
+                self.m.set_row_lower(row, 0.0);
+                self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+                //-ev + sv + pv == 0
+                row = self.m.add_row();
+                self.m.set_row_lower(row, 0.0);
+                self.m.set_row_upper(row, 0.0);
+                self.m.set_weight(row, self.columns[index_ev], -1.0);
+                self.m.set_weight(row, self.columns[index_sv], 1.0);
+                self.m.set_weight(row, self.columns[index_pv], 1.0);
+
+                //e_v - makespan <= 0
+                row = self.m.add_row();
+                self.m.set_row_upper(row, 0.0);
+                self.m.set_weight(row, self.columns[0], -1.0);
+                self.m.set_weight(row, self.columns[index_ev], 1.0);
+
+                //e_v <= deadline
+                if job.deadline.is_some() {
+                    row = self.m.add_row();
+                    self.m.set_row_upper(row, job.deadline.unwrap() as f64);
+                    self.m.set_weight(row, self.columns[index_ev], 1.0);
+                }
+
+                //s_v >= starttime
+                if job.starttime.is_some() {
+                    row = self.m.add_row();
+                    self.m.set_row_lower(row, job.starttime.unwrap() as f64);
+                    self.m.set_weight(row, self.columns[index_sv], 1.0);
+                }
+
+                //s_v >= starttime
+                if job.has_started.is_some() {
+                    //start first part at time 0
+                    row = self.m.add_row();
+                    self.m.set_row_equal(row, 0.0);
+                    self.m.set_weight(row, self.columns[index_sv], 1.0);
+
+                    //set first part machine at machine k
+                    let machine = job.has_started.unwrap();
+                    row = self.m.add_row();
+                    self.m.set_row_equal(row, 1.0);
+                    self.m.set_weight(row, self.columns[index + machine], 1.0);
+                }
             }
         }
     }
@@ -368,6 +527,12 @@ impl LinearSolverModel {
                     .intersect_if(self.jobs_data[w].options.clone(), |l, r| {
                         l.machine == r.machine
                     });
+                let costs;
+                if (v < num_machines || v >= num_jobs - num_machines) || (w < num_machines || w >= num_jobs - num_machines){
+                    costs = 0.0
+                }else{
+                    costs = self.swapping_costs;
+                }
                 if v != w && !machines.is_empty() {
                     //L*sum_{k : job_v(k) && job_w(k)} y_{k,v,w} + e_v - s_w <= L
                     row = self.m.add_row();
@@ -384,7 +549,7 @@ impl LinearSolverModel {
                                 + machine_index.machine * num_jobs * num_jobs
                                 + v * num_jobs
                                 + w],
-                            self.big_num as f64,
+                            self.big_num as f64 + costs,
                         );
                     }
                     self.m.set_row_upper(row, self.big_num as f64);
@@ -459,8 +624,15 @@ pub fn solve_jobschedule(
     input: &JobRequirements,
     setup_time: usize,
     finish_time: usize,
+    swapping_costs: Option<f64>
 ) -> Result<JobPlan, Error> {
-    let mut model: LinearSolverModel = LinearSolverModel::initialize(&input.jobs);
+    let costs;
+    if swapping_costs.is_some(){
+        costs = swapping_costs.unwrap();
+    }else{
+        costs = 0.0;
+    }
+    let mut model: LinearSolverModel = LinearSolverModel::initialize(&input.jobs, costs);
 
     model.find_upper_bounds();
 
@@ -483,6 +655,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_preemtive_jobs() {
+        let jobs_data1 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 20,
+                }],
+                deadline: None,
+                starttime: None,
+                preemtive: Some(2),
+                has_started: Some(0),
+            },
+
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 3,
+                }],
+                deadline: Some(8),
+                starttime: Some(5),
+                preemtive: None,
+                has_started: None,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data1.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0, Some(1.0));
+        assert!(result.is_ok()); 
+        let plan = result.unwrap();
+        assert_eq!(plan.makespan, 25);
+        assert_eq!(plan.plan[0].end_time, 4);
+    }
+
+
+    #[test]
     fn test_infeasible_constraints() {
         let jobs_data1 = vec![
             JobDescription {
@@ -492,6 +702,8 @@ mod tests {
                 }],
                 deadline: Some(2),
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -500,6 +712,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
         let reqs = JobRequirements {
@@ -507,7 +721,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0, None);
         assert!(!result.is_ok()); //deadline cannot be shorter than duration
 
         let jobs_data2 = vec![
@@ -518,6 +732,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -526,6 +742,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
         let reqs = JobRequirements {
@@ -533,7 +751,7 @@ mod tests {
             sequences: vec![(0, 1), (1, 0)],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0,None);
         assert!(!result.is_ok()); //cannot handle i before j AND j before i simultaneously
 
         let jobs_data3 = vec![
@@ -544,6 +762,8 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -552,6 +772,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
         let reqs = JobRequirements {
@@ -559,7 +781,7 @@ mod tests {
             sequences: vec![(1, 0)],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0,None);
         assert!(!result.is_ok()); //cannot meet deadline i if i processed after j and duration process j > deadline i
 
         let jobs_data4 = vec![
@@ -570,6 +792,8 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -578,6 +802,9 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
+
             },
         ];
         let reqs = JobRequirements {
@@ -585,7 +812,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 3, 0);
+        let result = solve_jobschedule(&reqs, 3, 0,None);
         assert!(!result.is_ok()); //cannot meet deadline i if setup_time >= deadline
 
         let jobs_data5 = vec![
@@ -596,6 +823,8 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: Some(1),
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -604,6 +833,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
         let reqs = JobRequirements {
@@ -611,7 +842,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0,None);
         assert!(!result.is_ok()); //cannot meet deadline starting time is too late
     }
 
@@ -625,6 +856,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -633,6 +866,9 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
+
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -641,6 +877,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -649,6 +887,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -657,6 +897,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -665,6 +907,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -673,6 +917,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -681,6 +927,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
 
@@ -689,7 +937,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -701,7 +949,7 @@ mod tests {
             jobs: jobs_data.clone(),
             sequences: vec![(0, 1), (1, 2), (3, 4), (4, 5), (6, 7)],
         };
-        let result = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        let result = solve_jobschedule(&reqs_with_sequence, 0, 0,None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -783,6 +1031,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -790,7 +1040,9 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
-                starttime: Some(5),
+                starttime: Some(5),                    preemtive: None,
+                has_started: None,
+
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -798,7 +1050,9 @@ mod tests {
                     duration: 2,
                 }],
                 deadline: None,
-                starttime: None,
+                starttime: None,                    preemtive: None,
+                has_started: None,
+
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -807,6 +1061,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -815,6 +1071,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -822,7 +1080,9 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: Some(4), //this should move this job to the start
-                starttime: None,
+                starttime: None,                    preemtive: None,
+                has_started: None,
+
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -830,7 +1090,9 @@ mod tests {
                     duration: 4,
                 }],
                 deadline: None,
-                starttime: None,
+                starttime: None,                    preemtive: None,
+                has_started: None,
+
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -839,6 +1101,8 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
+                preemtive: None,
+                has_started: None,
             },
         ];
 
@@ -847,7 +1111,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0);
+        let result = solve_jobschedule(&reqs, 0, 0,None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -860,7 +1124,7 @@ mod tests {
             jobs: jobs_data.clone(),
             sequences: vec![(5, 6), (6, 7), (7, 0)],
         };
-        let result = solve_jobschedule(&reqs_with_sequence, 0, 0);
+        let result = solve_jobschedule(&reqs_with_sequence, 0, 0, None);
         assert!(result.is_ok());
         assert_ge!(plan.plan[1].starting_time, 5);
         let plan = result.unwrap();
