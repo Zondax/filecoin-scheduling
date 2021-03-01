@@ -169,7 +169,7 @@ impl LinearSolverModel {
                     starttime: None,
                     preemtive: None,
                     has_started: None,
-                    job_id: num_jobs + index,
+                    job_id: 100 + index,
                 },
             );
             index += 1;
@@ -184,7 +184,7 @@ impl LinearSolverModel {
                 starttime: None,
                 preemtive: None,
                 has_started: None,
-                job_id: num_jobs + index,
+                job_id: 100 + index,
             });
             index += 1;
         }
@@ -325,6 +325,8 @@ impl LinearSolverModel {
     pub fn add_constraints_per_job(&mut self) {
         let num_machines = self.num_machines;
         let jobdata = self.jobs_data.clone();
+        let num_jobs = jobdata.len();
+        let mut preemt_job_index = 0;
         for (i, job) in jobdata.iter().enumerate() {
             if job.preemtive.is_some() {
                 let num_preemtive = job.preemtive.unwrap();
@@ -333,7 +335,7 @@ impl LinearSolverModel {
                 let mut indexes_preemt_pv = vec![];
                 for preempt_index in 0..num_preemtive {
                     self.jobs_data.insert(
-                        i + 1,
+                        preemt_job_index+i+1,
                         JobDescription {
                             options: job.options.clone(),
                             starttime: None,
@@ -424,13 +426,15 @@ impl LinearSolverModel {
                 for preemt_index in indexes_preemt_pv {
                     self.m.set_weight(row, self.columns[preemt_index], 1.0);
                 }
-                self.jobs_data.remove(i);
+                self.jobs_data.remove(preemt_job_index+i);
+                preemt_job_index+=num_preemtive;
             //               assert_eq!(self.jobs_data, jobdata);
             } else {
                 let b = i < num_machines;
                 self.add_general_job_constraints(job, b, false);
             }
         }
+        //assert_eq!(self.jobs_data, jobdata);
     }
 
     /// In this function we set the constraints for sequential jobs
@@ -753,7 +757,7 @@ mod tests {
                 deadline: Some(220),
                 starttime: None,
                 preemtive: Some(2),
-                has_started: Some((plan.plan[0].machine, 0)),
+                has_started: Some((0, 0)),
                 job_id: 0,
             },
             JobDescription {
@@ -763,7 +767,7 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemtive: Some(2),
+                preemtive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -798,7 +802,7 @@ mod tests {
                 deadline: Some(200),
                 starttime: None,
                 preemtive: Some(2),
-                has_started: Some((plan.plan[0].machine, 0)),
+                has_started: Some((0, 0)),
                 job_id: 0,
             },
             JobDescription {
@@ -808,7 +812,7 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemtive: Some(2),
+                preemtive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -833,13 +837,13 @@ mod tests {
         let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
-        assert_eq!(plan.makespan, 34);
+        assert_eq!(plan.makespan, 36);
 
         //The solver should just put job 1 in the end, as there is no need to put it earlier because of a deadline
         //However, job 2 will be put earlier because of the deadline
         //The solver puts job 0 until time t = 3, starts job 2 at time t = 5, ending at time t = 10, before the deadline
         //it will then continue with job 3, and finish with job 0 again. the last two can of course be swapped
-        //This takes 3 (job0) + 2 (swap) + 5 (job2) +  5 (job2) + 2(swap) + 17(job0) = 34
+        //This takes 3 (job0) + 2 (swap) + 5 (job2) + 2(swap) + 5 (job2) + 2(swap) + 17(job0) = 36
     }
 
     #[test]
