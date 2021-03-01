@@ -56,7 +56,9 @@ impl JobPlan {
                 return false;
             }
 
-            if reqs.jobs[i].starttime.is_some() && job_i.starting_time < reqs.jobs[i].starttime.unwrap() {
+            if reqs.jobs[i].starttime.is_some()
+                && job_i.starting_time < reqs.jobs[i].starttime.unwrap()
+            {
                 return false;
             }
             for (j, job_j) in allocs.iter().enumerate() {
@@ -67,9 +69,9 @@ impl JobPlan {
                 {
                     return false;
                 }
-                if reqs.sequences.iter().any(
-                    |(k,l)| &i == k && &j == l
-                ) && job_i.end_time > job_j.starting_time {
+                if reqs.sequences.iter().any(|(k, l)| &i == k && &j == l)
+                    && job_i.end_time > job_j.starting_time
+                {
                     return false;
                 }
             }
@@ -850,8 +852,8 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
-        assert_le!(plan.plan[5].end_time, 4);     //did we make the deadline?
-        assert_ge!(plan.plan[1].starting_time, 5);      //did this job start late enough?
+        assert_le!(plan.plan[5].end_time, 4); //did we make the deadline?
+        assert_ge!(plan.plan[1].starting_time, 5); //did this job start late enough?
         assert!(plan.is_valid(&reqs));
 
         let reqs_with_sequence = JobRequirements {
