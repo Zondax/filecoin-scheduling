@@ -55,6 +55,10 @@ impl JobPlan {
             if reqs.jobs[i].deadline.is_some() && job_i.end_time > reqs.jobs[i].deadline.unwrap() {
                 return false;
             }
+
+            if reqs.jobs[i].starttime.is_some() && job_i.starting_time < reqs.jobs[i].starttime.unwrap() {
+                return false;
+            }
             for (j, job_j) in allocs.iter().enumerate() {
                 if i != j
                     && job_i.machine == job_j.machine
