@@ -708,6 +708,148 @@ mod tests {
     }
 
     #[test]
+    fn test_scenario() {
+
+        //The time it takes to remove one job and load another is a system constant
+        //We set this to 2 minutes
+
+        //A long job of one hour comes in, with a deadline in 4 hours
+        //No specific starttime, but it is preemtible
+
+        let jobs_data_t0 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 60,
+                }],
+                deadline: Some(240),
+                starttime: None,
+                preemtive: None,
+                has_started: None,
+                job_id: 0,
+            },
+        ];
+        let reqs = JobRequirements {
+            jobs: jobs_data_t0.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.makespan, 60);
+        assert_eq!(plan.plan[0].end_time, 60);
+
+        //The solver should just allocate so the execution end time is at time=60, when the job is finished.
+
+        //A new job comes in at time t1 = 20, not so urgent, taking 5 minutes. Deadline is in 2 hours
+        //So the first job still has 40 minutes to go, and has deadline in 240-20 = 220 minutes
+        //it is preemtible, but already started on one of the machines
+        //So the new jobs data at t1 will be
+
+        let jobs_data_t1 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 40,
+                }],
+                deadline: Some(220),
+                starttime: None,
+                preemtive: Some(2),
+                has_started: Some((plan.plan[0].machine,0)),
+                job_id: 0,
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 5,
+                }],
+                deadline: Some(120),
+                starttime: None,
+                preemtive: Some(2),
+                has_started: None,
+                job_id: 1,
+            },
+        ];
+
+        let reqs = JobRequirements {
+            jobs: jobs_data_t1.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.makespan, 47);
+        assert_eq!(plan.plan[1].end_time, 47);
+
+        //The solver should just put the job in the end, as there is no need to put it earlier because of a deadline
+        //This would invoke a swapping cost of 2 * 2 = 4
+        //However, we need the additional time to load the new process in the end too, taking 2 minutes
+        //So this is all finished when t = 40 + 5 + 2 = 47
+
+
+        //Again time t2 = 20 minutes later, an urgent job comes in
+        //deadline in 10 minutes, taking 5 minutes
+        //job 0 is still busy for 20 minutes, job 1 not even started
+
+        let jobs_data_t2 = vec![
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 20,
+                }],
+                deadline: Some(200),
+                starttime: None,
+                preemtive: Some(2),
+                has_started: Some((plan.plan[0].machine,0)),
+                job_id: 0,
+            },
+
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 5,
+                }],
+                deadline: Some(120),
+                starttime: None,
+                preemtive: Some(2),
+                has_started: None,
+                job_id: 1,
+            },
+
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 0,
+                    duration: 5,
+                }],
+                deadline: Some(10),
+                starttime: None,
+                preemtive: None,
+                has_started: None,
+                job_id: 2,
+            },
+        ];
+
+        let reqs = JobRequirements {
+            jobs: jobs_data_t2.clone(),
+            sequences: vec![],
+        };
+
+        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.makespan, 34);
+
+        //The solver should just put job 1 in the end, as there is no need to put it earlier because of a deadline
+        //However, job 2 will be put earlier because of the deadline
+        //The solver puts job 0 until time t = 3, starts job 2 at time t = 5, ending at time t = 10, before the deadline
+        //it will then continue with job 3, and finish with job 0 again. the last two can of course be swapped
+        //This takes 3 (job0) + 2 (swap) + 5 (job2) +  5 (job2) + 2(swap) + 17(job0) = 34
+
+    }
+
+    #[test]
     fn test_infeasible_constraints() {
         let jobs_data1 = vec![
             JobDescription {
