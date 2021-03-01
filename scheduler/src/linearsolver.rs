@@ -709,26 +709,23 @@ mod tests {
 
     #[test]
     fn test_scenario() {
-
         //The time it takes to remove one job and load another is a system constant
         //We set this to 2 minutes
 
         //A long job of one hour comes in, with a deadline in 4 hours
         //No specific starttime, but it is preemtible
 
-        let jobs_data_t0 = vec![
-            JobDescription {
-                options: vec![JobConstraint {
-                    machine: 0,
-                    duration: 60,
-                }],
-                deadline: Some(240),
-                starttime: None,
-                preemtive: None,
-                has_started: None,
-                job_id: 0,
-            },
-        ];
+        let jobs_data_t0 = vec![JobDescription {
+            options: vec![JobConstraint {
+                machine: 0,
+                duration: 60,
+            }],
+            deadline: Some(240),
+            starttime: None,
+            preemtive: None,
+            has_started: None,
+            job_id: 0,
+        }];
         let reqs = JobRequirements {
             jobs: jobs_data_t0.clone(),
             sequences: vec![],
@@ -756,7 +753,7 @@ mod tests {
                 deadline: Some(220),
                 starttime: None,
                 preemtive: Some(2),
-                has_started: Some((plan.plan[0].machine,0)),
+                has_started: Some((plan.plan[0].machine, 0)),
                 job_id: 0,
             },
             JobDescription {
@@ -788,7 +785,6 @@ mod tests {
         //However, we need the additional time to load the new process in the end too, taking 2 minutes
         //So this is all finished when t = 40 + 5 + 2 = 47
 
-
         //Again time t2 = 20 minutes later, an urgent job comes in
         //deadline in 10 minutes, taking 5 minutes
         //job 0 is still busy for 20 minutes, job 1 not even started
@@ -802,10 +798,9 @@ mod tests {
                 deadline: Some(200),
                 starttime: None,
                 preemtive: Some(2),
-                has_started: Some((plan.plan[0].machine,0)),
+                has_started: Some((plan.plan[0].machine, 0)),
                 job_id: 0,
             },
-
             JobDescription {
                 options: vec![JobConstraint {
                     machine: 0,
@@ -817,7 +812,6 @@ mod tests {
                 has_started: None,
                 job_id: 1,
             },
-
             JobDescription {
                 options: vec![JobConstraint {
                     machine: 0,
@@ -846,7 +840,6 @@ mod tests {
         //The solver puts job 0 until time t = 3, starts job 2 at time t = 5, ending at time t = 10, before the deadline
         //it will then continue with job 3, and finish with job 0 again. the last two can of course be swapped
         //This takes 3 (job0) + 2 (swap) + 5 (job2) +  5 (job2) + 2(swap) + 17(job0) = 34
-
     }
 
     #[test]
