@@ -841,8 +841,15 @@ mod tests {
         //However, job 2 will be put earlier because of the deadline
         //This takes 2 (swap) + 5 (job2) + 2(swap) + 20 (job0) + 2(swap) + 5(job1) = 36
         //Other variations are possible, but the deadline will always be met
-        assert!(plan.plan.iter().any(|JobAllocation {machine: _, starting_time: _, end_time: k, job_id: j}| j == &2 && k <= &10));
-        }
+        assert!(plan.plan.iter().any(
+            |JobAllocation {
+                 machine: _,
+                 starting_time: _,
+                 end_time: k,
+                 job_id: j,
+             }| j == &2 && k <= &10
+        ));
+    }
 
     #[test]
     fn test_infeasible_constraints() {
