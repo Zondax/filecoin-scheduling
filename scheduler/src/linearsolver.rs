@@ -55,20 +55,40 @@ pub struct JobPlan {
 impl JobPlan {
     #[allow(clippy::suspicious_operation_groupings)]
     pub fn is_valid(&self, reqs: &JobRequirements) -> bool {
-        let n = self.plan.len();
         let allocs = self.plan.clone();
-        for i in 0..n {
-            let job_i = allocs[i].clone();
-            if job_i.end_time > self.makespan {
-                return false;
-            }
-            if reqs.jobs[i].deadline.is_some() && job_i.end_time > reqs.jobs[i].deadline.unwrap() {
+        //verify deadlines and starttimes
+        for req_i in reqs.jobs.clone() {
+            if req_i.deadline.is_some()
+                && allocs.iter().any(
+                    |JobAllocation {
+                         machine: _,
+                         starting_time: _,
+                         end_time: k,
+                         job_id: j,
+                     }| j == &req_i.job_id && k > &req_i.deadline.unwrap(),
+                )
+            {
                 return false;
             }
 
-            if reqs.jobs[i].starttime.is_some()
-                && job_i.starting_time < reqs.jobs[i].starttime.unwrap()
+            if req_i.starttime.is_some()
+                && allocs.iter().any(
+                    |JobAllocation {
+                         machine: _,
+                         starting_time: k,
+                         end_time: _,
+                         job_id: j,
+                     }| j == &req_i.job_id && k < &req_i.starttime.unwrap(),
+                )
             {
+                return false;
+            }
+        }
+        //verify one job on any machine any given time
+        let n = self.plan.len();
+        for i in 0..n {
+            let job_i = allocs[i].clone();
+            if job_i.end_time > self.makespan {
                 return false;
             }
             for (j, job_j) in allocs.iter().enumerate() {
@@ -79,7 +99,10 @@ impl JobPlan {
                 {
                     return false;
                 }
-                if reqs.sequences.iter().any(|(k, l)| &i == k && &j == l)
+                if reqs
+                    .sequences
+                    .iter()
+                    .any(|(k, l)| &job_i.job_id == k && &job_j.job_id == l)
                     && job_i.end_time > job_j.starting_time
                 {
                     return false;
@@ -708,6 +731,7 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 25);
+        assert!(plan.is_valid(&reqs));
     }
 
     #[test]
@@ -739,7 +763,7 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 60);
         assert_eq!(plan.plan[0].end_time, 60);
-
+        assert!(plan.is_valid(&reqs));
         //The solver should just allocate so the execution end time is at time=60, when the job is finished.
 
         //A new job comes in at time t1 = 20, not so urgent, taking 5 minutes. Deadline is in 2 hours
@@ -782,7 +806,7 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 47);
         assert_eq!(plan.plan[1].end_time, 47);
-
+        assert!(plan.is_valid(&reqs));
         //The solver should just put the job in the end, as there is no need to put it earlier because of a deadline
         //This would invoke a swapping cost of 2 * 2 = 4
         //However, we need the additional time to load the new process in the end too, taking 2 minutes
@@ -837,6 +861,7 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 36);
+        assert!(plan.is_valid(&reqs));
         //The solver should just put job 1 in the end, as there is no need to put it earlier because of a deadline
         //However, job 2 will be put earlier because of the deadline
         //This takes 2 (swap) + 5 (job2) + 2(swap) + 20 (job0) + 2(swap) + 5(job1) = 36
@@ -1117,8 +1142,7 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
-        //assert_eq!(plan.idletime, 0);
-        //assert!(plan.is_valid(&reqs));
+        assert!(plan.is_valid(&reqs));
 
         let reqs_with_sequence = JobRequirements {
             jobs: jobs_data.clone(),
@@ -1129,7 +1153,7 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 11);
-        //assert!(plan.is_valid(&reqs_with_sequence));
+        assert!(plan.is_valid(&reqs_with_sequence));
         // assert_eq!(
         //     plan.plan[0],
         //     JobAllocation {
@@ -1299,6 +1323,7 @@ mod tests {
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
         assert_eq!(plan.makespan, 10);
+        assert!(plan.is_valid(&reqs));
 
         let reqs_with_sequence = JobRequirements {
             jobs: jobs_data.clone(),
@@ -1307,6 +1332,7 @@ mod tests {
         let result = solve_jobschedule(&reqs_with_sequence, 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
+        assert!(plan.is_valid(&reqs_with_sequence));
         assert!(plan.plan.iter().any(
             |JobAllocation {
                  machine: _,
