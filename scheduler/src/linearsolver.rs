@@ -109,6 +109,7 @@ impl LinearSolverModel {
     /// The objective is to minimize that
     pub fn initialize(input: &[JobDescription], swapping_costs: f64) -> LinearSolverModel {
         let mut m = Model::default();
+        m.remove_initial_solution();
         let mut columns = vec![];
 
         //makespan = col[0] >= 0
