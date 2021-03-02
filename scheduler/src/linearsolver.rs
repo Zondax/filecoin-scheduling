@@ -189,6 +189,7 @@ impl LinearSolverModel {
         }
     }
 
+    ///This function adds all general constraints for one job
     pub fn add_general_job_constraints(
         &mut self,
         job: &JobDescription,
@@ -627,6 +628,7 @@ impl LinearSolverModel {
                 }
             }
         }
+        allocs.sort_by(|a, b| a.starting_time.cmp(&b.starting_time));
         let mut total_idle_time = 0;
         for k in 0..num_machines {
             total_idle_time += finishtimes[k] - processtimes[k];
@@ -835,13 +837,12 @@ mod tests {
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 36);
-
         //The solver should just put job 1 in the end, as there is no need to put it earlier because of a deadline
         //However, job 2 will be put earlier because of the deadline
-        //The solver puts job 0 until time t = 3, starts job 2 at time t = 5, ending at time t = 10, before the deadline
-        //it will then continue with job 3, and finish with job 0 again. the last two can of course be swapped
-        //This takes 3 (job0) + 2 (swap) + 5 (job2) + 2(swap) + 5 (job2) + 2(swap) + 17(job0) = 36
-    }
+        //This takes 2 (swap) + 5 (job2) + 2(swap) + 20 (job0) + 2(swap) + 5(job1) = 36
+        //Other variations are possible, but the deadline will always be met
+        assert!(plan.plan.iter().any(|JobAllocation {machine: _, starting_time: _, end_time: k, job_id: j}| j == &2 && k <= &10));
+        }
 
     #[test]
     fn test_infeasible_constraints() {
