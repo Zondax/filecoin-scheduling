@@ -25,13 +25,7 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .filter_map(|dev| {
-                if let Some(id) = dev.bus_id() {
-                    Some((id, None))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|dev| dev.bus_id().map(|id| (id, None)))
             .collect::<HashMap<_, Option<JobAllocation>>>();
         Self {
             _state_path: path.into(),

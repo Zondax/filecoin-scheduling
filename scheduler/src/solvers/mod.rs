@@ -16,15 +16,14 @@ pub struct RequirementsMap {
     pub has_started: Option<(usize, usize)>,
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<JobRequirements> for RequirementsMap {
-    fn into(self) -> JobRequirements {
-        let options = self
+impl From<RequirementsMap> for JobRequirements {
+    fn from(map: RequirementsMap) -> Self {
+        let options = map
             .resources
             .iter()
             .map(|id| JobConstraint {
                 machine: *id as usize,
-                duration: self.reqs.exec_time.as_secs() as usize,
+                duration: map.reqs.exec_time.as_secs() as usize,
             })
             .collect::<_>();
         let description = JobDescription {
@@ -35,7 +34,7 @@ impl Into<JobRequirements> for RequirementsMap {
             deadline: None,
             preemptive: None,
             has_started: None,
-            job_id: self.job_id,
+            job_id: map.job_id,
         };
 
         JobRequirements {
