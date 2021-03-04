@@ -9,8 +9,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    env: 
-      RUSTFLAGS:'--cfg dummy_devices' 
     steps:
       - name: Install opencl
         run: |
@@ -27,6 +25,8 @@ jobs:
         with:
           command: test
           args: -- --test-threads 1
+        env: 
+          RUSTFLAGS: --cfg dummy_devices
 
   fmt:
     name: Rustfmt
