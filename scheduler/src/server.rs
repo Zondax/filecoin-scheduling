@@ -1,5 +1,5 @@
-use jsonrpc_core::{BoxFuture, Result};
 use jsonrpc_derive::rpc;
+use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result};
 
 use futures::channel::oneshot;
 use futures::FutureExt;

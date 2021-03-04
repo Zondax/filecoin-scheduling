@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_imports)]
+use crate::Solver;
 use array_tool::vec::Intersect;
 use coin_cbc::{raw::Status, Col, Model, Sense, Solution};
 use common::Error;
@@ -23,8 +24,8 @@ pub struct JobAllocation {
 }
 
 /* Notes:
-* if a job is preemtive, all jobs take same time on all possible machines, so we take options[0].duration as total duration
-* if a job is preemtive, then the number inside the option denotes the number of pieces ( >= 2)
+* if a job is preemptive, all jobs take same time on all possible machines, so we take options[0].duration as total duration
+* if a job is preemptive, then the number inside the option denotes the number of pieces ( >= 2)
 * if has_started is some: the numbers inside it is the allocated machine and the minimal number of time it should continue before interupt (can be 0)
  */
 
@@ -33,7 +34,7 @@ pub struct JobDescription {
     pub options: Vec<JobConstraint>,
     pub starttime: Option<usize>,
     pub deadline: Option<usize>,
-    pub preemtive: Option<usize>,
+    pub preemptive: Option<usize>,
     pub has_started: Option<(usize, usize)>,
     pub job_id: usize,
 }
@@ -114,19 +115,34 @@ impl JobPlan {
 }
 
 #[derive(Default)]
-struct LinearSolverModel {
-    pub m: Model,
-    pub jobs_data: Vec<JobDescription>,
-    pub columns: Vec<Col>,
-    pub big_num: f64,
-    pub num_machines: usize,
-    pub indexes_sv: Vec<usize>,
-    pub indexes_ev: Vec<usize>,
+pub struct LinearSolverModel {
+    m: Model,
+    jobs_data: Vec<JobDescription>,
+    columns: Vec<Col>,
+    big_num: f64,
+    num_machines: usize,
+    indexes_sv: Vec<usize>,
+    indexes_ev: Vec<usize>,
 
-    pub swapping_costs: f64,
+    swapping_costs: f64,
 }
 
 impl LinearSolverModel {
+    pub fn new() -> LinearSolverModel {
+        let mut m = Model::default();
+        m.remove_initial_solution();
+        LinearSolverModel {
+            m,
+            jobs_data: vec![],
+            columns: vec![],
+            big_num: 0.0,
+            num_machines: 0,
+            indexes_sv: vec![],
+            indexes_ev: vec![],
+            swapping_costs: 0f64,
+        }
+    }
+
     /// This function initializes the Linear Model solver
     /// It sets the target for the makespan (the total execution time)
     /// The objective is to minimize that
@@ -155,10 +171,28 @@ impl LinearSolverModel {
         }
     }
 
+    pub fn update(&mut self, input: &[JobDescription], swapping_costs: f64) {
+        //makespan = col[0] >= 0
+        self.swapping_costs = swapping_costs;
+        self.m.remove_initial_solution();
+
+        let integer = self.m.add_integer();
+        self.columns.push(integer);
+        let row = self.m.add_row();
+
+        self.m.set_row_lower(row, 0.0);
+        self.m.set_weight(row, self.columns[0], 1.0);
+        self.m.set_obj_coeff(self.columns[0], 1.);
+        // Set objective sense.
+        self.m.set_obj_sense(Sense::Minimize);
+
+        self.jobs_data.extend_from_slice(input);
+    }
+
     /// This function calculates some upper bounds we need a lot later
     /// The number of machines available
     /// A big upper bound on all execution times we need for the linear solver later
-    pub fn find_upper_bounds(&mut self) {
+    fn find_upper_bounds(&mut self) {
         let mut num_machines: usize = 0;
         let mut big_num: f64 = 0.;
         for job in self.jobs_data.iter() {
@@ -177,7 +211,7 @@ impl LinearSolverModel {
     /// This function adds dummy starting and dummy finishing jobs
     /// We need this mostly for the solver
     /// But we can also set setup times / finish times if needed (both can be 0)
-    pub fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
+    fn add_dummy_jobs(&mut self, setup_time: usize, finish_time: usize) {
         let num_machines = self.num_machines;
         let mut index: usize = 0;
         for machine in (0..num_machines).rev() {
@@ -190,7 +224,7 @@ impl LinearSolverModel {
                     }],
                     deadline: None,
                     starttime: None,
-                    preemtive: None,
+                    preemptive: None,
                     has_started: None,
                     job_id: 100 + index,
                 },
@@ -205,7 +239,7 @@ impl LinearSolverModel {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 100 + index,
             });
@@ -214,11 +248,11 @@ impl LinearSolverModel {
     }
 
     ///This function adds all general constraints for one job
-    pub fn add_general_job_constraints(
+    fn add_general_job_constraints(
         &mut self,
         job: &JobDescription,
         dummy_start: bool,
-        preemtive: bool,
+        preemptive: bool,
     ) -> Option<usize> {
         let num_machines = self.num_machines;
         let index = self.m.num_cols() as usize;
@@ -296,7 +330,7 @@ impl LinearSolverModel {
             self.m.set_weight(row, self.columns[index_sv], 1.0);
         }
 
-        if !preemtive {
+        if !preemptive {
             let row_onetime = self.m.add_row();
             for machine in 0..num_machines {
                 let options = job.options.clone();
@@ -333,7 +367,7 @@ impl LinearSolverModel {
             }
         }
 
-        if preemtive {
+        if preemptive {
             Some(index_pv)
         } else {
             None
@@ -351,19 +385,19 @@ impl LinearSolverModel {
         let jobdata = self.jobs_data.clone();
         let mut preemt_job_index = 0;
         for (i, job) in jobdata.iter().enumerate() {
-            if job.preemtive.is_some() {
-                let num_preemtive = job.preemtive.unwrap();
+            if job.preemptive.is_some() {
+                let num_preemptive = job.preemptive.unwrap();
                 let indexes_index = self.indexes_ev.len();
 
                 let mut indexes_preemt_pv = vec![];
-                for preempt_index in 0..num_preemtive {
+                for preempt_index in 0..num_preemptive {
                     self.jobs_data.insert(
                         preemt_job_index + i + 1,
                         JobDescription {
                             options: job.options.clone(),
                             starttime: None,
                             deadline: None,
-                            preemtive: None,
+                            preemptive: None,
                             has_started: None,
                             job_id: job.job_id,
                         },
@@ -450,7 +484,7 @@ impl LinearSolverModel {
                     self.m.set_weight(row, self.columns[preemt_index], 1.0);
                 }
                 self.jobs_data.remove(preemt_job_index + i);
-                preemt_job_index += num_preemtive - 1;
+                preemt_job_index += num_preemptive - 1;
             //               assert_eq!(self.jobs_data, jobdata);
             } else {
                 let b = i < num_machines;
@@ -482,7 +516,7 @@ impl LinearSolverModel {
     /// - No more than one job at any time on a given machine
     /// - Every job has another job before it (except the dummy starting jobs)
     /// - Evey job has another job after it (except the dummy finishing jobs)
-    pub fn add_constraints_per_machine(&mut self) {
+    fn add_constraints_per_machine(&mut self) {
         //
         let num_machines = self.num_machines;
         let num_jobs = self.jobs_data.len();
@@ -601,7 +635,7 @@ impl LinearSolverModel {
     }
 
     ///This function executes the solver and checks for feasibility
-    pub fn solve_and_check(&self) -> Result<Solution, Error> {
+    fn solve_and_check(&self) -> Result<Solution, Error> {
         let sol = self.m.solve();
 
         if Status::Finished != sol.raw().status() {
@@ -620,7 +654,7 @@ impl LinearSolverModel {
     }
 
     ///This function transforms the solution into readable output (a Jobplan)
-    pub fn make_jobplan(&self, sol: Solution) -> JobPlan {
+    fn make_jobplan(&self, sol: Solution) -> JobPlan {
         let num_jobs = self.jobs_data.len();
         let num_machines = self.num_machines;
         let indexes_sv = &self.indexes_sv;
@@ -667,29 +701,31 @@ impl LinearSolverModel {
     }
 }
 
-pub fn solve_jobschedule(
-    input: &JobRequirements,
-    setup_time: usize,
-    finish_time: usize,
-    swapping_costs: Option<f64>,
-) -> Result<JobPlan, Error> {
-    let costs = swapping_costs.unwrap_or(0.0);
-    let mut model: LinearSolverModel = LinearSolverModel::initialize(&input.jobs, costs);
+impl Solver for LinearSolverModel {
+    fn solve_job_schedule(
+        &mut self,
+        input: JobRequirements,
+        setup_time: usize,
+        finish_time: usize,
+        swapping_costs: Option<f64>,
+    ) -> Result<JobPlan, Error> {
+        self.update(&input.jobs, swapping_costs.unwrap_or(0f64));
 
-    model.find_upper_bounds();
+        self.find_upper_bounds();
 
-    model.add_dummy_jobs(setup_time, finish_time);
+        self.add_dummy_jobs(setup_time, finish_time);
 
-    model.add_constraints_per_job();
+        self.add_constraints_per_job();
 
-    model.add_sequential_constraints(&input.sequences);
+        self.add_sequential_constraints(&input.sequences);
 
-    model.add_constraints_per_machine();
+        self.add_constraints_per_machine();
 
-    // Solve the problem. Returns the solution if ok
-    let sol = model.solve_and_check()?;
+        // Solve the problem. Returns the solution if ok
+        let sol = self.solve_and_check()?;
 
-    Ok(model.make_jobplan(sol))
+        Ok(self.make_jobplan(sol))
+    }
 }
 
 #[cfg(test)]
@@ -697,7 +733,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_preemtive_jobs() {
+    fn test_preemptive_jobs() {
         let jobs_data1 = vec![
             JobDescription {
                 options: vec![JobConstraint {
@@ -706,7 +742,7 @@ mod tests {
                 }],
                 deadline: Some(8),
                 starttime: Some(5),
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -717,7 +753,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: Some(3),
+                preemptive: Some(3),
                 has_started: Some((0, 2)),
                 job_id: 1,
             },
@@ -727,7 +763,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, Some(1.0));
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(1.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 25);
@@ -749,7 +785,7 @@ mod tests {
             }],
             deadline: Some(240),
             starttime: None,
-            preemtive: Some(2),
+            preemptive: Some(2),
             has_started: None,
             job_id: 0,
         }];
@@ -758,7 +794,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 60);
@@ -779,7 +815,7 @@ mod tests {
                 }],
                 deadline: Some(220),
                 starttime: None,
-                preemtive: Some(2),
+                preemptive: Some(2),
                 has_started: Some((0, 0)),
                 job_id: 0,
             },
@@ -790,7 +826,7 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -801,7 +837,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 47);
@@ -824,7 +860,7 @@ mod tests {
                 }],
                 deadline: Some(200),
                 starttime: None,
-                preemtive: Some(2),
+                preemptive: Some(2),
                 has_started: Some((0, 0)),
                 job_id: 0,
             },
@@ -835,7 +871,7 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemtive: Some(2),
+                preemptive: Some(2),
                 has_started: None,
                 job_id: 1,
             },
@@ -846,7 +882,7 @@ mod tests {
                 }],
                 deadline: Some(10),
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 2,
             },
@@ -857,7 +893,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, Some(2.0));
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 36);
@@ -886,7 +922,7 @@ mod tests {
                 }],
                 deadline: Some(2),
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -897,7 +933,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -907,7 +943,8 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        //let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs, 0, 0, None);
         assert!(!result.is_ok()); //deadline cannot be shorter than duration
 
         let jobs_data2 = vec![
@@ -918,7 +955,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -929,7 +966,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -939,7 +976,7 @@ mod tests {
             sequences: vec![(0, 1), (1, 0)],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
         assert!(!result.is_ok()); //cannot handle i before j AND j before i simultaneously
 
         let jobs_data3 = vec![
@@ -950,7 +987,7 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -961,7 +998,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -971,7 +1008,7 @@ mod tests {
             sequences: vec![(1, 0)],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
         assert!(!result.is_ok()); //cannot meet deadline i if i processed after j and duration process j > deadline i
 
         let jobs_data4 = vec![
@@ -982,7 +1019,7 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -993,7 +1030,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -1003,7 +1040,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 3, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs, 3, 0, None);
         assert!(!result.is_ok()); //cannot meet deadline i if setup_time >= deadline
 
         let jobs_data5 = vec![
@@ -1014,7 +1051,7 @@ mod tests {
                 }],
                 deadline: Some(3),
                 starttime: Some(1),
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -1025,7 +1062,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -1035,7 +1072,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs, 0, 0, None);
         assert!(!result.is_ok()); //cannot meet deadline starting time is too late
     }
 
@@ -1049,7 +1086,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -1060,7 +1097,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -1071,7 +1108,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 2,
             },
@@ -1082,7 +1119,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 3,
             },
@@ -1093,7 +1130,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 4,
             },
@@ -1104,7 +1141,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 5,
             },
@@ -1115,7 +1152,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 6,
             },
@@ -1126,7 +1163,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 7,
             },
@@ -1137,7 +1174,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -1148,7 +1185,8 @@ mod tests {
             jobs: jobs_data.clone(),
             sequences: vec![(0, 1), (1, 2), (3, 4), (4, 5), (6, 7)],
         };
-        let result = solve_jobschedule(&reqs_with_sequence, 0, 0, None);
+        let result =
+            LinearSolverModel::new().solve_job_schedule(reqs_with_sequence.clone(), 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -1230,7 +1268,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 0,
             },
@@ -1241,7 +1279,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: Some(5),
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 1,
             },
@@ -1252,7 +1290,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 2,
             },
@@ -1263,7 +1301,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 3,
             },
@@ -1274,7 +1312,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 4,
             },
@@ -1285,7 +1323,7 @@ mod tests {
                 }],
                 deadline: Some(4), //this should move this job to the start
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 5,
             },
@@ -1296,7 +1334,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 6,
             },
@@ -1307,7 +1345,7 @@ mod tests {
                 }],
                 deadline: None,
                 starttime: None,
-                preemtive: None,
+                preemptive: None,
                 has_started: None,
                 job_id: 7,
             },
@@ -1318,7 +1356,7 @@ mod tests {
             sequences: vec![],
         };
 
-        let result = solve_jobschedule(&reqs, 0, 0, None);
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.plan.len(), jobs_data.len());
@@ -1329,7 +1367,8 @@ mod tests {
             jobs: jobs_data.clone(),
             sequences: vec![(5, 6), (6, 7), (7, 0)],
         };
-        let result = solve_jobschedule(&reqs_with_sequence, 0, 0, None);
+        let result =
+            LinearSolverModel::new().solve_job_schedule(reqs_with_sequence.clone(), 0, 0, None);
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert!(plan.is_valid(&reqs_with_sequence));

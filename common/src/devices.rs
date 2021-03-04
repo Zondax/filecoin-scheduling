@@ -1,8 +1,14 @@
 use rust_gpu_tools::opencl;
 
+#[cfg(not(dummy_devices))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Device(&'static opencl::Device);
 
+#[cfg(dummy_devices)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Device(u32);
+
+#[cfg(not(dummy_devices))]
 impl Device {
     // TODO: Using the opencl address to the internal cl_device_id which is cast to an usize
     pub fn device_id(&self) -> usize {
@@ -26,6 +32,30 @@ impl Device {
     }
 }
 
+#[cfg(dummy_devices)]
+impl Device {
+    // TODO: Using the opencl address to the internal cl_device_id which is cast to an usize
+    pub fn device_id(&self) -> usize {
+        self.0 as usize
+    }
+
+    pub fn name(&self) -> String {
+        format!("dummy_dev{}", self.0)
+    }
+
+    pub fn memory(&self) -> u64 {
+        0
+    }
+
+    pub fn brand(&self) -> opencl::Brand {
+        unimplemented!()
+    }
+
+    pub fn bus_id(&self) -> Option<opencl::BusId> {
+        Some(self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct Devices {
     gpu_devices: Vec<Device>,
@@ -42,9 +72,12 @@ impl Devices {
 ///
 /// It includes the GPUs and the number of logical CPUs
 pub fn list_devices() -> Devices {
+    #[cfg(not(dummy_devices))]
     let gpu_devices = opencl::Device::all_iter()
         .map(Device)
         .collect::<Vec<Device>>();
+    #[cfg(dummy_devices)]
+    let gpu_devices = (0..2).map(|i| Device(i)).collect::<Vec<Device>>();
     let num_cpus = num_cpus::get();
     Devices {
         gpu_devices,

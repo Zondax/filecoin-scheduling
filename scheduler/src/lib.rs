@@ -1,24 +1,26 @@
 mod handler;
-mod linearsolver;
 mod requests;
 mod scheduler;
 mod server;
+mod solver;
+mod solvers;
 
 pub use handler::Handler;
 pub use server::RpcMethods;
 pub use server::Server;
+pub use solver::Solver;
 
 use std::error::Error;
 use std::net::SocketAddr;
 
-use jsonrpc_core::IoHandler;
-
+use jsonrpc_http_server::jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
 
 pub const STATE_FILE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.scheduler_state");
 
 /// Starts a json-rpc server listening to *addr*
+#[tracing::instrument(level = "info")]
 pub fn run_scheduler(address: &str) -> Result<(), Box<dyn Error>> {
     let handler = scheduler::Scheduler::new(STATE_FILE_PATH);
     let server = server::Server::new(handler);
@@ -33,6 +35,7 @@ pub fn run_scheduler(address: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[tracing::instrument(level = "info")]
 pub fn spawn_scheduler_with_handler(address: &str) -> Result<CloseHandle, Box<dyn Error>> {
     let handler = scheduler::Scheduler::new(STATE_FILE_PATH);
     let server = server::Server::new(handler);
@@ -49,16 +52,6 @@ pub fn spawn_scheduler_with_handler(address: &str) -> Result<CloseHandle, Box<dy
     });
 
     Ok(close_handle)
-}
-
-pub fn list_resources() -> Vec<String> {
-    // This is a dummy implementation that has already a formal implementation on another related
-    // project
-    let gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    gpu_ids
-        .iter()
-        .map(|id| format!("GPU{}", id))
-        .collect::<Vec<String>>()
 }
 
 #[cfg(test)]
