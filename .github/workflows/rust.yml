@@ -9,6 +9,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env: 
+      RUSTFLAGS:'--cfg dummy_devices' 
     steps:
       - name: Install opencl
         run: |

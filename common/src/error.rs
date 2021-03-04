@@ -11,6 +11,7 @@ pub enum Error {
     ResourceReqEmpty,
     UnknownResource(u32),
     Timeout,
+    Solver(String),
     Other(String),
 }
 
@@ -33,6 +34,9 @@ impl fmt::Display for Error {
             }
             Error::ClientTask(ref descripcion) => {
                 write!(f, "Error calling client's task function: {}", descripcion)
+            }
+            Error::Solver(ref e) => {
+                write!(f, "A solver error: {}", e)
             }
         }
     }

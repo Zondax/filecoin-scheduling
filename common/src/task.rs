@@ -38,6 +38,14 @@ impl Deadline {
     pub fn new(start: DateTime<Utc>, finish: DateTime<Utc>) -> Self {
         Self(start, finish)
     }
+
+    pub fn start_timestamp_secs(&self) -> i64 {
+        self.0.timestamp()
+    }
+
+    pub fn end_timestamp_secs(&self) -> i64 {
+        self.1.timestamp()
+    }
 }
 
 /// Contains all the requirements and timing description for
