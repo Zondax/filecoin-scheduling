@@ -34,12 +34,14 @@ impl From<RequirementsMap> for JobRequirements {
             deadline: None,
             preemptive: None,
             has_started: None,
+            is_support: false,
             job_id: map.job_id,
         };
 
         JobRequirements {
             jobs: vec![description],
             sequences: vec![],
+            supports: vec![],
         }
     }
 }

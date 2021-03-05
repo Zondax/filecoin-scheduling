@@ -15,7 +15,7 @@ pub struct JobConstraint {
     pub duration: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq)]
 pub struct JobAllocation {
     pub machine: usize,
     pub starting_time: usize,
@@ -25,24 +25,26 @@ pub struct JobAllocation {
 
 /* Notes:
 * if a job is preemptive, all jobs take same time on all possible machines, so we take options[0].duration as total duration
-* if a job is preemptive, then the number inside the option denotes the number of pieces ( >= 2)
+* if a job is preemptive, then the number inside the option denotes the number of pieces ( >= 2) and the bool denotes stickyness
 * if has_started is some: the numbers inside it is the allocated machine and the minimal number of time it should continue before interupt (can be 0)
  */
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq)]
 pub struct JobDescription {
     pub options: Vec<JobConstraint>,
     pub starttime: Option<usize>,
     pub deadline: Option<usize>,
-    pub preemptive: Option<usize>,
+    pub preemptive: Option<(usize, bool)>,
     pub has_started: Option<(usize, usize)>,
     pub job_id: usize,
+    pub is_support: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobRequirements {
     pub jobs: Vec<JobDescription>,
     pub sequences: Vec<(JobIndex, JobIndex)>,
+    pub supports: Vec<(JobIndex, JobIndex)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -227,6 +229,7 @@ impl LinearSolverModel {
                     preemptive: None,
                     has_started: None,
                     job_id: 100 + index,
+                    is_support: false,
                 },
             );
             index += 1;
@@ -242,6 +245,7 @@ impl LinearSolverModel {
                 preemptive: None,
                 has_started: None,
                 job_id: 100 + index,
+                is_support: false,
             });
             index += 1;
         }
@@ -252,7 +256,6 @@ impl LinearSolverModel {
         &mut self,
         job: &JobDescription,
         dummy_start: bool,
-        preemptive: bool,
     ) -> Option<usize> {
         let num_machines = self.num_machines;
         let index = self.m.num_cols() as usize;
@@ -267,6 +270,8 @@ impl LinearSolverModel {
         self.columns.push(self.m.add_integer()); //e_v
         let index_pv = self.m.num_cols() as usize;
         self.columns.push(self.m.add_integer()); //p_v
+
+        let preemptive = job.preemptive.is_some();
 
         let row_onemachine = self.m.add_row();
 
@@ -330,7 +335,7 @@ impl LinearSolverModel {
             self.m.set_weight(row, self.columns[index_sv], 1.0);
         }
 
-        if !preemptive {
+        if !preemptive && !job.is_support {
             let row_onetime = self.m.add_row();
             for machine in 0..num_machines {
                 let options = job.options.clone();
@@ -386,10 +391,11 @@ impl LinearSolverModel {
         let mut preemt_job_index = 0;
         for (i, job) in jobdata.iter().enumerate() {
             if job.preemptive.is_some() {
-                let num_preemptive = job.preemptive.unwrap();
+                let (num_preemptive, is_sticky) = job.preemptive.unwrap();
                 let indexes_index = self.indexes_ev.len();
 
                 let mut indexes_preemt_pv = vec![];
+                let mut prev_index = self.m.num_cols() as usize;
                 for preempt_index in 0..num_preemptive {
                     self.jobs_data.insert(
                         preemt_job_index + i + 1,
@@ -397,13 +403,14 @@ impl LinearSolverModel {
                             options: job.options.clone(),
                             starttime: None,
                             deadline: None,
-                            preemptive: None,
+                            preemptive: job.preemptive,
                             has_started: None,
                             job_id: job.job_id,
+                            is_support: false,
                         },
                     );
                     let index = self.m.num_cols() as usize;
-                    let index_pv = self.add_general_job_constraints(job, false, true).unwrap();
+                    let index_pv = self.add_general_job_constraints(job, false).unwrap();
                     indexes_preemt_pv.push(index_pv);
                     let mut row;
                     if preempt_index == 0 && job.has_started.is_some() {
@@ -475,7 +482,18 @@ impl LinearSolverModel {
                             self.columns[self.indexes_sv[indexes_index + preempt_index]],
                             -1.0,
                         );
+
+                        if is_sticky {
+                            for machine in 0..num_machines {
+                                let row = self.m.add_row();
+                                self.m
+                                    .set_weight(row, self.columns[prev_index + machine], 1.0);
+                                self.m.set_weight(row, self.columns[index + machine], -1.0);
+                                self.m.set_row_equal(row, 0.0);
+                            }
+                        }
                     }
+                    prev_index = index;
                 }
                 //p1 + p2 + ... = p
                 let row = self.m.add_row();
@@ -488,7 +506,7 @@ impl LinearSolverModel {
             //               assert_eq!(self.jobs_data, jobdata);
             } else {
                 let b = i < num_machines;
-                self.add_general_job_constraints(job, b, false);
+                self.add_general_job_constraints(job, b);
             }
         }
     }
@@ -497,17 +515,37 @@ impl LinearSolverModel {
     /// On input of a vector of indices (a,b), we constraint the model to process a before b
     /// Meaning: ending time of a <= starting time of b
     fn add_sequential_constraints(&mut self, sequences: &[(JobIndex, JobIndex)]) {
-        let num_machines = self.num_machines;
         let columns = &self.columns;
         for (i, j) in sequences.iter() {
+            let pos_i = self.jobs_data.iter().rposition(|x| &x.job_id == i).unwrap();
+            let pos_j = self.jobs_data.iter().position(|x| &x.job_id == j).unwrap();
+
             let row = self.m.add_row();
             self.m.set_row_upper(row, 0.0);
-            let index_i = num_machines + (*i);
-            let index_j = num_machines + (*j);
+            self.m.set_weight(row, columns[self.indexes_ev[pos_i]], 1.0);
             self.m
-                .set_weight(row, columns[self.indexes_ev[index_i]], 1.0);
+                .set_weight(row, columns[self.indexes_sv[pos_j]], -1.0);
+        }
+    }
+
+    fn add_support_constraints(&mut self, supports: &[(JobIndex, JobIndex)]) {
+        let columns = &self.columns;
+        for (i, j) in supports.iter() {
+            let pos_j = self.jobs_data.iter().position(|x| &x.job_id == j).unwrap();
+            let pos_i_first = self.jobs_data.iter().position(|x| &x.job_id == i).unwrap();
+            let pos_i_last = self.jobs_data.iter().rposition(|x| &x.job_id == i).unwrap();
+
+            let row = self.m.add_row();
+            self.m.set_row_equal(row, 0.0);
+            self.m.set_weight(row, columns[self.indexes_sv[pos_j]], 1.0);
             self.m
-                .set_weight(row, columns[self.indexes_sv[index_j]], -1.0);
+                .set_weight(row, columns[self.indexes_sv[pos_i_first]], -1.0);
+
+            let row = self.m.add_row();
+            self.m.set_row_equal(row, 0.0);
+            self.m.set_weight(row, columns[self.indexes_ev[pos_j]], 1.0);
+            self.m
+                .set_weight(row, columns[self.indexes_ev[pos_i_last]], -1.0);
         }
     }
 
@@ -719,6 +757,8 @@ impl Solver for LinearSolverModel {
 
         self.add_sequential_constraints(&input.sequences);
 
+        self.add_support_constraints(&input.supports);
+
         self.add_constraints_per_machine();
 
         // Solve the problem. Returns the solution if ok
@@ -738,36 +778,77 @@ mod tests {
             JobDescription {
                 options: vec![JobConstraint {
                     machine: 0,
-                    duration: 3,
+                    duration: 5,
                 }],
-                deadline: Some(8),
+                deadline: Some(10),
                 starttime: Some(5),
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
+            },
+            JobDescription {
+                options: vec![
+                    JobConstraint {
+                        machine: 0,
+                        duration: 15,
+                    },
+                    JobConstraint {
+                        machine: 1,
+                        duration: 15,
+                    },
+                ],
+                deadline: Some(25),
+                starttime: None,
+                preemptive: Some((3, true)),
+                has_started: Some((0, 0)),
+                job_id: 1,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
                     machine: 0,
-                    duration: 20,
+                    duration: 5,
+                }],
+                deadline: Some(20),
+                starttime: None,
+                preemptive: None,
+                has_started: None,
+                job_id: 2,
+                is_support: false,
+            },
+            JobDescription {
+                options: vec![JobConstraint {
+                    machine: 4,
+                    duration: 5,
                 }],
                 deadline: None,
                 starttime: None,
-                preemptive: Some(3),
-                has_started: Some((0, 2)),
-                job_id: 1,
+                preemptive: None,
+                has_started: None,
+                job_id: 3,
+                is_support: true,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data1.clone(),
             sequences: vec![],
+            supports: vec![(1, 3)],
         };
 
-        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(1.0));
+        let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(0.0));
         assert!(result.is_ok());
         let plan = result.unwrap();
         assert_eq!(plan.makespan, 25);
         assert!(plan.is_valid(&reqs));
+        assert!(plan.plan.iter().any(
+            |JobAllocation {
+                 machine: m,
+                 starting_time: s,
+                 end_time: e,
+                 job_id: j,
+             }| m == &4 && s == &0 && e == &25 && j == &3
+        ));
     }
 
     #[test]
@@ -785,13 +866,15 @@ mod tests {
             }],
             deadline: Some(240),
             starttime: None,
-            preemptive: Some(2),
+            preemptive: Some((2, true)),
             has_started: None,
             job_id: 0,
+            is_support: false,
         }];
         let reqs = JobRequirements {
             jobs: jobs_data_t0.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
@@ -815,9 +898,10 @@ mod tests {
                 }],
                 deadline: Some(220),
                 starttime: None,
-                preemptive: Some(2),
+                preemptive: Some((2, true)),
                 has_started: Some((0, 0)),
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -829,12 +913,14 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
 
         let reqs = JobRequirements {
             jobs: jobs_data_t1.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
@@ -860,9 +946,10 @@ mod tests {
                 }],
                 deadline: Some(200),
                 starttime: None,
-                preemptive: Some(2),
+                preemptive: Some((2, true)),
                 has_started: Some((0, 0)),
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -871,9 +958,10 @@ mod tests {
                 }],
                 deadline: Some(120),
                 starttime: None,
-                preemptive: Some(2),
+                preemptive: Some((2, true)),
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -885,12 +973,14 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 2,
+                is_support: false,
             },
         ];
 
         let reqs = JobRequirements {
             jobs: jobs_data_t2.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, Some(2.0));
@@ -925,6 +1015,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -936,11 +1027,13 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data1.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         //let result = solve_jobschedule(&reqs, 0, 0, None);
@@ -958,6 +1051,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -969,11 +1063,13 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data2.clone(),
             sequences: vec![(0, 1), (1, 0)],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
@@ -990,6 +1086,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1001,11 +1098,13 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data3.clone(),
             sequences: vec![(1, 0)],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
@@ -1022,6 +1121,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1033,11 +1133,13 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data4.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs, 3, 0, None);
@@ -1054,6 +1156,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1065,11 +1168,13 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
         ];
         let reqs = JobRequirements {
             jobs: jobs_data5.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs, 0, 0, None);
@@ -1089,6 +1194,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1100,6 +1206,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1111,6 +1218,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 2,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1122,6 +1230,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 3,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1133,6 +1242,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 4,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1144,6 +1254,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 5,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1155,6 +1266,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 6,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1166,12 +1278,14 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 7,
+                is_support: false,
             },
         ];
 
         let reqs = JobRequirements {
             jobs: jobs_data.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
@@ -1184,6 +1298,7 @@ mod tests {
         let reqs_with_sequence = JobRequirements {
             jobs: jobs_data.clone(),
             sequences: vec![(0, 1), (1, 2), (3, 4), (4, 5), (6, 7)],
+            supports: vec![],
         };
         let result =
             LinearSolverModel::new().solve_job_schedule(reqs_with_sequence.clone(), 0, 0, None);
@@ -1271,6 +1386,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 0,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1282,6 +1398,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 1,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1293,6 +1410,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 2,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1304,6 +1422,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 3,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1315,6 +1434,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 4,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1326,6 +1446,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 5,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1337,6 +1458,7 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 6,
+                is_support: false,
             },
             JobDescription {
                 options: vec![JobConstraint {
@@ -1348,12 +1470,14 @@ mod tests {
                 preemptive: None,
                 has_started: None,
                 job_id: 7,
+                is_support: false,
             },
         ];
 
         let reqs = JobRequirements {
             jobs: jobs_data.clone(),
             sequences: vec![],
+            supports: vec![],
         };
 
         let result = LinearSolverModel::new().solve_job_schedule(reqs.clone(), 0, 0, None);
@@ -1366,6 +1490,7 @@ mod tests {
         let reqs_with_sequence = JobRequirements {
             jobs: jobs_data.clone(),
             sequences: vec![(5, 6), (6, 7), (7, 0)],
+            supports: vec![],
         };
         let result =
             LinearSolverModel::new().solve_job_schedule(reqs_with_sequence.clone(), 0, 0, None);
