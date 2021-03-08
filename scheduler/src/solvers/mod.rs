@@ -1,6 +1,7 @@
 mod linearsolver;
 use crate::solver::Solver;
 use common::{Config, Error, TaskRequirements};
+#[cfg(feature = "mip_solver")]
 pub use linearsolver::{
     JobAllocation, JobConstraint, JobDescription, JobPlan, JobRequirements, LinearSolverModel,
 };
@@ -46,5 +47,6 @@ impl From<RequirementsMap> for JobRequirements {
 
 // Remove later this option, Config will have a default value, use it
 pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
+    #[cfg(feature = "mip_solver")]
     Ok(Box::new(LinearSolverModel::new()))
 }

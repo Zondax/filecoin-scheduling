@@ -13,10 +13,15 @@ jsonrpc-core = "17.0.0"
 jsonrpc-derive = "17.0.0"
 jsonrpc-http-server = "17.0.0"
 serde = { version = "1.0.120", features = ["serde_derive"] }
-coin_cbc = "0.1.3"
+coin_cbc = {version = "0.1.3", optional = true}
 itertools = "0.10.0"
 array_tool = "1.0.3"
 more-asserts = "0.2.1"
 tokio = "1.2.0"
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
+
+[features]
+default = ["coin_cbc", "mip_solver"]
+mip_solver = []
+greedy_solver = []
