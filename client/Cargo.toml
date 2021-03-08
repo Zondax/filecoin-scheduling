@@ -28,3 +28,8 @@ ipmpsc = "0.5.0"
 rand = "0.8.2"
 tracing-appender = "0.1.2"
 tracing-subscriber = "0.2.15"
+
+[features]
+default = ["mip_solver"]
+mip_solver = ["scheduler/mip_solver"]
+greedy_solver = ["scheduler/greedy_solver"]
