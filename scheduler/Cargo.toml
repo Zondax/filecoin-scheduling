@@ -20,8 +20,9 @@ more-asserts = "0.2.1"
 tokio = "1.2.0"
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
+priority-queue = "1.0.5"
 
 [features]
-default = ["coin_cbc", "mip_solver"]
-mip_solver = []
+default = ["greedy_solver"]
+mip_solver = ["coin_cbc"]
 greedy_solver = []

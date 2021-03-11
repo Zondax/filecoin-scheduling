@@ -13,7 +13,7 @@ pub use error::Error;
 //pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use devices::{list_devices, Device, Devices};
 pub use requests::RequestMethod;
-pub use resource::{ResourceAlloc, ResourceReq, ResourceType};
+pub use resource::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 pub use task::{Deadline, Task, TaskRequirements, TaskResult};
 
 #[cfg(test)]

@@ -6,17 +6,17 @@ pub trait RpcClient {
         &self,
         client: ClientToken,
         task: TaskRequirements,
-    ) -> Result<Option<Vec<ResourceAlloc>>, Error>;
+    ) -> Result<Option<ResourceAlloc>, Error>;
 
-    async fn wait_preemptive(&self, task: crate::ClientToken, t: std::time::Duration) -> bool;
+    async fn wait_preemptive(&self, client: ClientToken) -> bool;
 
     async fn check_server(&self) -> Result<(), Error>;
 
     async fn list_allocations(&self) -> Vec<u32>;
 
-    async fn release(&self, alloc: Vec<ResourceAlloc>) -> Result<(), Error>;
+    async fn release(&self, client: ClientToken) -> Result<(), Error>;
 
-    async fn release_preemptive(&self, alloc: Vec<ResourceAlloc>) -> Result<(), Error>;
+    async fn release_preemptive(&self, client: ClientToken) -> Result<(), Error>;
 }
 
 #[jsonrpc_client::implement(RpcClient)]

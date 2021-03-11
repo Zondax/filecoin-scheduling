@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceAlloc, ResourceReq, ResourceType};
+use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub type InitFuncType = Option<Box<dyn Fn(&[ResourceAlloc]) -> Result<()>>>;
-pub type EndFuncType = Option<Box<dyn Fn(&[ResourceAlloc]) -> Result<()>>>;
+pub type InitFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
+pub type EndFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
 
 /// Helper type to describe the different returns types of a task
 pub enum TaskResult<T> {
@@ -59,13 +59,35 @@ pub struct TaskRequirements {
     pub deadline: Deadline,
 }
 
+impl TaskRequirements {
+    /// Returns the minimal amount of memory required
+    pub fn minimal_resource_usage(&self) -> u64 {
+        let mut mem_resource_list = self
+            .req
+            .iter()
+            .filter_map(|req| {
+                if let ResourceType::Gpu(ResourceMemory::Mem(value)) = req.resource {
+                    return Some(value * (req.quantity as u64));
+                }
+                None
+            })
+            .collect::<Vec<u64>>();
+        if !mem_resource_list.is_empty() {
+            mem_resource_list.sort_unstable();
+            mem_resource_list[0]
+        } else {
+            0
+        }
+    }
+}
+
 /// Contains the functions for initializacion, finalization and main task function
 /// along with the requirements for this task to be executed and scheduled
 pub struct Task<T> {
     //#[serde(skip_serializing)]
     pub init: InitFuncType,
     pub end: EndFuncType,
-    pub task: Box<dyn Fn(&[ResourceAlloc]) -> TaskResult<T>>,
+    pub task: Box<dyn Fn(&ResourceAlloc) -> TaskResult<T>>,
     pub task_req: TaskRequirements,
 }
 
@@ -75,7 +97,7 @@ impl<T> Task<T> {
     // It makes lesser handy the construction of this type. may be we can try a TaskBuilder
     // approach
     pub fn new(
-        func: impl Fn(&[ResourceAlloc]) -> TaskResult<T> + 'static,
+        func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static,
         init: InitFuncType,
         end: EndFuncType,
         task_req: TaskRequirements,
@@ -88,11 +110,11 @@ impl<T> Task<T> {
         }
     }
 
-    pub fn default(func: impl Fn(&[ResourceAlloc]) -> TaskResult<T> + 'static) -> Self {
+    pub fn default(func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
         let req = vec![ResourceReq {
-            resource: ResourceType::Gpu,
+            resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
-            preemptible: false,
+            preemptible: true,
         }];
         let time_per_iter = Duration::from_millis(500);
         let exec_time = Duration::from_millis(3000);
