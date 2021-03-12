@@ -17,7 +17,7 @@ fn test_schedule() {
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 
     let mut joiner = vec![];
-    for i in 0..3 {
+    for i in 0..4 {
         joiner.push(std::thread::spawn(move || {
             let client = register(i, i as u64).unwrap();
             let func = move |_alloc: &ResourceAlloc| -> TaskResult<String> {
@@ -25,10 +25,20 @@ fn test_schedule() {
                 TaskResult::Done(Ok(format!("Task {} done!!!", i)))
             };
             let mut task = Task::default(func);
-            let end = Utc::now() + chrono::Duration::seconds((3 + i) as _);
-            task.task_req.estimations.deadline.1 = end;
-            schedule_one_of(client, task, Duration::from_secs(15))
+
+            let end;
+            if i == 0 {
+                end = Utc::now() + chrono::Duration::seconds(60000000 as _);
+                task.task_req.exec_time = Duration::from_secs(60);
+                task.task_req.time_per_iter = Duration::from_secs(60);
+            } else {
+                end = Utc::now() + chrono::Duration::seconds(20 as _);
+                task.task_req.exec_time = Duration::from_millis(5000);
+            }
+            task.task_req.deadline.1 = end;
+            schedule_one_of(client, task, Duration::from_secs(3))
         }));
+        std::thread::sleep(Duration::from_secs(1));
     }
     for j in joiner.into_iter() {
         let res = j.join().unwrap();

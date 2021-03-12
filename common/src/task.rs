@@ -129,6 +129,7 @@ impl<T> Task<T> {
         let start = Utc::now();
         let end = start + chrono::Duration::seconds(3);
         let deadline = Deadline::new(start, end);
+        let num_of_iter = 1;
 
         let task_requirements = TaskRequirements {
             req,
