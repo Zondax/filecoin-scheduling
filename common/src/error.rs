@@ -21,11 +21,6 @@ impl fmt::Display for Error {
             Error::GlobalMutexError(ref descripcion) => {
                 write!(f, "Global Mutex error: {}", descripcion)
             }
-            Error::RpcError(ref e) => write!(f, "Rpc error: {}", e),
-            Error::ResourceReqEmpty => write!(f, "Requirements for task is empty"),
-            Error::UnknownResource(r) => write!(f, "Resource {} not available", r),
-            Error::Timeout => write!(f, "Timeout triggered before receiving a response "),
-            Error::Other(ref descripcion) => write!(f, "Error: {}", descripcion),
             Error::ClientInit(ref descripcion) => {
                 write!(f, "Error calling client's init function: {}", descripcion)
             }
@@ -35,9 +30,14 @@ impl fmt::Display for Error {
             Error::ClientTask(ref descripcion) => {
                 write!(f, "Error calling client's task function: {}", descripcion)
             }
+            Error::RpcError(ref e) => write!(f, "Rpc error: {}", e),
+            Error::ResourceReqEmpty => write!(f, "Requirements for task is empty"),
+            Error::UnknownResource(r) => write!(f, "Resource {} not available", r),
+            Error::Timeout => write!(f, "Timeout triggered before receiving a response "),
             Error::Solver(ref e) => {
                 write!(f, "A solver error: {}", e)
             }
+            Error::Other(ref descripcion) => write!(f, "Error: {}", descripcion),
         }
     }
 }

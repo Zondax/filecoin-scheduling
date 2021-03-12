@@ -13,3 +13,4 @@ num_cpus = "1.13.0"
 once_cell = "1.5.2"
 rust-gpu-tools = "0.3.0"
 serde = { version = "1.0.118", features = ["serde_derive"] }
+tracing = "0.1.25"

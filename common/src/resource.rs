@@ -1,19 +1,27 @@
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ResourceType {
-    Gpu,
     Cpu,
-    GpuMemory(u64),
+    // Use a Gpu and Define how much memory we want.
+    Gpu(ResourceMemory),
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ResourceMemory {
+    // Wants to use all the resource's memory
+    All,
+    // Indicates the amount of memory to use
+    Mem(u64),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceReq {
     pub resource: ResourceType,
     pub quantity: usize,
     pub preemptible: bool,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceAlloc {
-    pub resource: ResourceReq,
-    pub resource_id: u32,
+    pub requirement: ResourceReq,
+    pub resource_id: Vec<u32>,
 }

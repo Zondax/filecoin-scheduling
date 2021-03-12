@@ -6,8 +6,8 @@ mod global_mutex;
 pub mod rpc_client;
 
 pub use common::{
-    list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc, ResourceReq,
-    Task, TaskRequirements, TaskResult,
+    list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
+    ResourceMemory, ResourceReq, Task, TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -62,13 +62,14 @@ pub fn schedule_one_of<T: Debug + Clone>(
 
     rt.block_on(async {
         let allocation = if client.check_server().await.is_ok() {
+            tracing::info!("Scheduler running ");
             wait_allocation(&client, task.task_req.clone(), timeout).await
         } else {
             launch_scheduler_process(address)?;
             std::thread::sleep(Duration::from_millis(500));
             wait_allocation(&client, task.task_req.clone(), timeout).await
         };
-        // TODO: implement the next parts of this function
+
         match allocation {
             Err(e) => Err(e),
             Ok(alloc) => {
@@ -78,12 +79,12 @@ pub fn schedule_one_of<T: Debug + Clone>(
                         res.get_result()
                             .expect("TaskResult variant is unreachable")
                             .map_err(|e| ClientError::ClientTask(e.to_string()))
-                    })?;
-                release(&client, alloc).await?;
+                    });
+                release(&client).await?;
                 result
             }
         }
-    })
+    })?
 }
 
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
@@ -91,7 +92,7 @@ async fn execute_task<T>(
     client: &Client,
     timeout: Duration,
     task: Task<T>,
-    alloc: &[ResourceAlloc],
+    alloc: &ResourceAlloc,
 ) -> Result<TaskResult<T>, ClientError> {
     let mut result = TaskResult::Continue;
     // Initialize user resources
@@ -99,13 +100,15 @@ async fn execute_task<T>(
         init(alloc).map_err(|e| ClientError::ClientInit(e.to_string()))?;
     }
     while result.is_continue() {
-        while wait_preemptive(client, timeout).await? {}
+        while wait_preemptive(client, timeout).await? {
+            tokio::time::sleep(Duration::from_secs(1)).await
+        }
         result = (task.task)(alloc);
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
         );
-        release_preemptive(client, alloc).await?;
+        release_preemptive(client).await?;
     }
 
     if let Some(end) = task.end {
@@ -114,11 +117,11 @@ async fn execute_task<T>(
     Ok(result)
 }
 
-#[tracing::instrument(level = "info", skip(client, timeout))]
-async fn wait_preemptive(client: &Client, timeout: Duration) -> Result<bool, ClientError> {
+#[tracing::instrument(level = "info", skip(client))]
+async fn wait_preemptive(client: &Client, _timeout: Duration) -> Result<bool, ClientError> {
     info!("client: {} - wait_preemptive", client.token.process_id());
     client
-        .wait_preemptive(client.token, timeout)
+        .wait_preemptive(client.token)
         .await
         .map_err(|e| ClientError::RpcError(e.to_string()))
 }
@@ -128,7 +131,7 @@ async fn wait_allocation(
     client: &Client,
     requirements: TaskRequirements,
     timeout: std::time::Duration,
-) -> Result<Vec<ResourceAlloc>, ClientError> {
+) -> Result<ResourceAlloc, ClientError> {
     tokio::select! {
     _ = tokio::time::timeout(timeout, futures::future::pending::<()>()) => {
         error!("Wait allocation timeout");
@@ -139,7 +142,7 @@ async fn wait_allocation(
             match client.wait_allocation(client.token, requirements.clone()).await {
                 Ok(Ok(dev)) => {
                     if let Some(alloc) = dev {
-                        info!("Client: {} - got allocations {:?}", client.token.process_id(), alloc);
+                        info!("Client: {} - got allocation {:?}", client.token.process_id(), alloc);
                         return Ok(alloc);
                     } else {
                         // There are not available resources at this point so we have to try
@@ -193,23 +196,23 @@ pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
         .map_err(|e| ClientError::Other(e.to_string()))
 }
 
-#[tracing::instrument(level = "info", skip(client, alloc))]
-async fn release_preemptive(client: &Client, alloc: &[ResourceAlloc]) -> Result<(), ClientError> {
+#[tracing::instrument(level = "info", skip(client))]
+async fn release_preemptive(client: &Client) -> Result<(), ClientError> {
     info!(
         "Release preemptive for client {}",
         client.token.process_id()
     );
     client
-        .release_preemptive(alloc.to_owned())
+        .release_preemptive(client.token)
         .await
         .map_err(|e| ClientError::RpcError(e.to_string()))?
 }
 
-#[tracing::instrument(level = "info", skip(alloc, client))]
-async fn release(client: &Client, alloc: Vec<ResourceAlloc>) -> Result<(), ClientError> {
+#[tracing::instrument(level = "info", skip(client))]
+async fn release(client: &Client) -> Result<(), ClientError> {
     info!("Client: {} releasing resources", client.token.process_id());
     client
-        .release(alloc)
+        .release(client.token)
         .await
         .map_err(|e| ClientError::RpcError(e.to_string()))?
 }
@@ -218,12 +221,12 @@ async fn release(client: &Client, alloc: Vec<ResourceAlloc>) -> Result<(), Clien
 mod tests {
     use super::*;
 
-    fn task<T>(t: impl Fn(&[ResourceAlloc]) -> TaskResult<T> + 'static) -> Task<T> {
+    fn task<T>(t: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static) -> Task<T> {
         use chrono::{DateTime, NaiveDateTime, Utc};
 
         let task_fn = Box::new(t);
         let req = ResourceReq {
-            resource: common::ResourceType::Gpu,
+            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 2,
             preemptible: false,
         };
@@ -252,7 +255,7 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let task = task(|_data: &[ResourceAlloc]| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
 
         let res = schedule_one_of(token, task, Default::default());
         // Accept just this type of error
@@ -269,18 +272,14 @@ mod tests {
         let client = Client::new(&address, Default::default()).unwrap();
         let handle = scheduler::spawn_scheduler_with_handler(&address).unwrap();
         let rt = Runtime::new().unwrap();
-        let res_req = ResourceReq {
-            resource: common::ResourceType::Gpu,
+        let _res_req = ResourceReq {
+            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
             preemptible: true,
         };
-        let res_alloc = ResourceAlloc {
-            resource: res_req,
-            resource_id: 0,
-        };
 
         let res = rt
-            .block_on(async { client.release(vec![res_alloc]).await })
+            .block_on(async { client.release(client.token).await })
             .map_err(|e| ClientError::RpcError(e.to_string()))
             .unwrap();
 

@@ -1,21 +1,30 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
+use crate::solver::{ResourceState, Resources, TaskState};
+use crate::solvers::create_solver;
+#[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
-use crate::solvers::{create_solver, JobAllocation};
-use common::{
-    ClientToken, Devices, Error, RequestMethod, ResourceAlloc, ResourceType, TaskRequirements,
-};
+use common::{ClientToken, Error, RequestMethod, ResourceType, TaskRequirements};
 
 #[derive(Debug)]
 pub(crate) struct Scheduler {
     _state_path: PathBuf,
-    // List the resources and in the case the resource is being used, the id of the client using it
-    state: RwLock<HashMap<u32, Option<JobAllocation>>>,
-    devices: Devices,
+    // Keep a cache of jobs on the system. each job_id has associated a job state
+    // indicating the current iteration, and allocated resources and its requirements per resource
+    tasks_state: RwLock<HashMap<u32, TaskState>>,
+    // A simple priority queue indexed by the resource_id, each resource could be assigned to
+    // different jobs. being the job at the up-front the current "owner". The priority queue is
+    // done by comparing deadlines
+
+    // Sorted jobs to be executed.
+    jobs_queue: RwLock<VecDeque<u32>>,
+
+    devices: RwLock<Resources>,
 }
 
 impl Scheduler {
@@ -25,11 +34,16 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .filter_map(|dev| dev.bus_id().map(|id| (id, None)))
-            .collect::<HashMap<_, Option<JobAllocation>>>();
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+            })
+            .collect::<Vec<ResourceState>>();
+        let devices = RwLock::new(Resources(state));
         Self {
             _state_path: path.into(),
-            state: RwLock::new(state),
+            tasks_state: RwLock::new(HashMap::new()),
+            jobs_queue: RwLock::new(VecDeque::new()),
             devices,
         }
     }
@@ -41,136 +55,123 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
         }
 
-        let mut num_gpu = 0usize;
-        let mut num_mem = 0usize;
+        let mut resources = if let Ok(resc) = self.devices.write() {
+            resc
+        } else {
+            return SchedulerResponse::Schedule(Err(Error::Other(
+                "Can not read resources".to_string(),
+            )));
+        };
 
-        let state = self.state.read().expect("read state panics");
-        for req in requirements.req.iter() {
-            match req.resource {
-                ResourceType::Gpu => {
-                    num_gpu += req.quantity;
-                }
-                ResourceType::GpuMemory(_) => {
-                    num_mem += req.quantity;
-                } // Later we will need to track the total amount of memory
-                _ => unreachable!(), // TODO: evaluate this case in a real escenario
-            }
-        }
-
-        let resources = self
-            .devices
-            .gpu_devices()
-            .iter()
-            .filter_map(|dev| {
-                let bus_id = dev.bus_id().expect("Gpu device without a valid bus_id");
-                // TODO: A check should be added to verify that this resource meet the requirements ?
-                if state
-                    .get(&bus_id)
-                    .expect("State is built from devices")
-                    .is_none()
-                {
-                    Some(bus_id)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<u32>>();
-
-        drop(state);
-
-        let total_devices = num_gpu + num_mem;
-        // If there are not enough available devices for the client requirements
-        // just notify this to the client by returning None
-        if resources.len() < total_devices {
+        // First step is to check if there are enough resources. This avoids calling alloc
+        // knowing that it might fail
+        if resources.available_memory() < requirements.minimal_resource_usage() {
             return SchedulerResponse::Schedule(Ok(None));
         }
-
-        // Expensive copy?
-        let task_req_copy = requirements.req.clone();
-        let wrapper = RequirementsMap {
-            reqs: requirements,
-            resources,
-            job_id: client.process_id() as usize,
-            preemptive: None,
-            has_started: None,
-        };
 
         let mut solver = match create_solver(None) {
             Ok(solver) => solver,
             Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
         };
 
-        let job_plan = match solver.solve_job_schedule(wrapper.into(), 0, 0, None) {
-            Ok(plan) => plan,
-            Err(e) => {
-                tracing::error!("Solver error: {:?}", e);
-                return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string())));
-            }
+        let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
+            Some(res) => res,
+            _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
         };
 
-        let mut alloc = vec![];
+        resources.0 = new_resources;
 
-        let mut state_writer = self.state.write().expect("Write called multiple times");
-        // Get at least the number of requested devices
-        for (i, plan) in job_plan.plan.iter().enumerate() {
-            if let Some(dev) = state_writer.get_mut(&(plan.machine as _)) {
-                if dev.is_none() {
-                    alloc.push(ResourceAlloc {
-                        resource: task_req_copy[i].clone(),
-                        resource_id: plan.machine as _,
-                    });
-                    dev.replace(plan.clone());
-                } else {
-                    // TODO: The resource is being used.
-                    // should this be reported as an error to the client?
-                    return SchedulerResponse::Schedule(Ok(None));
-                }
-            } else {
-                return SchedulerResponse::Schedule(Err(Error::Other(
-                    "Unexpected error updating scheduler state".to_string(),
-                )));
-            };
+        // prepare the task
+        let task_state = TaskState {
+            requirements,
+            current_iteration: 0,
+            allocation: alloc.clone(),
+        };
+
+        // Add the task to our list of jobs
+        let mut state = self.tasks_state.write().expect("Task state unwritable");
+        state.insert(client.process_id(), task_state);
+
+        // Update our plan
+        let new_plan = match solver.solve_job_schedule(&*state) {
+            Ok(plan) => plan,
+            Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
+        };
+
+        tracing::info!("scheduler job_plan {:?}", new_plan);
+        {
+            *self.jobs_queue.write().expect("Jobs queue unwritable") = new_plan;
         }
 
-        if alloc.len() >= total_devices {
-            SchedulerResponse::Schedule(Ok(Some(alloc)))
+        SchedulerResponse::Schedule(Ok(Some(alloc)))
+    }
+
+    fn wait_preemptive(&self, client: ClientToken) -> bool {
+        let queue = self.jobs_queue.read().unwrap();
+        if let Some(job) = queue.front() {
+            if *job == client.process_id() {
+                //tracing::info!("client {} already upfront of the queue", *job);
+                false
+            } else {
+                //Checks if this task needs to wait for its turn as indicated in the plan
+                //may be the resources are its and can continue immediately
+                let mut wait = false;
+                let state = self.tasks_state.read().unwrap();
+                let current_task = state.get(&client.process_id()).unwrap();
+                // This is expensive, we can do better by havving an associated table between
+                // resources and tasks using it.
+                for job_id in queue.iter().filter(|id| **id != client.process_id()) {
+                    let next_task = state.get(job_id).unwrap();
+                    wait = current_task.allocation.resource_id.iter().any(|dev_id| {
+                        next_task
+                            .allocation
+                            .resource_id
+                            .iter()
+                            .any(|id| dev_id == id)
+                    });
+                    if wait {
+                        break;
+                    }
+                }
+                wait
+            }
         } else {
-            tracing::error!(
-                "Client: {} - requested {} - not devices available",
-                client.process_id(),
-                total_devices
-            );
-            SchedulerResponse::Schedule(Ok(None))
+            tracing::warn!("Queue empty!");
+            false
         }
     }
 
     fn list_allocations(&self) -> SchedulerResponse {
-        SchedulerResponse::ListAllocations(
-            self.state
-                .read()
-                .expect("Already locked by this thread")
-                .iter()
-                .filter_map(|(k, v)| if v.is_some() { Some(*k) } else { None })
-                .collect::<Vec<u32>>(),
-        )
+        SchedulerResponse::ListAllocations(vec![])
     }
 
-    fn release(&self, alloc: Vec<ResourceAlloc>) {
-        for resource in alloc.iter() {
-            if let Some(state) = self
-                .state
-                .write()
-                .expect("Should be called once")
-                .get_mut(&resource.resource_id)
-            {
-                state.take();
+    fn release(&self, client: ClientToken) {
+        let task_state = self
+            .tasks_state
+            .write()
+            .unwrap()
+            .remove(&client.process_id());
+        if let Some(state) = task_state {
+            if let ResourceType::Gpu(ref m) = state.allocation.requirement.resource {
+                self.devices
+                    .write()
+                    .unwrap()
+                    .free_memory(m, &state.allocation.resource_id);
             }
+            if let Ok(mut solver) = create_solver(None) {
+                // Update our plan
+                let state = self.tasks_state.read().unwrap();
+                *self.jobs_queue.write().unwrap() = match solver.solve_job_schedule(&*state) {
+                    Ok(plan) => plan,
+                    _ => return,
+                };
+            }
+        } else {
+            tracing::warn!("Task resources already released");
         }
     }
 
-    fn release_preemptive(&self, _alloc: Vec<ResourceAlloc>) {
-        //TODO
-    }
+    fn release_preemptive(&self, _client: ClientToken) {}
 }
 
 impl Handler for Scheduler {
@@ -181,15 +182,15 @@ impl Handler for Scheduler {
         let response = match request.method {
             RequestMethod::Schedule(client, req) => self.schedule(client, req),
             RequestMethod::ListAllocations => self.list_allocations(),
-            RequestMethod::WaitPreemptive(_client, _timeout) => {
-                SchedulerResponse::SchedulerWaitPreemptive(false)
+            RequestMethod::WaitPreemptive(client) => {
+                SchedulerResponse::SchedulerWaitPreemptive(self.wait_preemptive(client))
             }
-            RequestMethod::Release(alloc) => {
-                self.release(alloc);
+            RequestMethod::Release(client) => {
+                self.release(client);
                 SchedulerResponse::Release
             }
-            RequestMethod::ReleasePreemptive(alloc) => {
-                self.release_preemptive(alloc);
+            RequestMethod::ReleasePreemptive(client) => {
+                self.release_preemptive(client);
                 SchedulerResponse::ReleasePreemptive
             }
         };

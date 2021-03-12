@@ -8,7 +8,7 @@ mod solvers;
 pub use handler::Handler;
 pub use server::RpcMethods;
 pub use server::Server;
-pub use solver::Solver;
+pub use solver::{ResourceState, Solver, TaskState};
 
 use std::error::Error;
 use std::net::SocketAddr;

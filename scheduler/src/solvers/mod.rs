@@ -1,13 +1,22 @@
+#[cfg(feature = "greedy_solver")]
+mod greedy;
+#[cfg(feature = "mip_solver")]
 mod linearsolver;
-use crate::solver::Solver;
-use common::{Config, Error, TaskRequirements};
+#[cfg(feature = "greedy_solver")]
+pub use greedy::GreedySolver;
 #[cfg(feature = "mip_solver")]
 pub use linearsolver::{
     JobAllocation, JobConstraint, JobDescription, JobPlan, JobRequirements, LinearSolverModel,
 };
 
+use crate::solver::Solver;
+#[cfg(feature = "mip_solver")]
+use common::TaskRequirements;
+use common::{Config, Error};
+
 /// Wrapper struct for converting from TaskRequirements to
 /// JobRequirements
+#[cfg(feature = "mip_solver")]
 pub struct RequirementsMap {
     pub reqs: TaskRequirements,
     // the available resources to use
@@ -17,6 +26,7 @@ pub struct RequirementsMap {
     pub has_started: Option<(usize, usize)>,
 }
 
+#[cfg(feature = "mip_solver")]
 impl From<RequirementsMap> for JobRequirements {
     fn from(map: RequirementsMap) -> Self {
         let options = map
@@ -48,7 +58,12 @@ impl From<RequirementsMap> for JobRequirements {
 }
 
 // Remove later this option, Config will have a default value, use it
+#[cfg(feature = "mip_solver")]
 pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
-    #[cfg(feature = "mip_solver")]
     Ok(Box::new(LinearSolverModel::new()))
+}
+
+#[cfg(feature = "greedy_solver")]
+pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
+    Ok(Box::new(GreedySolver))
 }
