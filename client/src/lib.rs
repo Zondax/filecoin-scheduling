@@ -105,6 +105,7 @@ async fn execute_task<T>(
             tokio::time::sleep(Duration::from_secs(1)).await
         }
         result = (task.task)(alloc);
+        task.task_req.estimations.num_of_iter -= 1;
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
@@ -241,6 +242,7 @@ mod tests {
         let reqs = TaskRequirements {
             req: vec![req],
             estimations: TaskEstimations {
+                num_of_iter: 1,
                 time_per_iter: time_per_iteration,
                 exec_time,
                 deadline,

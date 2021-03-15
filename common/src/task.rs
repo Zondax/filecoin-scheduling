@@ -54,6 +54,7 @@ impl Deadline {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskEstimations {
     pub time_per_iter: Duration,
+    pub num_of_iter: usize,
     pub exec_time: Duration,
     pub deadline: Deadline,
 }
@@ -129,11 +130,13 @@ impl<T> Task<T> {
         let start = Utc::now();
         let end = start + chrono::Duration::seconds(3);
         let deadline = Deadline::new(start, end);
+        let num_of_iter = 1;
 
         let task_requirements = TaskRequirements {
             req,
             estimations: TaskEstimations {
                 time_per_iter,
+                num_of_iter,
                 exec_time,
                 deadline,
             },
