@@ -48,8 +48,8 @@ impl Deadline {
     }
 }
 
-/// Contains all the requirements and timing description for
-/// a task. This parameter will be used by the scheduler solve for
+/// Contains all the timing descriptions for
+/// a task. These parameters will be used by the scheduler solve for
 /// scheduling the task in the right time window and resource
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskEstimations {
