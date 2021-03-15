@@ -19,7 +19,7 @@ fn test_schedule() {
     let mut index = 0;
 
     let mut joiner = vec![];
-    for i in 0..4 {
+    for i in 0..5 {
         joiner.push(std::thread::spawn(move || {
             let client = register(i, i as u64).unwrap();
             let func = move |_alloc: &ResourceAlloc| -> TaskResult<String> {
@@ -34,16 +34,15 @@ fn test_schedule() {
             let mut task = Task::default(func);
 
             let end;
+            task.task_req.estimations.num_of_iter = 4;
             if i == 0 {
-                end = Utc::now() + chrono::Duration::seconds(60000000 as _);
-                task.task_req.exec_time = Duration::from_secs(60);
-                task.task_req.time_per_iter = Duration::from_secs(60);
+                end = Utc::now() + chrono::Duration::seconds(250 as _);
+                task.task_req.estimations.time_per_iter = Duration::from_secs(60);
             } else {
                 end = Utc::now() + chrono::Duration::seconds(20 as _);
-                task.task_req.exec_time = Duration::from_millis(5000);
             }
             task.task_req.deadline.1 = end;
-            schedule_one_of(client, &mut task, Duration::from_secs(1))
+            schedule_one_of(client, &mut task, Duration::from_secs(20))
         }));
         std::thread::sleep(Duration::from_secs(1));
     }

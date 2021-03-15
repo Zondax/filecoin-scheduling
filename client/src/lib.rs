@@ -105,7 +105,11 @@ async fn execute_task<T>(
             tokio::time::sleep(Duration::from_secs(1)).await
         }
         result = (task.task)(alloc);
-        task.task_req.estimations.num_of_iter -= 1;
+        if task.task_req.estimations.num_of_iter > 0 {
+            task.task_req.estimations.num_of_iter -= 1;
+        }
+        tracing::info!("Iteration {} to do", task.task_req.estimations.num_of_iter);
+
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
@@ -151,7 +155,7 @@ async fn wait_allocation(
                     } else {
                         // There are not available resources at this point so we have to try
                         // again.
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
                         warn!("No available resources for client: {} - waiting", client.token.process_id());
                         continue
                     }
@@ -241,11 +245,11 @@ mod tests {
         let deadline = Deadline::new(start, end);
         let reqs = TaskRequirements {
             req: vec![req],
+            deadline,
             estimations: TaskEstimations {
                 num_of_iter: 1,
                 time_per_iter: time_per_iteration,
                 exec_time,
-                deadline,
             },
         };
         Task::new(task_fn, None, None, reqs)

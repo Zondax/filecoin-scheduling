@@ -56,7 +56,6 @@ pub struct TaskEstimations {
     pub time_per_iter: Duration,
     pub num_of_iter: usize,
     pub exec_time: Duration,
-    pub deadline: Deadline,
 }
 
 /// Contains all the requirements and timing description for
@@ -65,6 +64,7 @@ pub struct TaskEstimations {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
+    pub deadline: Deadline,
     pub estimations: TaskEstimations,
 }
 
@@ -134,11 +134,11 @@ impl<T> Task<T> {
 
         let task_requirements = TaskRequirements {
             req,
+            deadline,
             estimations: TaskEstimations {
                 time_per_iter,
                 num_of_iter,
                 exec_time,
-                deadline,
             },
         };
         Self::new(func, None, None, task_requirements)
