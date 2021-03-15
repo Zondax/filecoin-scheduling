@@ -1,3 +1,4 @@
+use chrono::offset::Utc;
 use std::fmt::Debug;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -54,7 +55,7 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
 )]
 pub fn schedule_one_of<T: Debug + Clone>(
     client: Client,
-    task: Task<T>,
+    task: &mut Task<T>,
     timeout: Duration,
 ) -> Result<T, ClientError> {
     let address = server_address();
@@ -91,12 +92,12 @@ pub fn schedule_one_of<T: Debug + Clone>(
 async fn execute_task<T>(
     client: &Client,
     timeout: Duration,
-    task: Task<T>,
+    task: &mut Task<T>,
     alloc: &ResourceAlloc,
 ) -> Result<TaskResult<T>, ClientError> {
     let mut result = TaskResult::Continue;
     // Initialize user resources
-    if let Some(init) = task.init {
+    if let Some(init) = &task.init {
         init(alloc).map_err(|e| ClientError::ClientInit(e.to_string()))?;
     }
     while result.is_continue() {
@@ -110,8 +111,10 @@ async fn execute_task<T>(
         );
         release_preemptive(client).await?;
     }
-
-    if let Some(end) = task.end {
+    if Utc::now() < task.task_req.deadline.1 {
+        tracing::info!("Task finished on time!!");
+    }
+    if let Some(end) = &task.end {
         end(alloc).map_err(|e| ClientError::ClientEnd(e.to_string()))?;
     }
     Ok(result)
@@ -257,9 +260,9 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let mut task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
 
-        let res = schedule_one_of(token, task, Default::default());
+        let res = schedule_one_of(token, &mut task, Default::default());
         // Accept just this type of error
         if let Err(e) = res {
             assert_eq!(e, ClientError::Timeout);

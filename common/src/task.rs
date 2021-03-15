@@ -95,7 +95,7 @@ pub struct Task<T> {
     //#[serde(skip_serializing)]
     pub init: InitFuncType,
     pub end: EndFuncType,
-    pub task: Box<dyn Fn(&ResourceAlloc) -> TaskResult<T>>,
+    pub task: Box<dyn FnMut(&ResourceAlloc) -> TaskResult<T>>,
     pub task_req: TaskRequirements,
 }
 
@@ -105,7 +105,7 @@ impl<T> Task<T> {
     // It makes lesser handy the construction of this type. may be we can try a TaskBuilder
     // approach
     pub fn new(
-        func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static,
+        func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static,
         init: InitFuncType,
         end: EndFuncType,
         task_req: TaskRequirements,
@@ -118,7 +118,7 @@ impl<T> Task<T> {
         }
     }
 
-    pub fn default(func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
+    pub fn default(func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
         let req = vec![ResourceReq {
             resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
@@ -129,7 +129,6 @@ impl<T> Task<T> {
         let start = Utc::now();
         let end = start + chrono::Duration::seconds(3);
         let deadline = Deadline::new(start, end);
-        let num_of_iter = 1;
 
         let task_requirements = TaskRequirements {
             req,

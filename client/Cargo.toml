@@ -21,9 +21,9 @@ shared_memory = "0.11.4"
 tokio = { version = "1.1.0", features = ["full"] }
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
+chrono = "0.4.19"
 
 [dev-dependencies]
-chrono = "0.4.19"
 ipmpsc = "0.5.0"
 rand = "0.8.2"
 tracing-appender = "0.1.2"
