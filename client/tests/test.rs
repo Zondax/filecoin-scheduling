@@ -26,7 +26,7 @@ fn test_schedule() {
             };
             let mut task = Task::default(func);
             let end = Utc::now() + chrono::Duration::seconds((3 + i) as _);
-            task.task_req.deadline.1 = end;
+            task.task_req.estimations.deadline.1 = end;
             schedule_one_of(client, task, Duration::from_secs(15))
         }));
     }

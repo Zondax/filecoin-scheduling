@@ -7,7 +7,7 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
-    ResourceMemory, ResourceReq, Task, TaskRequirements, TaskResult,
+    ResourceMemory, ResourceReq, Task, TaskEstimations, TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -50,7 +50,7 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
 
 #[tracing::instrument(
     level="info", skip(timeout, task, client),
-    fields(process_id=client.token.process_id(), task_duration=task.task_req.exec_time.as_secs_f64().to_string().as_str()),
+    fields(process_id=client.token.process_id(), task_duration=task.task_req.estimations.exec_time.as_secs_f64().to_string().as_str()),
 )]
 pub fn schedule_one_of<T: Debug + Clone>(
     client: Client,
@@ -236,10 +236,12 @@ mod tests {
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let deadline = Deadline::new(start, end);
         let reqs = TaskRequirements {
-            time_per_iter: time_per_iteration,
-            exec_time,
-            deadline,
             req: vec![req],
+            estimations: TaskEstimations {
+                time_per_iter: time_per_iteration,
+                exec_time,
+                deadline,
+            },
         };
         Task::new(task_fn, None, None, reqs)
     }

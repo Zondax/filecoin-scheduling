@@ -52,11 +52,19 @@ impl Deadline {
 /// a task. This parameter will be used by the scheduler solve for
 /// scheduling the task in the right time window and resource
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TaskRequirements {
-    pub req: Vec<ResourceReq>,
+pub struct TaskEstimations {
     pub time_per_iter: Duration,
     pub exec_time: Duration,
     pub deadline: Deadline,
+}
+
+/// Contains all the requirements and timing description for
+/// a task. This parameter will be used by the scheduler solve for
+/// scheduling the task in the right time window and resource
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskRequirements {
+    pub req: Vec<ResourceReq>,
+    pub estimations: TaskEstimations,
 }
 
 impl TaskRequirements {
@@ -124,9 +132,11 @@ impl<T> Task<T> {
 
         let task_requirements = TaskRequirements {
             req,
-            time_per_iter,
-            exec_time,
-            deadline,
+            estimations: TaskEstimations {
+                time_per_iter,
+                exec_time,
+                deadline,
+            },
         };
         Self::new(func, None, None, task_requirements)
     }

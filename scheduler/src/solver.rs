@@ -61,7 +61,7 @@ pub struct TaskState {
 
 impl TaskState {
     pub fn end_timestamp(&self) -> i64 {
-        self.requirements.deadline.end_timestamp_secs()
+        self.requirements.estimations.deadline.end_timestamp_secs()
     }
 }
 
