@@ -7,7 +7,7 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
-    ResourceMemory, ResourceReq, Task, TaskRequirements, TaskResult,
+    ResourceMemory, ResourceReq, Task, TaskEstimations, TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -48,13 +48,11 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
     Client::new(&server_address(), token)
 }
 
-#[tracing::instrument(
-    level="info", skip(timeout, task, client),
-    fields(process_id=client.token.process_id(), task_duration=task.task_req.exec_time.as_secs_f64().to_string().as_str()),
-)]
+#[tracing::instrument(level = "info", skip(timeout, task, client))]
+
 pub fn schedule_one_of<T: Debug + Clone>(
     client: Client,
-    task: Task<T>,
+    task: &mut Task<T>,
     timeout: Duration,
 ) -> Result<T, ClientError> {
     let address = server_address();
@@ -91,12 +89,12 @@ pub fn schedule_one_of<T: Debug + Clone>(
 async fn execute_task<T>(
     client: &Client,
     timeout: Duration,
-    task: Task<T>,
+    task: &mut Task<T>,
     alloc: &ResourceAlloc,
 ) -> Result<TaskResult<T>, ClientError> {
     let mut result = TaskResult::Continue;
     // Initialize user resources
-    if let Some(init) = task.init {
+    if let Some(init) = &task.init {
         init(alloc).map_err(|e| ClientError::ClientInit(e.to_string()))?;
     }
     while result.is_continue() {
@@ -110,8 +108,7 @@ async fn execute_task<T>(
         );
         release_preemptive(client).await?;
     }
-
-    if let Some(end) = task.end {
+    if let Some(end) = &task.end {
         end(alloc).map_err(|e| ClientError::ClientEnd(e.to_string()))?;
     }
     Ok(result)
@@ -147,7 +144,7 @@ async fn wait_allocation(
                     } else {
                         // There are not available resources at this point so we have to try
                         // again.
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
                         warn!("No available resources for client: {} - waiting", client.token.process_id());
                         continue
                     }
@@ -234,12 +231,15 @@ mod tests {
         let exec_time = Duration::from_millis(500);
         let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
-        let deadline = Deadline::new(start, end);
+        let deadline = Some(Deadline::new(start, end));
         let reqs = TaskRequirements {
-            time_per_iter: time_per_iteration,
-            exec_time,
-            deadline,
             req: vec![req],
+            deadline,
+            estimations: Some(TaskEstimations {
+                num_of_iter: 1,
+                time_per_iter: time_per_iteration,
+                exec_time,
+            }),
         };
         Task::new(task_fn, None, None, reqs)
     }
@@ -255,9 +255,9 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let mut task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
 
-        let res = schedule_one_of(token, task, Default::default());
+        let res = schedule_one_of(token, &mut task, Default::default());
         // Accept just this type of error
         if let Err(e) = res {
             assert_eq!(e, ClientError::Timeout);

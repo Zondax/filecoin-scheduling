@@ -31,7 +31,7 @@ impl<T> TaskResult<T> {
 }
 
 /// Deadline struct to configure when the task should be started and finished
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Deadline(pub DateTime<Utc>, pub DateTime<Utc>);
 
 impl Deadline {
@@ -48,15 +48,24 @@ impl Deadline {
     }
 }
 
+/// Contains all the timing descriptions for
+/// a task. These parameters will be used by the scheduler solve for
+/// scheduling the task in the right time window and resource
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskEstimations {
+    pub time_per_iter: Duration,
+    pub num_of_iter: usize,
+    pub exec_time: Duration,
+}
+
 /// Contains all the requirements and timing description for
 /// a task. This parameter will be used by the scheduler solve for
 /// scheduling the task in the right time window and resource
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
-    pub time_per_iter: Duration,
-    pub exec_time: Duration,
-    pub deadline: Deadline,
+    pub deadline: Option<Deadline>,
+    pub estimations: Option<TaskEstimations>,
 }
 
 impl TaskRequirements {
@@ -87,7 +96,7 @@ pub struct Task<T> {
     //#[serde(skip_serializing)]
     pub init: InitFuncType,
     pub end: EndFuncType,
-    pub task: Box<dyn Fn(&ResourceAlloc) -> TaskResult<T>>,
+    pub task: Box<dyn FnMut(&ResourceAlloc) -> TaskResult<T>>,
     pub task_req: TaskRequirements,
 }
 
@@ -97,7 +106,7 @@ impl<T> Task<T> {
     // It makes lesser handy the construction of this type. may be we can try a TaskBuilder
     // approach
     pub fn new(
-        func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static,
+        func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static,
         init: InitFuncType,
         end: EndFuncType,
         task_req: TaskRequirements,
@@ -110,7 +119,7 @@ impl<T> Task<T> {
         }
     }
 
-    pub fn default(func: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
+    pub fn default(func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
         let req = vec![ResourceReq {
             resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
@@ -119,14 +128,18 @@ impl<T> Task<T> {
         let time_per_iter = Duration::from_millis(500);
         let exec_time = Duration::from_millis(3000);
         let start = Utc::now();
-        let end = start + chrono::Duration::seconds(3);
-        let deadline = Deadline::new(start, end);
+        let end = start + chrono::Duration::seconds(30);
+        let deadline = Some(Deadline::new(start, end));
+        let num_of_iter = 1;
 
         let task_requirements = TaskRequirements {
             req,
-            time_per_iter,
-            exec_time,
             deadline,
+            estimations: Some(TaskEstimations {
+                time_per_iter,
+                num_of_iter,
+                exec_time,
+            }),
         };
         Self::new(func, None, None, task_requirements)
     }

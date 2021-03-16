@@ -61,7 +61,9 @@ pub struct TaskState {
 
 impl TaskState {
     pub fn end_timestamp(&self) -> i64 {
-        self.requirements.deadline.end_timestamp_secs()
+        self.requirements
+            .deadline
+            .map_or(i64::MAX, |d| d.end_timestamp_secs())
     }
 }
 
