@@ -48,10 +48,8 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
     Client::new(&server_address(), token)
 }
 
-#[tracing::instrument(
-    level="info", skip(timeout, task, client),
-    fields(process_id=client.token.process_id(), task_duration=task.task_req.estimations.exec_time.as_secs_f64().to_string().as_str()),
-)]
+#[tracing::instrument(level = "info", skip(timeout, task, client))]
+
 pub fn schedule_one_of<T: Debug + Clone>(
     client: Client,
     task: &mut Task<T>,
@@ -237,11 +235,11 @@ mod tests {
         let reqs = TaskRequirements {
             req: vec![req],
             deadline,
-            estimations: TaskEstimations {
+            estimations: Some(TaskEstimations {
                 num_of_iter: 1,
                 time_per_iter: time_per_iteration,
                 exec_time,
-            },
+            }),
         };
         Task::new(task_fn, None, None, reqs)
     }

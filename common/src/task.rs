@@ -65,7 +65,7 @@ pub struct TaskEstimations {
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
     pub deadline: Option<Deadline>,
-    pub estimations: TaskEstimations,
+    pub estimations: Option<TaskEstimations>,
 }
 
 impl TaskRequirements {
@@ -135,11 +135,11 @@ impl<T> Task<T> {
         let task_requirements = TaskRequirements {
             req,
             deadline,
-            estimations: TaskEstimations {
+            estimations: Some(TaskEstimations {
                 time_per_iter,
                 num_of_iter,
                 exec_time,
-            },
+            }),
         };
         Self::new(func, None, None, task_requirements)
     }

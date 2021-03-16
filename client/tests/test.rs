@@ -31,13 +31,8 @@ fn test_schedule() {
                 TaskResult::Done(Ok(format!("Task {} done!!!", i)))
             };
             let mut task = Task::default(func);
-
-            task.task_req.estimations.num_of_iter = 4;
             if i == 0 {
                 task.task_req.deadline = None;
-                task.task_req.estimations.time_per_iter = Duration::from_secs(1);
-            } else {
-                task.task_req.estimations.time_per_iter = Duration::from_secs(1);
             }
             schedule_one_of(client, &mut task, Duration::from_secs(20))
         }));
