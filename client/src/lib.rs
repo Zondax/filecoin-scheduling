@@ -1,4 +1,3 @@
-use chrono::offset::Utc;
 use std::fmt::Debug;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -105,19 +104,11 @@ async fn execute_task<T>(
             tokio::time::sleep(Duration::from_secs(1)).await
         }
         result = (task.task)(alloc);
-        if task.task_req.estimations.num_of_iter > 0 {
-            task.task_req.estimations.num_of_iter -= 1;
-        }
-        tracing::info!("Iteration {} to do", task.task_req.estimations.num_of_iter);
-
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
         );
         release_preemptive(client).await?;
-    }
-    if Utc::now() < task.task_req.deadline.1 {
-        tracing::info!("Task finished on time!!");
     }
     if let Some(end) = &task.end {
         end(alloc).map_err(|e| ClientError::ClientEnd(e.to_string()))?;
