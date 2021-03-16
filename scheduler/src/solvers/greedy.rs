@@ -91,7 +91,11 @@ impl Solver for GreedySolver {
         // iterate our tasks for making the triplet pushing it into the queue
         for (job_id, state) in input.iter() {
             // Intead of Reverse we can do something like deadline.end - chronos::now()?
-            let finish_time = Reverse(state.requirements.deadline.end_timestamp_secs());
+            let condition = state
+                .requirements
+                .deadline
+                .map_or(i64::MAX, |d| d.end_timestamp_secs());
+            let finish_time = Reverse(condition);
             let mem_usage = match &state.allocation.requirement.resource {
                 ResourceType::Gpu(mem) => match mem {
                     // This device is not preemptable so we put this at the end of our priority

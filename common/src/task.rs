@@ -31,7 +31,7 @@ impl<T> TaskResult<T> {
 }
 
 /// Deadline struct to configure when the task should be started and finished
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Deadline(pub DateTime<Utc>, pub DateTime<Utc>);
 
 impl Deadline {
@@ -64,7 +64,7 @@ pub struct TaskEstimations {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
-    pub deadline: Deadline,
+    pub deadline: Option<Deadline>,
     pub estimations: TaskEstimations,
 }
 
@@ -128,8 +128,8 @@ impl<T> Task<T> {
         let time_per_iter = Duration::from_millis(500);
         let exec_time = Duration::from_millis(3000);
         let start = Utc::now();
-        let end = start + chrono::Duration::seconds(3);
-        let deadline = Deadline::new(start, end);
+        let end = start + chrono::Duration::seconds(30);
+        let deadline = Some(Deadline::new(start, end));
         let num_of_iter = 1;
 
         let task_requirements = TaskRequirements {

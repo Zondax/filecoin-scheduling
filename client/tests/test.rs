@@ -1,4 +1,3 @@
-use chrono::offset::Utc;
 use std::io;
 
 use client::{
@@ -33,16 +32,13 @@ fn test_schedule() {
             };
             let mut task = Task::default(func);
 
-            let end;
             task.task_req.estimations.num_of_iter = 4;
             if i == 0 {
-                end = Utc::now() + chrono::Duration::seconds(250 as _);
+                task.task_req.deadline = None;
                 task.task_req.estimations.time_per_iter = Duration::from_secs(1);
             } else {
-                end = Utc::now() + chrono::Duration::seconds(20 as _);
                 task.task_req.estimations.time_per_iter = Duration::from_secs(1);
             }
-            task.task_req.deadline.1 = end;
             schedule_one_of(client, &mut task, Duration::from_secs(20))
         }));
         std::thread::sleep(Duration::from_secs(1));

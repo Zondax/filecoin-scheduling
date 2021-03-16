@@ -233,7 +233,7 @@ mod tests {
         let exec_time = Duration::from_millis(500);
         let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
-        let deadline = Deadline::new(start, end);
+        let deadline = Some(Deadline::new(start, end));
         let reqs = TaskRequirements {
             req: vec![req],
             deadline,
