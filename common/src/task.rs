@@ -8,8 +8,20 @@ use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub type InitFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
-pub type EndFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
+//pub type InitFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
+//pub type EndFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
+
+pub trait TaskFunc {
+    type TaskOutput;
+
+    fn init(&mut self, _: &ResourceAlloc) -> Result<()> {
+        Ok(())
+    }
+    fn end(&mut self, _: &ResourceAlloc) -> Result<()> {
+        Ok(())
+    }
+    fn task(&mut self, alloc: &ResourceAlloc) -> TaskResult<Self::TaskOutput>;
+}
 
 /// Helper type to describe the different returns types of a task
 pub enum TaskResult<T> {
@@ -93,33 +105,19 @@ impl TaskRequirements {
 /// Contains the functions for initializacion, finalization and main task function
 /// along with the requirements for this task to be executed and scheduled
 pub struct Task<T> {
-    //#[serde(skip_serializing)]
-    pub init: InitFuncType,
-    pub end: EndFuncType,
-    pub task: Box<dyn FnMut(&ResourceAlloc) -> TaskResult<T>>,
+    pub task_func: Box<dyn TaskFunc<TaskOutput = T>>,
     pub task_req: TaskRequirements,
 }
 
 impl<T> Task<T> {
-    // TODO:
-    // There is an error if we do not use the Option<Box<dyn Fn>>, type for init and end functions.
-    // It makes lesser handy the construction of this type. may be we can try a TaskBuilder
-    // approach
-    pub fn new(
-        func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static,
-        init: InitFuncType,
-        end: EndFuncType,
-        task_req: TaskRequirements,
-    ) -> Self {
+    pub fn new(func: impl TaskFunc<TaskOutput = T> + 'static, task_req: TaskRequirements) -> Self {
         Self {
-            task: Box::new(func),
-            init,
-            end,
+            task_func: Box::new(func),
             task_req,
         }
     }
 
-    pub fn default(func: impl FnMut(&ResourceAlloc) -> TaskResult<T> + 'static) -> Self {
+    pub fn default(func: impl TaskFunc<TaskOutput = T> + 'static) -> Self {
         let req = vec![ResourceReq {
             resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
@@ -141,6 +139,6 @@ impl<T> Task<T> {
                 exec_time,
             }),
         };
-        Self::new(func, None, None, task_requirements)
+        Self::new(func, task_requirements)
     }
 }

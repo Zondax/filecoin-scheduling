@@ -14,7 +14,7 @@ pub use error::Error;
 pub use devices::{list_devices, Device, Devices};
 pub use requests::RequestMethod;
 pub use resource::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
-pub use task::{Deadline, Task, TaskEstimations, TaskRequirements, TaskResult};
+pub use task::{Deadline, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult};
 
 #[cfg(test)]
 mod tests {
