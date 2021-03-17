@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -7,7 +6,7 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
-    ResourceMemory, ResourceReq, Task, TaskEstimations, TaskRequirements, TaskResult,
+    ResourceMemory, ResourceReq, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -50,9 +49,9 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
 
 #[tracing::instrument(level = "info", skip(timeout, task, client))]
 
-pub fn schedule_one_of<T: Debug + Clone>(
+pub fn schedule_one_of<T>(
     client: Client,
-    task: &mut Task<T>,
+    mut task: Task<T>,
     timeout: Duration,
 ) -> Result<T, ClientError> {
     let address = server_address();
@@ -65,13 +64,13 @@ pub fn schedule_one_of<T: Debug + Clone>(
         } else {
             launch_scheduler_process(address)?;
             std::thread::sleep(Duration::from_millis(500));
-            wait_allocation(&client, task.task_req.clone(), timeout).await
+            wait_allocation(&client, task.task_req, timeout).await
         };
 
         match allocation {
             Err(e) => Err(e),
             Ok(alloc) => {
-                let result = execute_task(&client, timeout, task, &alloc)
+                let result = execute_task(&client, timeout, &mut task.task_func, &alloc)
                     .await
                     .map(|res| {
                         res.get_result()
@@ -86,31 +85,29 @@ pub fn schedule_one_of<T: Debug + Clone>(
 }
 
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
-async fn execute_task<T>(
+async fn execute_task<'a, T>(
     client: &Client,
     timeout: Duration,
-    task: &mut Task<T>,
+    task: &mut Box<dyn TaskFunc<TaskOutput = T>>,
     alloc: &ResourceAlloc,
 ) -> Result<TaskResult<T>, ClientError> {
     let mut result = TaskResult::Continue;
     // Initialize user resources
-    if let Some(init) = &task.init {
-        init(alloc).map_err(|e| ClientError::ClientInit(e.to_string()))?;
-    }
+    task.init(alloc)
+        .map_err(|e| ClientError::ClientInit(e.to_string()))?;
     while result.is_continue() {
         while wait_preemptive(client, timeout).await? {
             tokio::time::sleep(Duration::from_secs(1)).await
         }
-        result = (task.task)(alloc);
+        result = task.task(alloc);
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
         );
         release_preemptive(client).await?;
     }
-    if let Some(end) = &task.end {
-        end(alloc).map_err(|e| ClientError::ClientEnd(e.to_string()))?;
-    }
+    task.end(alloc)
+        .map_err(|e| ClientError::ClientEnd(e.to_string()))?;
     Ok(result)
 }
 
@@ -129,40 +126,46 @@ async fn wait_allocation(
     requirements: TaskRequirements,
     timeout: std::time::Duration,
 ) -> Result<ResourceAlloc, ClientError> {
-    tokio::select! {
-    _ = tokio::time::timeout(timeout, futures::future::pending::<()>()) => {
-        error!("Wait allocation timeout");
-        Err(ClientError::Timeout)
-    }
-    call_res = async {
+    let call_res = async {
         loop {
-            match client.wait_allocation(client.token, requirements.clone()).await {
+            match client
+                .wait_allocation(client.token, requirements.clone())
+                .await
+            {
                 Ok(Ok(dev)) => {
                     if let Some(alloc) = dev {
-                        info!("Client: {} - got allocation {:?}", client.token.process_id(), alloc);
+                        info!(
+                            "Client: {} - got allocation {:?}",
+                            client.token.process_id(),
+                            alloc
+                        );
                         return Ok(alloc);
                     } else {
                         // There are not available resources at this point so we have to try
                         // again.
                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                        warn!("No available resources for client: {} - waiting", client.token.process_id());
-                        continue
+                        warn!(
+                            "No available resources for client: {} - waiting",
+                            client.token.process_id()
+                        );
+                        continue;
                     }
-                    }
-                    Ok(Err(e)) => {
-                        error!("{}", e.to_string());
-                        return Err(e)
-                    },
-                    Err(e) => {
-                        error!("{}", e.to_string());
-                        return Err(ClientError::RpcError(e.to_string()))
-                    },
+                }
+                Ok(Err(e)) => {
+                    error!("{}", e.to_string());
+                    return Err(e);
+                }
+                Err(e) => {
+                    error!("{}", e.to_string());
+                    return Err(ClientError::RpcError(e.to_string()));
                 }
             }
-        } => {
-            call_res
         }
-    }
+    };
+
+    tokio::time::timeout(timeout, call_res)
+        .await
+        .map_err(|_| ClientError::Timeout)?
 }
 
 #[allow(dead_code)]
@@ -218,10 +221,18 @@ async fn release(client: &Client) -> Result<(), ClientError> {
 mod tests {
     use super::*;
 
-    fn task<T>(t: impl Fn(&ResourceAlloc) -> TaskResult<T> + 'static) -> Task<T> {
+    struct TaskTest;
+
+    impl TaskFunc for TaskTest {
+        type TaskOutput = String;
+        fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult<Self::TaskOutput> {
+            TaskResult::Done(Ok("HelloWorld".into()))
+        }
+    }
+
+    fn task<T>(task_func: impl TaskFunc<TaskOutput = T> + 'static) -> Task<T> {
         use chrono::{DateTime, NaiveDateTime, Utc};
 
-        let task_fn = Box::new(t);
         let req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 2,
@@ -241,7 +252,7 @@ mod tests {
                 exec_time,
             }),
         };
-        Task::new(task_fn, None, None, reqs)
+        Task::new(task_func, reqs)
     }
 
     #[test]
@@ -255,9 +266,9 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let mut task = task(|_data: &ResourceAlloc| TaskResult::Done(Ok("HelloWorld".to_string())));
+        let task = task(TaskTest);
 
-        let res = schedule_one_of(token, &mut task, Default::default());
+        let res = schedule_one_of(token, task, Default::default());
         // Accept just this type of error
         if let Err(e) = res {
             assert_eq!(e, ClientError::Timeout);
