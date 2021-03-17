@@ -101,7 +101,7 @@ pub fn list_devices() -> Devices {
         .collect::<Vec<Device>>();
 
     #[cfg(dummy_devices)]
-    let gpu_devices = (0..2)
+    let gpu_devices = (0..3)
         .map(|i| Device {
             memory: 4,
             bus_id: i,
@@ -111,7 +111,7 @@ pub fn list_devices() -> Devices {
     #[cfg(not(dummy_devices))]
     let exclusive_gpus: Vec<u32> = vec![];
     #[cfg(dummy_devices)]
-    let exclusive_gpus: Vec<u32>  = vec![0];
+    let exclusive_gpus: Vec<u32> = vec![2];
     let num_cpus = num_cpus::get();
     Devices {
         gpu_devices,
@@ -128,5 +128,15 @@ mod tests {
     fn check_devices() {
         let devices = list_devices();
         println!("DEVICES: {:?}", devices);
+        let gpu2 = devices.gpu_devices[2].clone();
+        assert!(devices.exclusive_gpus().iter().any(|&i| i == gpu2.bus_id()));
+        let exclusivegpu: Vec<Device> = devices
+            .gpu_devices()
+            .iter()
+            .cloned()
+            .filter(|dev| devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()))
+            .collect::<Vec<Device>>();
+        assert_eq!(exclusivegpu.len(), 1);
+        assert_eq!(exclusivegpu[0].bus_id(), 2);
     }
 }
