@@ -14,14 +14,4 @@ pub use error::Error;
 pub use devices::{list_devices, Device, Devices};
 pub use requests::RequestMethod;
 pub use resource::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
-pub use task::{Deadline, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult};
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let a = 2;
-        let b = 2;
-        assert_eq!(a + b, 4);
-    }
-}
+pub use task::{Deadline, Result, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult};

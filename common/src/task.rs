@@ -8,35 +8,23 @@ use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-//pub type InitFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
-//pub type EndFuncType = Option<Box<dyn Fn(&ResourceAlloc) -> Result<()>>>;
-
 pub trait TaskFunc {
     type TaskOutput;
 
     fn init(&mut self, _: &ResourceAlloc) -> Result<()> {
         Ok(())
     }
-    fn end(&mut self, _: &ResourceAlloc) -> Result<()> {
-        Ok(())
-    }
-    fn task(&mut self, alloc: &ResourceAlloc) -> TaskResult<Self::TaskOutput>;
+    fn end(&mut self, _: &ResourceAlloc) -> Result<Self::TaskOutput>;
+    fn task(&mut self, alloc: &ResourceAlloc) -> TaskResult;
 }
 
-/// Helper type to describe the different returns types of a task
-pub enum TaskResult<T> {
+/// Helper type that indicates if a task should be executed again
+pub enum TaskResult {
     Continue,
-    Done(Result<T>),
+    Done,
 }
 
-impl<T> TaskResult<T> {
-    pub fn get_result(self) -> Option<Result<T>> {
-        match self {
-            Self::Continue => None,
-            Self::Done(res) => Some(res),
-        }
-    }
-
+impl TaskResult {
     pub fn is_continue(&self) -> bool {
         matches!(self, Self::Continue)
     }
