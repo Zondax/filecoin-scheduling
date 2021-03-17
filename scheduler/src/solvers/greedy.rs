@@ -105,6 +105,7 @@ impl Solver for GreedySolver {
                         value * state.allocation.requirement.quantity as u64
                     }
                 },
+                ResourceType::GpuExclusive => u64::MAX,
                 ResourceType::Cpu => unimplemented!("We handle just Gpu resources"),
             };
             let triplet = (

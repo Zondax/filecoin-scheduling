@@ -77,6 +77,7 @@ pub struct TaskEstimations {
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
     pub deadline: Option<Deadline>,
+    pub exclusive: bool,
     pub estimations: Option<TaskEstimations>,
 }
 
@@ -133,6 +134,7 @@ impl<T> Task<T> {
         let task_requirements = TaskRequirements {
             req,
             deadline,
+            exclusive: false,
             estimations: Some(TaskEstimations {
                 time_per_iter,
                 num_of_iter,

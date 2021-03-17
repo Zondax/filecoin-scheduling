@@ -3,6 +3,7 @@ pub enum ResourceType {
     Cpu,
     // Use a Gpu and Define how much memory we want.
     Gpu(ResourceMemory),
+    GpuExclusive,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

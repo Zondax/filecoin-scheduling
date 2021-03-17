@@ -66,11 +66,16 @@ impl Device {
 pub struct Devices {
     gpu_devices: Vec<Device>,
     num_cpus: usize,
+    exclusive_gpus: Vec<u32>,
 }
 
 impl Devices {
     pub fn gpu_devices(&self) -> &[Device] {
         self.gpu_devices.as_ref()
+    }
+
+    pub fn exclusive_gpus(&self) -> &[u32] {
+        self.exclusive_gpus.as_ref()
     }
 }
 
@@ -102,10 +107,16 @@ pub fn list_devices() -> Devices {
             bus_id: i,
         })
         .collect::<Vec<Device>>();
+
+    #[cfg(not(dummy_devices))]
+    let exclusive_gpus: Vec<u32> = vec![];
+    #[cfg(dummy_devices)]
+    let exclusive_gpus: Vec<u32>  = vec![0];
     let num_cpus = num_cpus::get();
     Devices {
         gpu_devices,
         num_cpus,
+        exclusive_gpus,
     }
 }
 

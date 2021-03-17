@@ -37,6 +37,7 @@ impl Scheduler {
             .map(|dev| ResourceState {
                 dev: dev.clone(),
                 mem_usage: 0,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i==dev.bus_id()),
             })
             .collect::<Vec<ResourceState>>();
         let devices = RwLock::new(Resources(state));
@@ -65,7 +66,7 @@ impl Scheduler {
 
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
-        if resources.available_memory() < requirements.minimal_resource_usage() {
+        if resources.available_memory(requirements.exclusive) < requirements.minimal_resource_usage() {
             return SchedulerResponse::Schedule(Ok(None));
         }
 
