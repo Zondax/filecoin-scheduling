@@ -62,7 +62,7 @@ fn test_schedule() {
 }
 
 #[test]
-fn test_schedule_with_exclusivetask() {
+fn test_with_exclusivetask() {
     //let file_appender =
     //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
