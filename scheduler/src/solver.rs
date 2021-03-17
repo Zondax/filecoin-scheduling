@@ -12,6 +12,8 @@ pub struct ResourceState {
     pub dev: Device,
     /// Current memory in use
     pub mem_usage: u64,
+    /// Mark device as exclusive
+    pub is_exclusive: bool,
 }
 
 impl ResourceState {
@@ -33,8 +35,12 @@ impl ResourceState {
 pub struct Resources(pub Vec<ResourceState>);
 
 impl Resources {
-    pub fn available_memory(&self) -> u64 {
-        self.0.iter().map(|dev| dev.available_memory()).sum()
+    pub fn available_memory(&self, exclusive: bool) -> u64 {
+        self.0
+            .iter()
+            .filter(|dev| dev.is_exclusive == exclusive)
+            .map(|dev| dev.available_memory())
+            .sum()
     }
 
     pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[u32]) {

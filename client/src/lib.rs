@@ -243,9 +243,11 @@ mod tests {
         let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
         let deadline = Some(Deadline::new(start, end));
+        let exclusive = false;
         let reqs = TaskRequirements {
             req: vec![req],
             deadline,
+            exclusive,
             estimations: Some(TaskEstimations {
                 num_of_iter: 1,
                 time_per_iter: time_per_iteration,

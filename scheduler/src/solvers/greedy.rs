@@ -17,6 +17,7 @@ impl Solver for GreedySolver {
 
         // Make a new resource state, that the caller will use for updating the main resource state
         let mut resources = resources.0.clone();
+        //let mut resources: Vec<ResourceState> = resources.0.clone().iter().filter(|&r| r.is_exclusive == requirements.exclusive).into().collect();
 
         for req in requirements.req.iter() {
             let quantity = req.quantity;
@@ -24,6 +25,7 @@ impl Solver for GreedySolver {
             let mut selected_resources = resources
                 .iter_mut()
                 .enumerate()
+                .filter(|(_, r)| r.is_exclusive == requirements.exclusive)
                 .filter_map(|(index, device)| {
                     if let ResourceType::Gpu(ref mem) = req.resource {
                         match mem {
