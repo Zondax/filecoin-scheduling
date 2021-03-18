@@ -123,7 +123,7 @@ impl Scheduler {
                 let current_task = state.get(&client.process_id()).unwrap();
                 // This is expensive, we can do better by havving an associated table between
                 // resources and tasks using it.
-                for job_id in queue.iter().filter(|id| **id != client.process_id()) {
+                for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
                     let next_task = state.get(job_id).unwrap();
                     wait = current_task.allocation.resource_id.iter().any(|dev_id| {
                         next_task
