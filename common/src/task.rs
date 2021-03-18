@@ -19,6 +19,7 @@ pub trait TaskFunc {
 }
 
 /// Helper type that indicates if a task should be executed again
+#[derive(PartialEq, Eq)]
 pub enum TaskResult {
     Continue,
     Done,

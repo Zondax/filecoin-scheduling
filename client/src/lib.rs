@@ -88,7 +88,8 @@ async fn execute_task<'a, T>(
     // Initialize user resources
     task.init(alloc)
         .map_err(|e| ClientError::ClientInit(e.to_string()))?;
-    while task.task(alloc).is_continue() {
+    let mut cont = TaskResult::Continue;
+    while cont == TaskResult::Continue {
         while wait_preemptive(client, timeout).await? {
             tokio::time::sleep(Duration::from_secs(1)).await
         }
@@ -96,6 +97,7 @@ async fn execute_task<'a, T>(
             "Client {} task iteration completed",
             client.token.process_id()
         );
+        cont = task.task(alloc);
         release_preemptive(client).await?;
     }
 

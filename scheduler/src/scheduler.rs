@@ -37,6 +37,7 @@ impl Scheduler {
             .map(|dev| ResourceState {
                 dev: dev.clone(),
                 mem_usage: 0,
+                is_busy: false,
                 is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
             })
             .collect::<Vec<ResourceState>>();
@@ -56,7 +57,7 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
         }
 
-        let mut resources = if let Ok(resc) = self.devices.write() {
+        let mut resources = if let Ok(resc) = self.devices.try_write() {
             resc
         } else {
             return SchedulerResponse::Schedule(Err(Error::Other(
@@ -110,20 +111,34 @@ impl Scheduler {
     }
 
     fn wait_preemptive(&self, client: ClientToken) -> bool {
+        tracing::info!("scheduler: client {} wait preemtive", client.process_id());
+
         let queue = self.jobs_queue.read().unwrap();
+        let state = self.tasks_state.read().unwrap();
+        let current_task = state.get(&client.process_id()).unwrap();
+        {
+            let resources = self.devices.read().unwrap();
+            if resources.has_busy_resources(&current_task.allocation.resource_id) {
+                return true; //client should sleep 2 seconds (LONG)
+            }
+        }
         if let Some(job) = queue.front() {
             if *job == client.process_id() {
                 //tracing::info!("client {} already upfront of the queue", *job);
+                let devwrite = self.devices.try_write();
+                if devwrite.is_err() {
+                    return true; //client should sleep short
+                }
+                let mut resources_write = devwrite.unwrap();
+                resources_write.set_busy_resources(&current_task.allocation.resource_id);
                 false
             } else {
+                let mut wait = false;
                 //Checks if this task needs to wait for its turn as indicated in the plan
                 //may be the resources are its and can continue immediately
-                let mut wait = false;
-                let state = self.tasks_state.read().unwrap();
-                let current_task = state.get(&client.process_id()).unwrap();
                 // This is expensive, we can do better by havving an associated table between
                 // resources and tasks using it.
-                for job_id in queue.iter().filter(|id| **id != client.process_id()) {
+                for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
                     let next_task = state.get(job_id).unwrap();
                     wait = current_task.allocation.resource_id.iter().any(|dev_id| {
                         next_task
@@ -135,6 +150,14 @@ impl Scheduler {
                     if wait {
                         break;
                     }
+                }
+                if !wait {
+                    let devwrite = self.devices.try_write();
+                    if devwrite.is_err() {
+                        return true;
+                    }
+                    let mut resources_write = devwrite.unwrap();
+                    resources_write.set_busy_resources(&current_task.allocation.resource_id);
                 }
                 wait
             }
@@ -174,7 +197,13 @@ impl Scheduler {
         }
     }
 
-    fn release_preemptive(&self, _client: ClientToken) {}
+    fn release_preemptive(&self, client: ClientToken) {
+        tracing::info!("release preemtive client {}", client.process_id());
+        let state = self.tasks_state.read().unwrap();
+        let current_task = state.get(&client.process_id()).unwrap();
+        let mut resources_write = self.devices.write().unwrap();
+        resources_write.unset_busy_resources(&current_task.allocation.resource_id);
+    }
 }
 
 impl Handler for Scheduler {
