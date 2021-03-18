@@ -6,7 +6,8 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
-    ResourceMemory, ResourceReq, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult,
+    ResourceMemory, ResourceReq, Result as TResult, Task, TaskEstimations, TaskFunc,
+    TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
 pub use rpc_client::*;
@@ -48,7 +49,6 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
 }
 
 #[tracing::instrument(level = "info", skip(timeout, task, client))]
-
 pub fn schedule_one_of<T>(
     client: Client,
     mut task: Task<T>,
@@ -70,18 +70,12 @@ pub fn schedule_one_of<T>(
         match allocation {
             Err(e) => Err(e),
             Ok(alloc) => {
-                let result = execute_task(&client, timeout, &mut task.task_func, &alloc)
-                    .await
-                    .map(|res| {
-                        res.get_result()
-                            .expect("TaskResult variant is unreachable")
-                            .map_err(|e| ClientError::ClientTask(e.to_string()))
-                    });
+                let result = execute_task(&client, timeout, &mut task.task_func, &alloc).await;
                 release(&client).await?;
                 result
             }
         }
-    })?
+    })
 }
 
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
@@ -90,25 +84,23 @@ async fn execute_task<'a, T>(
     timeout: Duration,
     task: &mut Box<dyn TaskFunc<TaskOutput = T>>,
     alloc: &ResourceAlloc,
-) -> Result<TaskResult<T>, ClientError> {
-    let mut result = TaskResult::Continue;
+) -> Result<T, ClientError> {
     // Initialize user resources
     task.init(alloc)
         .map_err(|e| ClientError::ClientInit(e.to_string()))?;
-    while result.is_continue() {
+    while task.task(alloc).is_continue() {
         while wait_preemptive(client, timeout).await? {
             tokio::time::sleep(Duration::from_secs(1)).await
         }
-        result = task.task(alloc);
         debug!(
             "Client {} task iteration completed",
             client.token.process_id()
         );
         release_preemptive(client).await?;
     }
+
     task.end(alloc)
-        .map_err(|e| ClientError::ClientEnd(e.to_string()))?;
-    Ok(result)
+        .map_err(|e| ClientError::ClientEnd(e.to_string()))
 }
 
 #[tracing::instrument(level = "info", skip(client))]
@@ -225,8 +217,13 @@ mod tests {
 
     impl TaskFunc for TaskTest {
         type TaskOutput = String;
-        fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult<Self::TaskOutput> {
-            TaskResult::Done(Ok("HelloWorld".into()))
+
+        fn end(&mut self, _: &ResourceAlloc) -> TResult<Self::TaskOutput> {
+            Ok("HelloWorld".to_string())
+        }
+
+        fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult {
+            TaskResult::Done
         }
     }
 

@@ -1,8 +1,8 @@
 use std::io;
 
 use client::{
-    register, schedule_one_of, spawn_scheduler_with_handler, ResourceAlloc, Task, TaskFunc,
-    TaskResult,
+    register, schedule_one_of, spawn_scheduler_with_handler, ResourceAlloc, TResult, Task,
+    TaskFunc, TaskResult,
 };
 use std::time::Duration;
 
@@ -20,14 +20,18 @@ impl Test {
 impl TaskFunc for Test {
     type TaskOutput = String;
 
-    fn task(&mut self, alloc: &ResourceAlloc) -> TaskResult<Self::TaskOutput> {
+    fn end(&mut self, _: &ResourceAlloc) -> TResult<Self::TaskOutput> {
+        Ok(format!("Task {} done!!!", self.id))
+    }
+
+    fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult {
         if self.index < 4 {
             self.index += 1;
             std::thread::sleep(Duration::from_secs(1));
             return TaskResult::Continue;
         }
-        tracing::info!("Client task {} Done!!! ", self.id);
-        TaskResult::Done(Ok(format!("Task {} done!!!", self.id)))
+        tracing::info!("Task {} Done!!! ", self.id);
+        TaskResult::Done
     }
 }
 
