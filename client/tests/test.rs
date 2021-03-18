@@ -27,7 +27,9 @@ impl TaskFunc for Test {
     fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult {
         if self.index < 4 {
             self.index += 1;
-            std::thread::sleep(Duration::from_secs(1));
+            tracing::info!("Task {} Running!!! ", self.id);
+            std::thread::sleep(Duration::from_secs(2));
+            tracing::info!("Task {} returning!!! ", self.id);
             return TaskResult::Continue;
         }
         tracing::info!("Task {} Done!!! ", self.id);
@@ -41,7 +43,7 @@ fn test_schedule() {
     //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    tracing_subscriber::fmt().with_writer(io::stdout).init();
+    //tracing_subscriber::fmt().with_writer(io::stdout).init();
 
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 
@@ -56,7 +58,7 @@ fn test_schedule() {
             }
             schedule_one_of(client, task, Duration::from_secs(20))
         }));
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(2));
     }
     for j in joiner.into_iter() {
         let res = j.join().unwrap();
@@ -71,7 +73,7 @@ fn test_with_exclusivetask() {
     //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    //tracing_subscriber::fmt().with_writer(io::stdout).init();
+    tracing_subscriber::fmt().with_writer(io::stdout).init();
 
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 

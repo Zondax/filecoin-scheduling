@@ -14,6 +14,8 @@ pub struct ResourceState {
     pub mem_usage: u64,
     /// Mark device as exclusive
     pub is_exclusive: bool,
+    /// Using resource?
+    pub is_busy: bool,
 }
 
 impl ResourceState {
@@ -28,6 +30,14 @@ impl ResourceState {
                 ResourceMemory::Mem(value) => self.mem_usage += value,
             }
         }
+    }
+
+    pub fn set_as_busy(&mut self) {
+        self.is_busy = true;
+    }
+
+    pub fn set_as_free(&mut self) {
+        self.is_busy = false;
     }
 }
 
@@ -52,6 +62,32 @@ impl Resources {
                     ResourceMemory::All => dev.mem_usage = 0,
                     ResourceMemory::Mem(value) => dev.mem_usage -= value,
                 });
+        }
+    }
+
+    pub fn has_busy_resources(&self, devices: &[u32]) -> bool {
+        self.0.clone().iter().any(|dev| {
+            devices
+                .iter()
+                .any(|d| d == &dev.dev.bus_id() && dev.is_busy)
+        })
+    }
+
+    pub fn set_busy_resources(&mut self, devices: &[u32]) {
+        for dev_id in devices {
+            self.0
+                .iter_mut()
+                .filter(|device| device.dev.bus_id() == *dev_id)
+                .for_each(|dev| dev.set_as_busy());
+        }
+    }
+
+    pub fn unset_busy_resources(&mut self, devices: &[u32]) {
+        for dev_id in devices {
+            self.0
+                .iter_mut()
+                .filter(|device| device.dev.bus_id() == *dev_id)
+                .for_each(|dev| dev.set_as_free());
         }
     }
 }
