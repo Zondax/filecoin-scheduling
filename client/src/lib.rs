@@ -6,7 +6,7 @@ pub mod rpc_client;
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, Error as ClientError, ResourceAlloc,
-    ResourceMemory, ResourceReq, Result as TResult, Task, TaskEstimations, TaskFunc,
+    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult,
 };
 pub use global_mutex::GlobalMutex;
@@ -48,29 +48,54 @@ pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
     Client::new(&server_address(), token)
 }
 
-#[tracing::instrument(level = "info", skip(timeout, task, client))]
+/// Schedules a task
+///
+/// The scheduler would pick up one of the resource requirements the client listed
+/// according to the current resource usage in terms of memory and priorities that this task and
+/// the ones already running have.
+///
+/// # Arguments:
+/// * `client` - The client identifier
+/// * `task_func` - The task functions object that implements [TaskFunc] trait
+/// * `req` - The task requirements, what is needed for executing this task. It also gives some
+/// information about execution times, deadlines and resource requirements. If __None__ the task
+/// would be executed inmediately without the intervention of the scheduler service. Otherwise the
+/// task is scheduled on the resource that best fit the requirements. The task execution
+/// will be controlled by the scheduler service.
+/// * `timeout` - Indicates how much the client is able to wait for the task to be scheduled. It is
+/// possible that the client have to wait for resources to be freed when other task are done. If it expires and Error would be returned indicating it was
+/// the case.
+#[tracing::instrument(level = "info", skip(timeout, task_func, req, client))]
 pub fn schedule_one_of<T>(
     client: Client,
-    mut task: Task<T>,
+    task_func: &mut dyn TaskFunc<TaskOutput = T>,
+    req: Option<TaskRequirements>,
     timeout: Duration,
 ) -> Result<T, ClientError> {
     let address = server_address();
+
+    if req.is_none() {
+        return execute_without_scheduler(task_func);
+    }
+
+    let req = req.unwrap();
+
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
     rt.block_on(async {
         let allocation = if client.check_server().await.is_ok() {
             tracing::info!("Scheduler running ");
-            wait_allocation(&client, task.task_req.clone(), timeout).await
+            wait_allocation(&client, req.clone(), timeout).await
         } else {
             launch_scheduler_process(address)?;
             std::thread::sleep(Duration::from_millis(500));
-            wait_allocation(&client, task.task_req, timeout).await
+            wait_allocation(&client, req, timeout).await
         };
 
         match allocation {
             Err(e) => Err(e),
             Ok(alloc) => {
-                let result = execute_task(&client, timeout, &mut task.task_func, &alloc).await;
+                let result = execute_task(&client, timeout, task_func, &alloc).await;
                 release(&client).await?;
                 result
             }
@@ -78,15 +103,32 @@ pub fn schedule_one_of<T>(
     })
 }
 
+fn execute_without_scheduler<T>(
+    task_func: &mut dyn TaskFunc<TaskOutput = T>,
+) -> Result<T, ClientError> {
+    task_func
+        .init(None)
+        .map_err(|e| ClientError::Other(e.to_string()))?;
+    let mut cont = TaskResult::Continue;
+    while cont == TaskResult::Continue {
+        cont = task_func
+            .task(None)
+            .map_err(|e| ClientError::Other(e.to_string()))?;
+    }
+    task_func
+        .end(None)
+        .map_err(|e| ClientError::Other(e.to_string()))
+}
+
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
 async fn execute_task<'a, T>(
     client: &Client,
     timeout: Duration,
-    task: &mut Box<dyn TaskFunc<TaskOutput = T>>,
+    task: &mut dyn TaskFunc<TaskOutput = T>,
     alloc: &ResourceAlloc,
 ) -> Result<T, ClientError> {
     // Initialize user resources
-    task.init(alloc)
+    task.init(Some(alloc))
         .map_err(|e| ClientError::ClientInit(e.to_string()))?;
     let mut cont = TaskResult::Continue;
     while cont == TaskResult::Continue {
@@ -97,11 +139,13 @@ async fn execute_task<'a, T>(
             "Client {} task iteration completed",
             client.token.process_id()
         );
-        cont = task.task(alloc);
+        cont = task
+            .task(Some(alloc))
+            .map_err(|e| ClientError::Other(e.to_string()))?;
         release_preemptive(client).await?;
     }
 
-    task.end(alloc)
+    task.end(Some(alloc))
         .map_err(|e| ClientError::ClientEnd(e.to_string()))
 }
 
@@ -214,46 +258,36 @@ async fn release(client: &Client) -> Result<(), ClientError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
 
     struct TaskTest;
 
     impl TaskFunc for TaskTest {
         type TaskOutput = String;
 
-        fn end(&mut self, _: &ResourceAlloc) -> TResult<Self::TaskOutput> {
+        fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::TaskOutput, Box<dyn Error>> {
             Ok("HelloWorld".to_string())
         }
 
-        fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult {
-            TaskResult::Done
+        fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Box<dyn Error>> {
+            Ok(TaskResult::Done)
         }
     }
 
-    fn task<T>(task_func: impl TaskFunc<TaskOutput = T> + 'static) -> Task<T> {
-        use chrono::{DateTime, NaiveDateTime, Utc};
-
-        let req = ResourceReq {
-            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
-            quantity: 2,
-            preemptible: false,
-        };
-        let time_per_iteration = Duration::from_millis(10);
-        let exec_time = Duration::from_millis(500);
-        let start = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
-        let end = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(61, 0), Utc);
-        let deadline = Some(Deadline::new(start, end));
-        let exclusive = false;
-        let reqs = TaskRequirements {
-            req: vec![req],
-            deadline,
-            exclusive,
-            estimations: Some(TaskEstimations {
-                num_of_iter: 1,
-                time_per_iter: time_per_iteration,
-                exec_time,
-            }),
-        };
-        Task::new(task_func, reqs)
+    fn task_requirements() -> TaskRequirements {
+        let start = chrono::Utc::now();
+        let end = start + chrono::Duration::seconds(30);
+        let deadline = Deadline::new(start, end);
+        TaskReqBuilder::new()
+            .resource_req(ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+                quantity: 1,
+                preemptible: true,
+            })
+            .with_time_estimations(Duration::from_millis(500), 1, Duration::from_millis(3000))
+            .with_deadline(deadline)
+            .build()
+            .unwrap()
     }
 
     #[test]
@@ -267,9 +301,12 @@ mod tests {
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
-        let task = task(TaskTest);
-
-        let res = schedule_one_of(token, task, Default::default());
+        let res = schedule_one_of(
+            token,
+            &mut TaskTest,
+            Some(task_requirements()),
+            Default::default(),
+        );
         // Accept just this type of error
         if let Err(e) = res {
             assert_eq!(e, ClientError::Timeout);

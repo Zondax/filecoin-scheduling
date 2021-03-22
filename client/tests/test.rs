@@ -1,8 +1,10 @@
+use std::error::Error;
 use std::io;
 
 use client::{
-    register, schedule_one_of, spawn_scheduler_with_handler, ResourceAlloc, TResult, Task,
-    TaskFunc, TaskResult,
+    register, schedule_one_of, spawn_scheduler_with_handler, Deadline, ResourceAlloc,
+    ResourceMemory, ResourceReq, ResourceType, TaskFunc, TaskReqBuilder, TaskRequirements,
+    TaskResult,
 };
 use std::time::Duration;
 
@@ -20,21 +22,37 @@ impl Test {
 impl TaskFunc for Test {
     type TaskOutput = String;
 
-    fn end(&mut self, _: &ResourceAlloc) -> TResult<Self::TaskOutput> {
+    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::TaskOutput, Box<dyn Error>> {
         Ok(format!("Task {} done!!!", self.id))
     }
 
-    fn task(&mut self, _alloc: &ResourceAlloc) -> TaskResult {
+    fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Box<dyn Error>> {
         if self.index < 4 {
             self.index += 1;
             tracing::info!("Task {} Running!!! ", self.id);
             std::thread::sleep(Duration::from_secs(2));
             tracing::info!("Task {} returning!!! ", self.id);
-            return TaskResult::Continue;
+            return Ok(TaskResult::Continue);
         }
         tracing::info!("Task {} Done!!! ", self.id);
-        TaskResult::Done
+        Ok(TaskResult::Done)
     }
+}
+
+fn task_requirements() -> TaskRequirements {
+    let start = chrono::Utc::now();
+    let end = start + chrono::Duration::seconds(30);
+    let deadline = Deadline::new(start, end);
+    TaskReqBuilder::new()
+        .resource_req(ResourceReq {
+            resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+            quantity: 1,
+            preemptible: true,
+        })
+        .with_time_estimations(Duration::from_millis(500), 1, Duration::from_millis(3000))
+        .with_deadline(deadline)
+        .build()
+        .unwrap()
 }
 
 #[test]
@@ -51,12 +69,17 @@ fn test_schedule() {
     for i in 0..5 {
         joiner.push(std::thread::spawn(move || {
             let client = register(i, i as u64).unwrap();
-            let test_func = Test::new(i as _);
-            let mut task = Task::default(test_func);
+            let mut test_func = Test::new(i as _);
+            let mut task_req = task_requirements();
             if i == 0 {
-                task.task_req.deadline = None;
+                task_req.deadline = None;
             }
-            schedule_one_of(client, task, Duration::from_secs(20))
+            schedule_one_of(
+                client,
+                &mut test_func,
+                Some(task_req),
+                Duration::from_secs(20),
+            )
         }));
         std::thread::sleep(Duration::from_secs(2));
     }
@@ -81,15 +104,20 @@ fn test_with_exclusivetask() {
     for i in 0..5 {
         joiner.push(std::thread::spawn(move || {
             let client = register(i, i as u64).unwrap();
-            let test_func = Test::new(i as _);
-            let mut task = Task::default(test_func);
+            let mut test_func = Test::new(i as _);
+            let mut task_req = task_requirements();
             if i == 0 {
-                task.task_req.deadline = None;
+                task_req.deadline = None;
             }
             if i == 4 {
-                task.task_req.exclusive = true;
+                task_req.exclusive = true;
             }
-            schedule_one_of(client, task, Duration::from_secs(20))
+            schedule_one_of(
+                client,
+                &mut test_func,
+                Some(task_req),
+                Duration::from_secs(20),
+            )
         }));
         std::thread::sleep(Duration::from_secs(1));
     }

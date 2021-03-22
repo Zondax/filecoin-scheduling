@@ -25,3 +25,16 @@ pub struct ResourceAlloc {
     pub requirement: ResourceReq,
     pub resource_id: Vec<u32>,
 }
+
+impl Default for ResourceAlloc {
+    fn default() -> Self {
+        Self {
+            requirement: ResourceReq {
+                resource: ResourceType::Cpu,
+                quantity: 0,
+                preemptible: false,
+            },
+            resource_id: vec![],
+        }
+    }
+}
