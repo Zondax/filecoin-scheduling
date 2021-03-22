@@ -4,18 +4,16 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
-
-pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use super::{Error as ClientError, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 
 pub trait TaskFunc {
     type TaskOutput;
 
-    fn init(&mut self, _: &ResourceAlloc) -> Result<()> {
+    fn init(&mut self, _: Option<&ResourceAlloc>) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
-    fn end(&mut self, _: &ResourceAlloc) -> Result<Self::TaskOutput>;
-    fn task(&mut self, alloc: &ResourceAlloc) -> TaskResult;
+    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::TaskOutput, Box<dyn Error>>;
+    fn task(&mut self, alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Box<dyn Error>>;
 }
 
 /// Helper type that indicates if a task should be executed again
@@ -59,6 +57,65 @@ pub struct TaskEstimations {
     pub exec_time: Duration,
 }
 
+#[derive(Default)]
+pub struct TaskReqBuilder {
+    req: Vec<ResourceReq>,
+    exclusive: bool,
+    deadline: Option<Deadline>,
+    task_estimations: Option<TaskEstimations>,
+}
+
+impl TaskReqBuilder {
+    pub fn new() -> Self {
+        Self {
+            req: vec![],
+            exclusive: false,
+            ..Default::default()
+        }
+    }
+
+    pub fn resource_req(mut self, req: ResourceReq) -> Self {
+        self.req.push(req);
+        self
+    }
+
+    pub fn exclusive(mut self, exclusive: bool) -> Self {
+        self.exclusive = exclusive;
+        self
+    }
+
+    pub fn with_deadline(mut self, deadline: Deadline) -> Self {
+        self.deadline.replace(deadline);
+        self
+    }
+
+    pub fn with_time_estimations(
+        mut self,
+        time_per_iter: Duration,
+        num_of_iter: usize,
+        exec_time: Duration,
+    ) -> Self {
+        self.task_estimations.replace(TaskEstimations {
+            time_per_iter,
+            num_of_iter,
+            exec_time,
+        });
+        self
+    }
+
+    pub fn build(self) -> Result<TaskRequirements, ClientError> {
+        if self.req.is_empty() {
+            return Err(ClientError::ResourceReqEmpty);
+        }
+        Ok(TaskRequirements {
+            req: self.req,
+            deadline: self.deadline,
+            exclusive: self.exclusive,
+            estimations: self.task_estimations,
+        })
+    }
+}
+
 /// Contains all the requirements and timing description for
 /// a task. This parameter will be used by the scheduler solve for
 /// scheduling the task in the right time window and resource
@@ -89,47 +146,5 @@ impl TaskRequirements {
         } else {
             0
         }
-    }
-}
-
-/// Contains the functions for initializacion, finalization and main task function
-/// along with the requirements for this task to be executed and scheduled
-pub struct Task<T> {
-    pub task_func: Box<dyn TaskFunc<TaskOutput = T>>,
-    pub task_req: TaskRequirements,
-}
-
-impl<T> Task<T> {
-    pub fn new(func: impl TaskFunc<TaskOutput = T> + 'static, task_req: TaskRequirements) -> Self {
-        Self {
-            task_func: Box::new(func),
-            task_req,
-        }
-    }
-
-    pub fn default(func: impl TaskFunc<TaskOutput = T> + 'static) -> Self {
-        let req = vec![ResourceReq {
-            resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
-            quantity: 1,
-            preemptible: true,
-        }];
-        let time_per_iter = Duration::from_millis(500);
-        let exec_time = Duration::from_millis(3000);
-        let start = Utc::now();
-        let end = start + chrono::Duration::seconds(30);
-        let deadline = Some(Deadline::new(start, end));
-        let num_of_iter = 1;
-
-        let task_requirements = TaskRequirements {
-            req,
-            deadline,
-            exclusive: false,
-            estimations: Some(TaskEstimations {
-                time_per_iter,
-                num_of_iter,
-                exec_time,
-            }),
-        };
-        Self::new(func, task_requirements)
     }
 }

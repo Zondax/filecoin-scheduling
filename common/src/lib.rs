@@ -1,17 +1,15 @@
-mod error;
-//mod ffi;
 mod client;
 mod config;
 mod devices;
+mod error;
 mod requests;
 mod resource;
 mod task;
 
 pub use client::ClientToken;
 pub use config::{ClientConfig, Config, SchedulerConfig};
-pub use error::Error;
-//pub use ffi::{FfiResourceAlloc, FfiResourceReq};
 pub use devices::{list_devices, Device, Devices};
+pub use error::Error;
 pub use requests::RequestMethod;
 pub use resource::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
-pub use task::{Deadline, Result, Task, TaskEstimations, TaskFunc, TaskRequirements, TaskResult};
+pub use task::{Deadline, TaskEstimations, TaskFunc, TaskReqBuilder, TaskRequirements, TaskResult};
