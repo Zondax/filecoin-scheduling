@@ -1,7 +1,9 @@
+use chrono::{offset::Utc, DateTime};
 use std::collections::{HashMap, VecDeque};
 
 use common::{
-    Device, Error, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
+    Device, Error, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskEstimations,
+    TaskRequirements,
 };
 
 /// Wrapper that add additional information regarding to the Resource
@@ -16,6 +18,60 @@ pub struct ResourceState {
     pub is_exclusive: bool,
     /// Using resource?
     pub is_busy: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct FrontTask {
+    pub last_seen: Option<DateTime<Utc>>,
+    pub job_id: Option<u32>,
+    pub duration: i64,
+}
+
+impl FrontTask {
+    pub fn set_last_seen_and_duration(&mut self, job_id: u32, req: &TaskRequirements) {
+        self.last_seen = Some(Utc::now());
+        self.job_id = Some(job_id);
+        if let Some(TaskEstimations {
+            time_per_iter: t,
+            num_of_iter: _,
+            exec_time: _,
+        }) = req.estimations
+        {
+            if cfg!(dummy_devices) {
+                self.duration = (t.as_secs() + 3) as i64;
+            } else {
+                self.duration = (t.as_secs() + 300) as i64;
+            }
+        } else {
+            self.duration = 300_i64;
+        }
+    }
+
+    pub fn set_last_seen(&mut self) {
+        self.last_seen = Some(Utc::now());
+    }
+
+    pub fn is_front_job(&self, job_id: u32) -> bool {
+        if self.job_id.is_none() {
+            false
+        } else {
+            self.job_id.unwrap() == job_id
+        }
+    }
+
+    pub fn remove_front_job_from_queue(&self) -> bool {
+        if self.last_seen.is_none() {
+            false
+        } else {
+            self.last_seen.unwrap() + chrono::Duration::seconds(self.duration) < Utc::now()
+        }
+    }
+
+    pub fn remove_front_job(&mut self) {
+        self.last_seen = None;
+        self.duration = 300_i64;
+        self.job_id = None;
+    }
 }
 
 impl ResourceState {
@@ -99,6 +155,7 @@ pub struct TaskState {
     // The list of jobs associates with this task, each job is a requirement plus the resource
     // assigned to it accordingly.
     pub allocation: ResourceAlloc,
+    pub is_stalled: bool,
 }
 
 impl TaskState {

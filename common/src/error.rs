@@ -11,6 +11,7 @@ pub enum Error {
     ResourceReqEmpty,
     UnknownResource(u32),
     Timeout,
+    WriteFailure,
     Solver(String),
     Other(String),
 }
@@ -34,6 +35,9 @@ impl fmt::Display for Error {
             Error::ResourceReqEmpty => write!(f, "Requirements for task is empty"),
             Error::UnknownResource(r) => write!(f, "Resource {} not available", r),
             Error::Timeout => write!(f, "Timeout triggered before receiving a response "),
+            Error::WriteFailure => {
+                write!(f, "Could not write to scheduler state")
+            }
             Error::Solver(ref e) => {
                 write!(f, "A solver error: {}", e)
             }

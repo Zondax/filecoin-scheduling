@@ -143,6 +143,10 @@ async fn execute_task<'a, T>(
             .task(Some(alloc))
             .map_err(|e| ClientError::Other(e.to_string()))?;
         release_preemptive(client).await?;
+        #[cfg(dummy_devices)]
+        if client.token.process_id() == 0 || client.token.process_id() == 2 {
+            tokio::time::sleep(Duration::from_secs(30)).await
+        }
     }
 
     task.end(Some(alloc))

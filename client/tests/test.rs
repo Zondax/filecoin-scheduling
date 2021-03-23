@@ -71,9 +71,12 @@ fn test_schedule() {
             let client = register(i, i as u64).unwrap();
             let mut test_func = Test::new(i as _);
             let mut task_req = task_requirements();
-            if i == 0 {
-                task_req.deadline = None;
-            }
+            // if i == 0 {
+            //     let start = chrono::Utc::now();
+            //     let end = start;
+            //     let deadline = Deadline::new(start, end);
+            //     task_req.deadline = Some(deadline);
+            // }
             schedule_one_of(
                 client,
                 &mut test_func,

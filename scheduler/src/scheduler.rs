@@ -5,7 +5,7 @@ use std::sync::RwLock;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{ResourceState, Resources, TaskState};
+use crate::solver::{FrontTask, ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
@@ -23,6 +23,8 @@ pub(crate) struct Scheduler {
 
     // Sorted jobs to be executed.
     jobs_queue: RwLock<VecDeque<u32>>,
+
+    front_task: RwLock<FrontTask>,
 
     devices: RwLock<Resources>,
 }
@@ -42,10 +44,16 @@ impl Scheduler {
             })
             .collect::<Vec<ResourceState>>();
         let devices = RwLock::new(Resources(state));
+        let front_task = FrontTask {
+            duration: 3600_i64, //todo: grab from config file
+            job_id: None,
+            last_seen: None,
+        };
         Self {
             _state_path: path.into(),
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
+            front_task: RwLock::new(front_task),
             devices,
         }
     }
@@ -89,6 +97,7 @@ impl Scheduler {
         let task_state = TaskState {
             requirements,
             current_iteration: 0,
+            is_stalled: false,
             allocation: alloc.clone(),
         };
 
@@ -112,28 +121,78 @@ impl Scheduler {
 
     fn wait_preemptive(&self, client: ClientToken) -> bool {
         tracing::info!("scheduler: client {} wait preemtive", client.process_id());
+        if self.update_is_stalled(&client).is_err() || self.wait_for_busy_resources(&client) {
+            return true;
+        }
+        let can_start = self.check_priority_queue(&client);
+        if can_start.is_err() {
+            return true;
+        }
+        let wait = can_start.unwrap();
+        if wait {
+            let check = self.check_front_job();
+            if check.is_err() {
+                return true;
+            }
+        }
+        wait
+    }
+
+    fn update_is_stalled(&self, client: &ClientToken) -> Result<(), Error> {
+        let is_stalled;
+        {
+            let state = self.tasks_state.read().unwrap();
+            let current_task = state.get(&client.process_id()).unwrap();
+            is_stalled = current_task.is_stalled;
+        }
+        if is_stalled {
+            tracing::warn!(
+                "Setting process {} as not stalled again!!",
+                client.process_id()
+            );
+            let mut state = self
+                .tasks_state
+                .try_write()
+                .map_err(|_e| Error::WriteFailure)?;
+            if let Some(current_task) = state.get_mut(&client.process_id()) {
+                current_task.is_stalled = false;
+            }
+        }
+        Ok(())
+    }
+
+    fn wait_for_busy_resources(&self, client: &ClientToken) -> bool {
+        let state = self.tasks_state.read().unwrap();
+        let current_task = state.get(&client.process_id()).unwrap();
+        let resources = self.devices.read().unwrap();
+        resources.has_busy_resources(&current_task.allocation.resource_id)
+    }
+
+    fn check_priority_queue(&self, client: &ClientToken) -> Result<bool, Error> {
+        let mut wait = false;
 
         let queue = self.jobs_queue.read().unwrap();
         let state = self.tasks_state.read().unwrap();
         let current_task = state.get(&client.process_id()).unwrap();
-        {
-            let resources = self.devices.read().unwrap();
-            if resources.has_busy_resources(&current_task.allocation.resource_id) {
-                return true; //client should sleep 2 seconds (LONG)
-            }
-        }
         if let Some(job) = queue.front() {
             if *job == client.process_id() {
                 //tracing::info!("client {} already upfront of the queue", *job);
-                let devwrite = self.devices.try_write();
-                if devwrite.is_err() {
-                    return true; //client should sleep short
-                }
-                let mut resources_write = devwrite.unwrap();
+                let mut resources_write =
+                    self.devices.try_write().map_err(|_e| Error::WriteFailure)?;
                 resources_write.set_busy_resources(&current_task.allocation.resource_id);
-                false
+                let mut fronttask_write = self
+                    .front_task
+                    .try_write()
+                    .map_err(|_e| Error::WriteFailure)?;
+                if fronttask_write.is_front_job(client.process_id()) {
+                    fronttask_write.set_last_seen();
+                } else {
+                    fronttask_write.set_last_seen_and_duration(
+                        client.process_id(),
+                        &current_task.requirements,
+                    );
+                }
             } else {
-                let mut wait = false;
                 //Checks if this task needs to wait for its turn as indicated in the plan
                 //may be the resources are its and can continue immediately
                 // This is expensive, we can do better by havving an associated table between
@@ -151,20 +210,51 @@ impl Scheduler {
                         break;
                     }
                 }
-                if !wait {
-                    let devwrite = self.devices.try_write();
-                    if devwrite.is_err() {
-                        return true;
-                    }
-                    let mut resources_write = devwrite.unwrap();
-                    resources_write.set_busy_resources(&current_task.allocation.resource_id);
-                }
-                wait
             }
         } else {
             tracing::warn!("Queue empty!");
-            false
+            return Err(Error::Other("Empty queue".to_string()));
         }
+        if !wait {
+            let mut resources_write = self.devices.try_write().map_err(|_e| Error::WriteFailure)?;
+            resources_write.set_busy_resources(&current_task.allocation.resource_id);
+        }
+        Ok(wait)
+    }
+
+    fn check_front_job(&self) -> Result<(), Error> {
+        let remove_front_job;
+        {
+            remove_front_job = self
+                .front_task
+                .read()
+                .unwrap()
+                .remove_front_job_from_queue();
+        }
+        if remove_front_job {
+            let mut state = self
+                .tasks_state
+                .try_write()
+                .map_err(|_e| Error::WriteFailure)?;
+            if let Some(job_id) = self.front_task.read().unwrap().job_id {
+                tracing::warn!(
+                    "Non-responding process {}, putting it in back of queue!!",
+                    job_id
+                );
+                if let Some(current_task) = state.get_mut(&job_id) {
+                    current_task.is_stalled = true;
+                }
+                if let Ok(mut solver) = create_solver(None) {
+                    // Update our plan
+                    *self.jobs_queue.write().unwrap() = match solver.solve_job_schedule(&*state) {
+                        Ok(plan) => plan,
+                        Err(e) => return Err(e),
+                    };
+                }
+            }
+            self.front_task.write().unwrap().remove_front_job();
+        }
+        Ok(())
     }
 
     fn list_allocations(&self) -> SchedulerResponse {
@@ -177,6 +267,17 @@ impl Scheduler {
             .write()
             .unwrap()
             .remove(&client.process_id());
+        let is_frontjob;
+        {
+            is_frontjob = self
+                .front_task
+                .read()
+                .unwrap()
+                .is_front_job(client.process_id());
+        }
+        if is_frontjob {
+            self.front_task.write().unwrap().remove_front_job();
+        }
         if let Some(state) = task_state {
             if let ResourceType::Gpu(ref m) = state.allocation.requirement.resource {
                 self.devices
