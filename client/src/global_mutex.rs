@@ -30,7 +30,7 @@ impl GlobalMutex {
         p
     }
 
-    fn _new<'a>(name: Option<&'a str>) -> Result<Self, ClientError> {
+    fn _new(name: Option<&str>) -> Result<Self, ClientError> {
         let path = if let Some(suffix) = name {
             Self::tmp_path(&format!("{}_{}", SHARED_MEM_PATH, suffix))
         } else {
@@ -46,7 +46,7 @@ impl GlobalMutex {
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn try_lock(&self) -> Result<() /*LockGuard<'_>*/, ClientError> {
+    pub fn try_lock(&self) -> Result<(), ClientError> {
         debug!(
             "Trying to acquire the mutex - process id: {}",
             std::process::id()
