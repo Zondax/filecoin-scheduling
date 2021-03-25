@@ -41,7 +41,7 @@ impl GlobalMutex {
             .write(true)
             .create(true)
             .open(&path)
-            .unwrap();
+            .map_err(|e| ClientError::GlobalMutexError(e.to_string()))?;
         Ok(Self(file))
     }
 
