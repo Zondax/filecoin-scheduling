@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 mod global_mutex;
 pub mod rpc_client;
@@ -83,14 +84,8 @@ pub fn schedule_one_of<T>(
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
 
     rt.block_on(async {
-        let allocation = if client.check_server().await.is_ok() {
-            tracing::info!("Scheduler running ");
-            wait_allocation(&client, req.clone(), timeout).await
-        } else {
-            launch_scheduler_process(address)?;
-            std::thread::sleep(Duration::from_millis(500));
-            wait_allocation(&client, req, timeout).await
-        };
+        check_scheduler_service_or_launch(address).await?;
+        let allocation = wait_allocation(&client, req, timeout).await;
 
         match allocation {
             Err(e) => Err(e),
@@ -133,15 +128,15 @@ async fn execute_task<'a, T>(
     let mut cont = TaskResult::Continue;
     while cont == TaskResult::Continue {
         while wait_preemptive(client, timeout).await? {
-            tokio::time::sleep(Duration::from_secs(1)).await
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        debug!(
-            "Client {} task iteration completed",
-            client.token.process_id()
-        );
         cont = task
             .task(Some(alloc))
             .map_err(|e| ClientError::Other(e.to_string()))?;
+        info!(
+            "Client {} task iteration completed",
+            client.token.process_id()
+        );
         release_preemptive(client).await?;
     }
 
@@ -210,12 +205,15 @@ async fn wait_allocation(
 fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
     use nix::unistd::{fork, ForkResult};
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { .. }) => Ok(()),
+        Ok(ForkResult::Parent { .. }) => {
+            // make the parent process wait for the service to run
+            std::thread::sleep(Duration::from_millis(500));
+            Ok(())
+        }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
-            if let Ok(_guard) = mutex.try_lock() {
-                let _ = run_scheduler(&address);
-                mutex.release().unwrap();
+            if mutex.try_lock().is_ok() {
+                run_scheduler(&address).unwrap();
             }
             Ok(())
         }
@@ -223,15 +221,32 @@ fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
     }
 }
 
-pub fn list_all_resources() -> Devices {
-    common::list_devices()
+/// Returns a vector of tuples with the device id and free memory
+#[tracing::instrument(level = "info")]
+pub fn list_all_resources() -> Result<Vec<(usize, u64)>, ClientError> {
+    let mut allocations = list_allocations()?;
+    common::list_devices().gpu_devices().iter().for_each(|dev| {
+        allocations
+            .entry(dev.device_id())
+            .or_insert_with(|| dev.memory());
+    });
+    Ok(allocations.into_iter().collect::<Vec<_>>())
 }
 
-pub fn list_allocations() -> Result<Vec<u32>, ClientError> {
-    let jrpc_client = Client::new(&server_address(), Default::default())?;
+/// Returns a tuple with the ID and available memory of devices being used
+pub fn list_allocations() -> Result<HashMap<usize, u64>, ClientError> {
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
-    rt.block_on(async { jrpc_client.list_allocations().await })
-        .map_err(|e| ClientError::Other(e.to_string()))
+    let res = rt
+        .block_on(async {
+            check_scheduler_service_or_launch(server_address()).await?;
+            let client = Client::new(&server_address(), Default::default())?;
+            client.list_allocations().await.map_err(|e| {
+                error!("{}", e.to_string());
+                ClientError::Other(e.to_string())
+            })
+        })
+        .map(|res| res.unwrap());
+    res.map(|vec| vec.into_iter().collect::<HashMap<usize, u64>>())
 }
 
 #[tracing::instrument(level = "info", skip(client))]
@@ -253,6 +268,15 @@ async fn release(client: &Client) -> Result<(), ClientError> {
         .release(client.token)
         .await
         .map_err(|e| ClientError::RpcError(e.to_string()))?
+}
+
+async fn check_scheduler_service_or_launch(address: String) -> Result<(), ClientError> {
+    let client = Client::new(&address, Default::default())?;
+    if client.check_server().await.is_ok() {
+        Ok(())
+    } else {
+        launch_scheduler_process(address)
+    }
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ pub trait RpcClient {
 
     async fn check_server(&self) -> Result<(), Error>;
 
-    async fn list_allocations(&self) -> Vec<u32>;
+    async fn list_allocations(&self) -> Result<Vec<(usize, u64)>, Error>;
 
     async fn release(&self, client: ClientToken) -> Result<(), Error>;
 

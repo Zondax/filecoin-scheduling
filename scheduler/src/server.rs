@@ -8,6 +8,8 @@ use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use common::{ClientToken, Error, RequestMethod, ResourceAlloc, TaskRequirements};
 
+type AllocationResult = std::result::Result<Vec<(usize, u64)>, Error>;
+
 #[rpc(server)]
 pub trait RpcMethods {
     #[rpc(name = "wait_allocation")]
@@ -21,7 +23,7 @@ pub trait RpcMethods {
     fn wait_preemptive(&self, task: ClientToken) -> BoxFuture<Result<bool>>;
 
     #[rpc(name = "list_allocations")]
-    fn list_allocations(&self) -> BoxFuture<Result<Vec<u32>>>;
+    fn list_allocations(&self) -> BoxFuture<Result<AllocationResult>>;
 
     #[rpc(name = "check_server")]
     fn health_check(&self) -> BoxFuture<Result<std::result::Result<(), Error>>>;
@@ -82,7 +84,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn list_allocations(&self) -> BoxFuture<Result<Vec<u32>>> {
+    fn list_allocations(&self) -> BoxFuture<Result<AllocationResult>> {
         let method = RequestMethod::ListAllocations;
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
