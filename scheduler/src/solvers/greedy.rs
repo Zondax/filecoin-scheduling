@@ -59,9 +59,9 @@ impl Solver for GreedySolver {
                     .map(|index| {
                         let resource = &mut resources[index];
                         resource.update_memory_usage(&req.resource);
-                        resource.dev.bus_id()
+                        resource.dev.device_id()
                     })
-                    .collect::<Vec<u32>>();
+                    .collect::<Vec<usize>>();
                 return Some((
                     ResourceAlloc {
                         requirement: req.clone(),

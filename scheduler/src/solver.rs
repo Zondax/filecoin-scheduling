@@ -88,11 +88,11 @@ impl Resources {
         false
     }
 
-    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[u32]) {
+    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[usize]) {
         for dev_id in devices {
             self.0
                 .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
+                .filter(|device| device.dev.device_id() == *dev_id)
                 .for_each(|dev| match mem {
                     ResourceMemory::All => dev.mem_usage = 0,
                     ResourceMemory::Mem(value) => dev.mem_usage -= value,
@@ -100,28 +100,28 @@ impl Resources {
         }
     }
 
-    pub fn has_busy_resources(&self, devices: &[u32]) -> bool {
+    pub fn has_busy_resources(&self, devices: &[usize]) -> bool {
         self.0.clone().iter().any(|dev| {
             devices
                 .iter()
-                .any(|d| d == &dev.dev.bus_id() && dev.is_busy)
+                .any(|d| d == &dev.dev.device_id() && dev.is_busy)
         })
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[u32]) {
+    pub fn set_busy_resources(&mut self, devices: &[usize]) {
         for dev_id in devices {
             self.0
                 .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
+                .filter(|device| device.dev.device_id() == *dev_id)
                 .for_each(|dev| dev.set_as_busy());
         }
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[u32]) {
+    pub fn unset_busy_resources(&mut self, devices: &[usize]) {
         for dev_id in devices {
             self.0
                 .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
+                .filter(|device| device.dev.device_id() == *dev_id)
                 .for_each(|dev| dev.set_as_free());
         }
     }
