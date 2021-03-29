@@ -1,19 +1,19 @@
 use chrono::{offset::Utc, DateTime};
-use std::error::Error;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Error as ClientError, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
+use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
 
 pub trait TaskFunc {
-    type TaskOutput;
+    type Output;
+    type Error;
 
-    fn init(&mut self, _: Option<&ResourceAlloc>) -> Result<(), Box<dyn Error>> {
+    fn init(&mut self, _: Option<&ResourceAlloc>) -> Result<(), Self::Error> {
         Ok(())
     }
-    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::TaskOutput, Box<dyn Error>>;
-    fn task(&mut self, alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Box<dyn Error>>;
+    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::Output, Self::Error>;
+    fn task(&mut self, alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Self::Error>;
 }
 
 /// Helper type that indicates if a task should be executed again
@@ -84,8 +84,8 @@ impl TaskReqBuilder {
         self
     }
 
-    pub fn with_deadline(mut self, deadline: Deadline) -> Self {
-        self.deadline.replace(deadline);
+    pub fn with_deadline(mut self, deadline: Option<Deadline>) -> Self {
+        self.deadline = deadline;
         self
     }
 
@@ -103,16 +103,13 @@ impl TaskReqBuilder {
         self
     }
 
-    pub fn build(self) -> Result<TaskRequirements, ClientError> {
-        if self.req.is_empty() {
-            return Err(ClientError::ResourceReqEmpty);
-        }
-        Ok(TaskRequirements {
+    pub fn build(self) -> TaskRequirements {
+        TaskRequirements {
             req: self.req,
             deadline: self.deadline,
             exclusive: self.exclusive,
             estimations: self.task_estimations,
-        })
+        }
     }
 }
 
