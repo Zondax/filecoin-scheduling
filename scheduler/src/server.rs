@@ -6,7 +6,8 @@ use futures::FutureExt;
 
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use common::{ClientToken, Error, RequestMethod, ResourceAlloc, TaskRequirements};
+use crate::Error;
+use common::{ClientToken, RequestMethod, ResourceAlloc, TaskRequirements};
 
 type AllocationResult = std::result::Result<Vec<(usize, u64)>, Error>;
 

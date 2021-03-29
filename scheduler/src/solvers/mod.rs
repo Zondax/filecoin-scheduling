@@ -10,9 +10,10 @@ pub use linearsolver::{
 };
 
 use crate::solver::Solver;
+use crate::Error;
+use common::Config;
 #[cfg(feature = "mip_solver")]
 use common::TaskRequirements;
-use common::{Config, Error};
 
 /// Wrapper struct for converting from TaskRequirements to
 /// JobRequirements

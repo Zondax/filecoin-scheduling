@@ -9,7 +9,8 @@ use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
-use common::{ClientToken, Error, RequestMethod, ResourceType, TaskRequirements};
+use crate::Error;
+use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements};
 
 #[derive(Debug)]
 pub(crate) struct Scheduler {
@@ -63,9 +64,8 @@ impl Scheduler {
         let mut resources = if let Ok(resc) = self.devices.try_write() {
             resc
         } else {
-            return SchedulerResponse::Schedule(Err(Error::Other(
-                "Can not read resources".to_string(),
-            )));
+            // Is this an error?
+            return SchedulerResponse::Schedule(Err(Error::RwError));
         };
 
         // First step is to check if there are enough resources. This avoids calling alloc
@@ -76,7 +76,7 @@ impl Scheduler {
 
         let mut solver = match create_solver(None) {
             Ok(solver) => solver,
-            Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
+            Err(_) => return SchedulerResponse::Schedule(Err(Error::NoSolver)),
         };
 
         let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
@@ -104,7 +104,7 @@ impl Scheduler {
         // Update our plan
         let new_plan = match solver.solve_job_schedule(&*state) {
             Ok(plan) => plan,
-            Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
+            Err(e) => return SchedulerResponse::Schedule(Err(Error::SolverOther(e.to_string()))),
         };
 
         tracing::info!("scheduler job_plan {:?}", new_plan);
@@ -228,9 +228,10 @@ impl Scheduler {
     fn release_preemptive(&self, client: ClientToken) {
         tracing::info!("release preemtive client {}", client.process_id());
         let state = self.tasks_state.read().unwrap();
-        let current_task = state.get(&client.process_id()).unwrap();
-        let mut resources_write = self.devices.write().unwrap();
-        resources_write.unset_busy_resources(&current_task.allocation.resource_id);
+        if let Some(current_task) = state.get(&client.process_id()) {
+            let mut resources_write = self.devices.write().unwrap();
+            resources_write.unset_busy_resources(&current_task.allocation.resource_id);
+        }
     }
 }
 

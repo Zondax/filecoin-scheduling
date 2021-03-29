@@ -1,8 +1,7 @@
-use std::error::Error;
-use std::io;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use client::{
-    register, schedule_one_of, spawn_scheduler_with_handler, Deadline, ResourceAlloc,
+    register, schedule_one_of, spawn_scheduler_with_handler, Deadline, Error, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskFunc, TaskReqBuilder, TaskRequirements,
     TaskResult,
 };
@@ -20,13 +19,14 @@ impl Test {
 }
 
 impl TaskFunc for Test {
-    type TaskOutput = String;
+    type Output = String;
+    type Error = Error;
 
-    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::TaskOutput, Box<dyn Error>> {
+    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::Output, Self::Error> {
         Ok(format!("Task {} done!!!", self.id))
     }
 
-    fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Box<dyn Error>> {
+    fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Self::Error> {
         if self.index < 4 {
             self.index += 1;
             tracing::info!("Task {} Running!!! ", self.id);
@@ -50,21 +50,34 @@ fn task_requirements() -> TaskRequirements {
             preemptible: true,
         })
         .with_time_estimations(Duration::from_millis(500), 1, Duration::from_millis(3000))
-        .with_deadline(deadline)
+        .with_deadline(Some(deadline))
         .build()
-        .unwrap()
 }
 
 #[test]
 fn test_schedule() {
     //let file_appender =
-    //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
+    //RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    //tracing_subscriber::fmt().with_writer(io::stdout).init();
 
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stdout)
+        .init();
+    tracing::event!(
+        tracing::Level::INFO,
+        "TEST PREEMPTION****************************************"
+    );
+    test_preemption();
+    tracing::event!(
+        tracing::Level::INFO,
+        "TEST EXCLUSIVE_TASK************************************"
+    );
+    test_with_exclusivetask();
+}
+
+fn test_preemption() {
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
-
     let mut joiner = vec![];
     for i in 0..5 {
         joiner.push(std::thread::spawn(move || {
@@ -90,16 +103,8 @@ fn test_schedule() {
     handler.close();
 }
 
-#[test]
 fn test_with_exclusivetask() {
-    //let file_appender =
-    //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
-    //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    tracing_subscriber::fmt().with_writer(io::stdout).init();
-
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
-
     let mut joiner = vec![];
     for i in 0..5 {
         joiner.push(std::thread::spawn(move || {

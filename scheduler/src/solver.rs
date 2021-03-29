@@ -1,8 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
-use common::{
-    Device, Error, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
-};
+use crate::Error;
+use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.

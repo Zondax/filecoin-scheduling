@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::solver::{ResourceState, Resources, Solver, TaskState};
-use common::{Error, ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
+use crate::Error;
+use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 
 pub struct GreedySolver;
 
