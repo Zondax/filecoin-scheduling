@@ -53,6 +53,41 @@ impl Resources {
             .sum()
     }
 
+    pub fn has_min_available_memory(&self, requirements: &TaskRequirements) -> bool {
+        for req in &requirements.req {
+            let selected_resources = self
+                .0
+                .iter()
+                .filter(|dev| dev.is_exclusive == requirements.exclusive)
+                .filter_map(|device| {
+                    if let ResourceType::Gpu(ref mem) = req.resource {
+                        match mem {
+                            ResourceMemory::All => {
+                                if device.mem_usage == 0 {
+                                    Some(1)
+                                } else {
+                                    None
+                                }
+                            }
+                            ResourceMemory::Mem(value) => {
+                                if device.available_memory() >= *value {
+                                    Some(1)
+                                } else {
+                                    None
+                                }
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                });
+            if selected_resources.count() >= req.quantity {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[u32]) {
         for dev_id in devices {
             self.0
@@ -129,4 +164,90 @@ pub trait Solver {
         resources: &Resources,
         requirements: &TaskRequirements,
     ) -> Option<(ResourceAlloc, Vec<ResourceState>)>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_allocation() {
+        let devices = common::list_devices();
+        println!("DEVICES: {:?}", devices);
+        let state_t1 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+                is_busy: false,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+        let devices_t1 = Resources(state_t1);
+
+        let task1 = TaskRequirements {
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+                quantity: 1,
+                preemptible: false,
+            }],
+            deadline: None,
+            exclusive: false,
+            estimations: None,
+        };
+        assert!(devices_t1.has_min_available_memory(&task1));
+
+        let state_t2 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 3,
+                is_busy: false,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+
+        //does not fit!
+        let task2 = TaskRequirements {
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+                quantity: 1,
+                preemptible: false,
+            }],
+            deadline: None,
+            exclusive: false,
+            estimations: None,
+        };
+
+        //should fit!
+        let task3 = TaskRequirements {
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(1)),
+                quantity: 2,
+                preemptible: false,
+            }],
+            deadline: None,
+            exclusive: false,
+            estimations: None,
+        };
+
+        //should not fit as it is exclusive only!
+        let task4 = TaskRequirements {
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(1)),
+                quantity: 2,
+                preemptible: false,
+            }],
+            deadline: None,
+            exclusive: true,
+            estimations: None,
+        };
+
+        let devices_t2 = Resources(state_t2);
+        assert!(!devices_t2.has_min_available_memory(&task2));
+        assert!(devices_t2.has_min_available_memory(&task3));
+        assert!(!devices_t2.has_min_available_memory(&task4));
+    }
 }

@@ -67,9 +67,7 @@ impl Scheduler {
 
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
-        if resources.available_memory(requirements.exclusive)
-            < requirements.minimal_resource_usage()
-        {
+        if !resources.has_min_available_memory(&requirements) {
             return SchedulerResponse::Schedule(Ok(None));
         }
 
