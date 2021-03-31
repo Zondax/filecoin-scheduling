@@ -23,7 +23,7 @@ pub struct ResourceReq {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceAlloc {
     pub requirement: ResourceReq,
-    pub resource_id: Vec<u32>,
+    pub resource_id: Vec<usize>,
 }
 
 impl Default for ResourceAlloc {

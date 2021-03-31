@@ -32,6 +32,19 @@ impl ResourceState {
         }
     }
 
+    pub fn mem_usage(&self) -> u64 {
+        self.mem_usage
+    }
+
+    pub fn free_memory(&mut self, mem: &ResourceMemory) {
+        match mem {
+            ResourceMemory::All => self.mem_usage = 0,
+            ResourceMemory::Mem(value) => {
+                self.mem_usage -= value;
+            }
+        }
+    }
+
     pub fn set_as_busy(&mut self) {
         self.is_busy = true;
     }
@@ -39,17 +52,21 @@ impl ResourceState {
     pub fn set_as_free(&mut self) {
         self.is_busy = false;
     }
+
+    pub fn is_busy(&self) -> bool {
+        self.is_busy
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct Resources(pub Vec<ResourceState>);
+pub struct Resources(pub HashMap<usize, ResourceState>);
 
 impl Resources {
     pub fn available_memory(&self, exclusive: bool) -> u64 {
         self.0
             .iter()
-            .filter(|dev| dev.is_exclusive == exclusive)
-            .map(|dev| dev.available_memory())
+            .filter(|(_, dev)| dev.is_exclusive == exclusive)
+            .map(|(_, dev)| dev.available_memory())
             .sum()
     }
 
@@ -58,8 +75,8 @@ impl Resources {
             let selected_resources = self
                 .0
                 .iter()
-                .filter(|dev| dev.is_exclusive == requirements.exclusive)
-                .filter_map(|device| {
+                .filter(|(_, dev)| dev.is_exclusive == requirements.exclusive)
+                .filter_map(|(_, device)| {
                     if let ResourceType::Gpu(ref mem) = req.resource {
                         match mem {
                             ResourceMemory::All => {
@@ -88,42 +105,28 @@ impl Resources {
         false
     }
 
-    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[u32]) {
-        for dev_id in devices {
-            self.0
-                .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
-                .for_each(|dev| match mem {
-                    ResourceMemory::All => dev.mem_usage = 0,
-                    ResourceMemory::Mem(value) => dev.mem_usage -= value,
-                });
+    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[usize]) {
+        for id in devices {
+            let _ = self.0.get_mut(id).map(|dev| dev.free_memory(mem));
         }
     }
 
-    pub fn has_busy_resources(&self, devices: &[u32]) -> bool {
-        self.0.clone().iter().any(|dev| {
-            devices
-                .iter()
-                .any(|d| d == &dev.dev.bus_id() && dev.is_busy)
-        })
+    pub fn has_busy_resources(&self, devices: &[usize]) -> bool {
+        devices
+            .iter()
+            .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[u32]) {
-        for dev_id in devices {
-            self.0
-                .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
-                .for_each(|dev| dev.set_as_busy());
-        }
+    pub fn set_busy_resources(&mut self, devices: &[usize]) {
+        devices.iter().for_each(|id| {
+            let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy());
+        });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[u32]) {
-        for dev_id in devices {
-            self.0
-                .iter_mut()
-                .filter(|device| device.dev.bus_id() == *dev_id)
-                .for_each(|dev| dev.set_as_free());
-        }
+    pub fn unset_busy_resources(&mut self, devices: &[usize]) {
+        devices.iter().for_each(|id| {
+            let _ = self.0.get_mut(id).map(|dev| dev.set_as_free());
+        });
     }
 }
 
@@ -163,7 +166,7 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-    ) -> Option<(ResourceAlloc, Vec<ResourceState>)>;
+    ) -> Option<(ResourceAlloc, HashMap<usize, ResourceState>)>;
 }
 
 #[cfg(test)]
@@ -177,13 +180,22 @@ mod tests {
         let state_t1 = devices
             .gpu_devices()
             .iter()
-            .map(|dev| ResourceState {
-                dev: dev.clone(),
-                mem_usage: 0,
-                is_busy: false,
-                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            .enumerate()
+            .map(|(i, dev)| {
+                (
+                    i,
+                    ResourceState {
+                        dev: dev.clone(),
+                        mem_usage: 0,
+                        is_busy: false,
+                        is_exclusive: devices
+                            .exclusive_gpus()
+                            .iter()
+                            .any(|&i| i == dev.device_id()),
+                    },
+                )
             })
-            .collect::<Vec<ResourceState>>();
+            .collect::<HashMap<_, ResourceState>>();
         let devices_t1 = Resources(state_t1);
 
         let task1 = TaskRequirements {
@@ -201,13 +213,22 @@ mod tests {
         let state_t2 = devices
             .gpu_devices()
             .iter()
-            .map(|dev| ResourceState {
-                dev: dev.clone(),
-                mem_usage: 3,
-                is_busy: false,
-                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            .enumerate()
+            .map(|(i, dev)| {
+                (
+                    i,
+                    ResourceState {
+                        dev: dev.clone(),
+                        mem_usage: 3,
+                        is_busy: false,
+                        is_exclusive: devices
+                            .exclusive_gpus()
+                            .iter()
+                            .any(|&i| i == dev.device_id()),
+                    },
+                )
             })
-            .collect::<Vec<ResourceState>>();
+            .collect::<HashMap<_, ResourceState>>();
 
         //does not fit!
         let task2 = TaskRequirements {
