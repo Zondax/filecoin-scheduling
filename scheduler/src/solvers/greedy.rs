@@ -72,8 +72,7 @@ impl Solver for GreedySolver {
                 .map(|(i, _)| *i)
                 .collect::<Vec<usize>>();
             if idle_gpus_available.len() >= quantity {
-                options = vec![];
-                options.push((idle_gpus_available, req.clone()));
+                options = vec![(idle_gpus_available, req.clone())];
                 break;
             } else if optional_resources.len() >= quantity {
                 options.push((
