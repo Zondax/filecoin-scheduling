@@ -32,6 +32,7 @@ impl Solver for GreedySolver {
         let idle_gpus = find_idle_gpus(resources);
         // Make a new resource state, that the caller will use for updating the main resource state
         let mut resources = resources.0.clone();
+        let mut options = vec![];
         //let mut resources: Vec<ResourceState> = resources.0.clone().iter().filter(|&r| r.is_exclusive == requirements.exclusive).into().collect();
         for req in requirements.req.iter() {
             let quantity = req.quantity;
@@ -70,33 +71,39 @@ impl Solver for GreedySolver {
                 .filter(|(_, b)| idle_gpus.iter().any(|x| x == b))
                 .map(|(i, _)| *i)
                 .collect::<Vec<usize>>();
-            let mut selected_resources = vec![];
             if idle_gpus_available.len() >= quantity {
-                selected_resources = idle_gpus_available;
+                options = vec![];
+                options.push((idle_gpus_available, req.clone()));
+                break;
             } else if optional_resources.len() >= quantity {
-                selected_resources = optional_resources
-                    .iter()
-                    .map(|(index, _)| *index)
-                    .collect::<Vec<usize>>();
-            }
-            if !selected_resources.is_empty() {
-                selected_resources.truncate(quantity as usize);
-                let resource_id = selected_resources
-                    .into_iter()
-                    .map(|index| {
-                        let resource = &mut resources[index];
-                        resource.update_memory_usage(&req.resource);
-                        resource.dev.bus_id()
-                    })
-                    .collect::<Vec<u32>>();
-                return Some((
-                    ResourceAlloc {
-                        requirement: req.clone(),
-                        resource_id: selected_resources,
-                    },
-                    resources,
+                options.push((
+                    optional_resources
+                        .iter()
+                        .map(|(index, _)| *index)
+                        .collect::<Vec<usize>>(),
+                    req.clone(),
                 ));
             }
+        }
+        if !options.is_empty() {
+            let selected_req = options[0].1.clone();
+            let mut selected_resources = options[0].0.clone();
+            selected_resources.truncate(selected_req.quantity as usize);
+            let resource_id = selected_resources
+                .into_iter()
+                .map(|index| {
+                    let resource = &mut resources[index];
+                    resource.update_memory_usage(&selected_req.resource);
+                    resource.dev.bus_id()
+                })
+                .collect::<Vec<u32>>();
+            return Some((
+                ResourceAlloc {
+                    requirement: selected_req,
+                    resource_id,
+                },
+                resources,
+            ));
         }
         None
     }
