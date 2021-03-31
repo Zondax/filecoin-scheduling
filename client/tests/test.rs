@@ -63,7 +63,7 @@ fn test_schedule() {
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
     //tracing_subscriber::fmt().with_writer(io::stdout).init();
 
-    let handler = spawn_scheduler_with_handler("127.0.0.1:8000").unwrap();
+    let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 
     let mut joiner = vec![];
     for i in 0..5 {
@@ -98,7 +98,7 @@ fn test_with_exclusivetask() {
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
     tracing_subscriber::fmt().with_writer(io::stdout).init();
 
-    let handler = spawn_scheduler_with_handler("127.0.0.1:9000").unwrap();
+    let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 
     let mut joiner = vec![];
     for i in 0..5 {
