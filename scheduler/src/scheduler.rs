@@ -85,7 +85,7 @@ impl Scheduler {
             Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
         };
 
-        let (alloc, new_resources) = match solver.allocate_task(&self.tasks_state.read().unwrap(), &resources, &requirements) {
+        let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
             Some(res) => res,
             _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
         };

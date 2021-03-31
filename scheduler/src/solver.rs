@@ -164,7 +164,6 @@ pub trait Solver {
 
     fn allocate_task(
         &mut self,
-        input: &HashMap<u32, TaskState>,
         resources: &Resources,
         requirements: &TaskRequirements,
     ) -> Option<(ResourceAlloc, HashMap<usize, ResourceState>)>;
