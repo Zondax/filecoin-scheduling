@@ -67,3 +67,60 @@ pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error>
 pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
     Ok(Box::new(GreedySolver))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::solver::{ResourceState, Resources};
+    use common::{ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
+
+    #[test]
+    fn check_gpu_allocation() {
+        let devices = common::list_devices();
+        println!("DEVICES: {:?}", devices);
+        let state_t1 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+                is_busy: false,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+        let devices_t1 = Resources(state_t1);
+
+        let task1 = TaskRequirements {
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+                quantity: 1,
+                preemptible: false,
+            }],
+            deadline: None,
+            exclusive: false,
+            estimations: None,
+        };
+
+        let mut solver = create_solver(None).unwrap();
+        //can allocate on 0 so go
+        let (alloc, _) = solver.allocate_task(&devices_t1, &task1).unwrap();
+        assert_eq!(alloc.resource_id[0], 0);
+
+        let state_t2 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+                is_busy: dev.bus_id() == 0,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+
+        let devices_t2 = Resources(state_t2);
+
+        //resource 0 is busy so should allocate on idle GPU instead
+        let (alloc, _) = solver.allocate_task(&devices_t2, &task1).unwrap();
+        assert_eq!(alloc.resource_id[0], 1);
+    }
+}
