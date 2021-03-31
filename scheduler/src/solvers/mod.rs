@@ -122,5 +122,55 @@ mod tests {
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver.allocate_task(&devices_t2, &task1).unwrap();
         assert_eq!(alloc.resource_id[0], 1);
+
+        let state_t3 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+                is_busy: true,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+
+        let devices_t3 = Resources(state_t3);
+        //everything busy so should allocate on first GPU instead
+        let (alloc, _) = solver.allocate_task(&devices_t3, &task1).unwrap();
+        assert_eq!(alloc.resource_id[0], 0);
+
+        let task2 = TaskRequirements {
+            req: vec![
+                ResourceReq {
+                    resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+                    quantity: 2,
+                    preemptible: false,
+                },
+                ResourceReq {
+                    resource: ResourceType::Gpu(ResourceMemory::Mem(4)),
+                    quantity: 1,
+                    preemptible: false,
+                },
+            ],
+            deadline: None,
+            exclusive: false,
+            estimations: None,
+        };
+        let state_t4 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| ResourceState {
+                dev: dev.clone(),
+                mem_usage: 0,
+                is_busy: dev.bus_id() == 0,
+                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            })
+            .collect::<Vec<ResourceState>>();
+
+        let devices_t4 = Resources(state_t4);
+        let (alloc, _) = solver.allocate_task(&devices_t4, &task2).unwrap();
+        //allocate the requirement needing one idle GPU only instead of two of which one is busy
+        assert_eq!(alloc.resource_id[0], 1);
+        assert_eq!(alloc.requirement.quantity, 1);
     }
 }
