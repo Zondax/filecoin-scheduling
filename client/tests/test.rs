@@ -61,7 +61,7 @@ fn test_schedule() {
     //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    tracing_subscriber::fmt().with_writer(io::stdout).init();
+    //tracing_subscriber::fmt().with_writer(io::stdout).init();
 
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000").unwrap();
 
