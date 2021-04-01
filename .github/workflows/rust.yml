@@ -27,25 +27,25 @@ jobs:
         env:
           RUSTFLAGS: --cfg dummy_devices
 
-  test_mac:
-    name: Test MacOS
-    runs-on: macos-latest
-    steps:
-      - name: Install dependencies
-        run: |
-          brew install bash gcc wget git
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -- --test-threads 1
-        env:
-          RUSTFLAGS: --cfg dummy_devices
+#  test_mac:
+#    name: Test MacOS
+#    runs-on: macos-latest
+#    steps:
+#      - name: Install dependencies
+#        run: |
+#          brew install bash gcc wget git
+#      - uses: actions/checkout@v2
+#      - uses: actions-rs/toolchain@v1
+#        with:
+#          profile: minimal
+#          toolchain: stable
+#          override: true
+#      - uses: actions-rs/cargo@v1
+#        with:
+#          command: test
+#          args: -- --test-threads 1
+#        env:
+#          RUSTFLAGS: --cfg dummy_devices
 
   fmt:
     name: Rustfmt
