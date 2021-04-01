@@ -41,5 +41,5 @@ Then compile:
 
 ```shell
 cargo build --release #for building the project in release mode
-cargo test # For executing all the unit tests and integration tests
+RUST_LOG=client=info RUSTFLAGS='--cfg dummy_devices' cargo test -- --test-threads 1 # For executing all the unit tests and integration tests
 ```
