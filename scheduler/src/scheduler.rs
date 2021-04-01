@@ -34,13 +34,22 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .map(|dev| ResourceState {
-                dev: dev.clone(),
-                mem_usage: 0,
-                is_busy: false,
-                is_exclusive: devices.exclusive_gpus().iter().any(|&i| i == dev.bus_id()),
+            .enumerate()
+            .map(|(key, dev)| {
+                (
+                    key,
+                    ResourceState {
+                        dev: dev.clone(),
+                        mem_usage: Default::default(),
+                        is_busy: Default::default(),
+                        is_exclusive: devices
+                            .exclusive_gpus()
+                            .iter()
+                            .any(|&i| i == dev.device_id()),
+                    },
+                )
             })
-            .collect::<Vec<ResourceState>>();
+            .collect::<HashMap<usize, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
             _state_path: path.into(),
@@ -83,6 +92,10 @@ impl Scheduler {
 
         resources.0 = new_resources;
 
+        // Do not hold the lock anymore
+        // allowing others to take it if needed
+        drop(resources);
+
         // prepare the task
         let task_state = TaskState {
             requirements,
@@ -113,7 +126,13 @@ impl Scheduler {
 
         let queue = self.jobs_queue.read().unwrap();
         let state = self.tasks_state.read().unwrap();
-        let current_task = state.get(&client.process_id()).unwrap();
+        let current_task = if let Some(task) = state.get(&client.process_id()) {
+            task
+        } else {
+            // Task that is not in our job_queue is asking for preemption
+            // This is an error or just return true??
+            return true;
+        };
         {
             let resources = self.devices.read().unwrap();
             if resources.has_busy_resources(&current_task.allocation.resource_id) {
@@ -185,8 +204,11 @@ impl Scheduler {
             if let Ok(mut solver) = create_solver(None) {
                 // Update our plan
                 let state = self.tasks_state.read().unwrap();
-                *self.jobs_queue.write().unwrap() = match solver.solve_job_schedule(&*state) {
-                    Ok(plan) => plan,
+                match solver.solve_job_schedule(&*state) {
+                    // Solve first then, assign the solution to our queue
+                    // by doing so we do not hold the lock much time allowing other process to
+                    // read/write in the meantime
+                    Ok(plan) => *self.jobs_queue.write().unwrap() = plan,
                     _ => return,
                 };
             }
@@ -198,9 +220,10 @@ impl Scheduler {
     fn release_preemptive(&self, client: ClientToken) {
         tracing::info!("release preemtive client {}", client.process_id());
         let state = self.tasks_state.read().unwrap();
-        let current_task = state.get(&client.process_id()).unwrap();
-        let mut resources_write = self.devices.write().unwrap();
-        resources_write.unset_busy_resources(&current_task.allocation.resource_id);
+        if let Some(current_task) = state.get(&client.process_id()) {
+            let mut resources_write = self.devices.write().unwrap();
+            resources_write.unset_busy_resources(&current_task.allocation.resource_id);
+        }
     }
 }
 

@@ -10,7 +10,10 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-    ) -> Option<(ResourceAlloc, Vec<ResourceState>)> {
+    ) -> Option<(
+        ResourceAlloc,
+        std::collections::HashMap<usize, ResourceState>,
+    )> {
         // Use heuristic criteria for picking up a resource depending on task requirements
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
@@ -24,7 +27,6 @@ impl Solver for GreedySolver {
             // check if the pool of devices have room for the requested allocations
             let mut selected_resources = resources
                 .iter_mut()
-                .enumerate()
                 .filter(|(_, r)| r.is_exclusive == requirements.exclusive)
                 .filter_map(|(index, device)| {
                     if let ResourceType::Gpu(ref mem) = req.resource {
@@ -32,15 +34,15 @@ impl Solver for GreedySolver {
                             ResourceMemory::All => {
                                 // All the memory means taking ownership of the device being also
                                 // not preemptable. TODO: Should device be marked as no_shareable?
-                                if device.mem_usage == 0 {
-                                    Some(index)
+                                if device.mem_usage() == 0 {
+                                    Some(*index)
                                 } else {
                                     None
                                 }
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some(index)
+                                    Some(*index)
                                 } else {
                                     None
                                 }
@@ -53,19 +55,15 @@ impl Solver for GreedySolver {
                 .collect::<Vec<usize>>();
             selected_resources.truncate(quantity as usize);
             if selected_resources.len() == quantity {
-                // we need to update our resource increasing memory usage for the selected devices
-                let resource_id = selected_resources
-                    .into_iter()
-                    .map(|index| {
-                        let resource = &mut resources[index];
-                        resource.update_memory_usage(&req.resource);
-                        resource.dev.bus_id()
-                    })
-                    .collect::<Vec<u32>>();
+                selected_resources.iter().for_each(|index| {
+                    let _ = resources
+                        .get_mut(index)
+                        .map(|dev| dev.update_memory_usage(&req.resource));
+                });
                 return Some((
                     ResourceAlloc {
                         requirement: req.clone(),
-                        resource_id,
+                        resource_id: selected_resources,
                     },
                     resources,
                 ));
