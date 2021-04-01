@@ -4,6 +4,17 @@ use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use common::{Error, ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 
 pub struct GreedySolver;
+use priority_queue::PriorityQueue;
+use std::cmp::Reverse;
+
+pub fn find_idle_gpus(resources: &Resources) -> Vec<usize> {
+    resources
+        .0
+        .iter()
+        .filter(|(_, res)| !res.is_busy())
+        .map(|(_, res)| res.dev.device_id())
+        .collect::<Vec<usize>>()
+}
 
 impl Solver for GreedySolver {
     fn allocate_task(
@@ -18,14 +29,15 @@ impl Solver for GreedySolver {
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
 
+        let idle_gpus = find_idle_gpus(resources);
         // Make a new resource state, that the caller will use for updating the main resource state
         let mut resources = resources.0.clone();
+        let mut options = vec![];
         //let mut resources: Vec<ResourceState> = resources.0.clone().iter().filter(|&r| r.is_exclusive == requirements.exclusive).into().collect();
-
         for req in requirements.req.iter() {
             let quantity = req.quantity;
             // check if the pool of devices have room for the requested allocations
-            let mut selected_resources = resources
+            let optional_resources = resources
                 .iter_mut()
                 .filter(|(_, r)| r.is_exclusive == requirements.exclusive)
                 .filter_map(|(index, device)| {
@@ -34,15 +46,15 @@ impl Solver for GreedySolver {
                             ResourceMemory::All => {
                                 // All the memory means taking ownership of the device being also
                                 // not preemptable. TODO: Should device be marked as no_shareable?
-                                if device.mem_usage() == 0 {
-                                    Some(*index)
+                                if device.mem_usage == 0 {
+                                    Some((*index, device.dev.device_id()))
                                 } else {
                                     None
                                 }
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some(*index)
+                                    Some((*index, device.dev.device_id()))
                                 } else {
                                     None
                                 }
@@ -52,22 +64,42 @@ impl Solver for GreedySolver {
                         None
                     }
                 })
+                .collect::<Vec<(usize, usize)>>();
+            let idle_gpus_available = optional_resources
+                .clone()
+                .iter()
+                .filter(|(_, b)| idle_gpus.iter().any(|x| x == b))
+                .map(|(i, _)| *i)
                 .collect::<Vec<usize>>();
-            selected_resources.truncate(quantity as usize);
-            if selected_resources.len() == quantity {
-                selected_resources.iter().for_each(|index| {
-                    let _ = resources
-                        .get_mut(index)
-                        .map(|dev| dev.update_memory_usage(&req.resource));
-                });
-                return Some((
-                    ResourceAlloc {
-                        requirement: req.clone(),
-                        resource_id: selected_resources,
-                    },
-                    resources,
+            if idle_gpus_available.len() >= quantity {
+                options = vec![(idle_gpus_available, req.clone())];
+                break;
+            } else if optional_resources.len() >= quantity {
+                options.push((
+                    optional_resources
+                        .iter()
+                        .map(|(index, _)| *index)
+                        .collect::<Vec<usize>>(),
+                    req.clone(),
                 ));
             }
+        }
+        if !options.is_empty() {
+            let selected_req = options[0].1.clone();
+            let mut selected_resources = options[0].0.clone();
+            selected_resources.truncate(selected_req.quantity as usize);
+            selected_resources.iter().for_each(|index| {
+                let _ = resources
+                    .get_mut(index)
+                    .map(|dev| dev.update_memory_usage(&selected_req.resource));
+            });
+            return Some((
+                ResourceAlloc {
+                    requirement: selected_req,
+                    resource_id: selected_resources,
+                },
+                resources,
+            ));
         }
         None
     }
@@ -76,8 +108,6 @@ impl Solver for GreedySolver {
         &mut self,
         input: &HashMap<u32, TaskState>,
     ) -> Result<VecDeque<u32>, Error> {
-        use priority_queue::PriorityQueue;
-        use std::cmp::Reverse;
         //Criteria A: Use task end time as a priority indicator. The sooner the deadline the higher
         //the priority
         //
