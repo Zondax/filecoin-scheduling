@@ -9,6 +9,7 @@
 
 
 **This project is still work in progress !**
+**DON'T USE IN PRODUCTION OR ANY REAL ENVIRONMENT!**
 
 ## Prerequisites
 
