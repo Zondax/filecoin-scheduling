@@ -7,13 +7,13 @@ pub struct GreedySolver;
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
 
-pub fn find_idle_gpus(resources: &Resources) -> Vec<u32> {
+pub fn find_idle_gpus(resources: &Resources) -> Vec<usize> {
     resources
         .0
         .iter()
-        .filter(|res| !res.is_busy)
-        .map(|res| res.dev.bus_id())
-        .collect::<Vec<u32>>()
+        .filter(|(_, res)| !res.is_busy())
+        .map(|(_, res)| res.dev.device_id())
+        .collect::<Vec<usize>>()
 }
 
 impl Solver for GreedySolver {
@@ -47,14 +47,14 @@ impl Solver for GreedySolver {
                                 // All the memory means taking ownership of the device being also
                                 // not preemptable. TODO: Should device be marked as no_shareable?
                                 if device.mem_usage == 0 {
-                                    Some((index, device.dev.bus_id()))
+                                    Some((*index, device.dev.device_id()))
                                 } else {
                                     None
                                 }
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some((index, device.dev.bus_id()))
+                                    Some((*index, device.dev.device_id()))
                                 } else {
                                     None
                                 }
@@ -64,7 +64,7 @@ impl Solver for GreedySolver {
                         None
                     }
                 })
-                .collect::<Vec<(usize, u32)>>();
+                .collect::<Vec<(usize, usize)>>();
             let idle_gpus_available = optional_resources
                 .clone()
                 .iter()
@@ -88,18 +88,15 @@ impl Solver for GreedySolver {
             let selected_req = options[0].1.clone();
             let mut selected_resources = options[0].0.clone();
             selected_resources.truncate(selected_req.quantity as usize);
-            let resource_id = selected_resources
-                .into_iter()
-                .map(|index| {
-                    let resource = &mut resources[index];
-                    resource.update_memory_usage(&selected_req.resource);
-                    resource.dev.bus_id()
-                })
-                .collect::<Vec<u32>>();
+            selected_resources.iter().for_each(|index| {
+                let _ = resources
+                    .get_mut(index)
+                    .map(|dev| dev.update_memory_usage(&selected_req.resource));
+            });
             return Some((
                 ResourceAlloc {
                     requirement: selected_req,
-                    resource_id,
+                    resource_id: selected_resources,
                 },
                 resources,
             ));
