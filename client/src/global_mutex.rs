@@ -5,7 +5,7 @@ use tracing::debug;
 
 use fs2::FileExt;
 
-use common::Error as ClientError;
+use crate::Error;
 
 // The path to were the shared_mem file-link would be stored
 const SHARED_MEM_PATH: &str = "scheduler_shm";
@@ -15,12 +15,12 @@ const IPC_PATH: &str = "ipc_buffer";
 pub struct GlobalMutex(File);
 
 impl GlobalMutex {
-    pub fn new() -> Result<Self, ClientError> {
+    pub fn new() -> Result<Self, Error> {
         Self::_new(None)
     }
 
     #[allow(dead_code)]
-    pub fn new_with_name(name: &str) -> Result<Self, ClientError> {
+    pub fn new_with_name(name: &str) -> Result<Self, Error> {
         Self::_new(Some(name))
     }
 
@@ -30,7 +30,7 @@ impl GlobalMutex {
         p
     }
 
-    fn _new(name: Option<&str>) -> Result<Self, ClientError> {
+    fn _new(name: Option<&str>) -> Result<Self, Error> {
         let path = if let Some(suffix) = name {
             Self::tmp_path(&format!("{}_{}", SHARED_MEM_PATH, suffix))
         } else {
@@ -40,27 +40,24 @@ impl GlobalMutex {
             .read(true)
             .write(true)
             .create(true)
-            .open(&path)
-            .map_err(|e| ClientError::GlobalMutexError(e.to_string()))?;
+            .open(&path)?;
         Ok(Self(file))
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn try_lock(&self) -> Result<(), ClientError> {
+    pub fn try_lock(&self) -> Result<(), Error> {
         debug!(
             "Trying to acquire the mutex - process id: {}",
             std::process::id()
         );
 
-        self.0
-            .try_lock_exclusive()
-            .map_err(|e| ClientError::GlobalMutexError(e.to_string()))
+        self.0.try_lock_exclusive()?;
+        Ok(())
     }
 
-    pub fn release(&self) -> Result<(), ClientError> {
-        self.0
-            .unlock()
-            .map_err(|e| ClientError::GlobalMutexError(e.to_string()))
+    pub fn release(&self) -> Result<(), Error> {
+        self.0.unlock()?;
+        Ok(())
     }
 }
 

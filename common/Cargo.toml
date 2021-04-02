@@ -4,13 +4,9 @@ version = "0.1.0"
 authors = ["neithanmo <neithanmo@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 chrono = { version = "0.4.19", features = ["serde"] }
-libc = "0.2.82"
 num_cpus = "1.13.0"
-once_cell = "1.5.2"
 rust-gpu-tools = "0.3.0"
 serde = { version = "1.0.118", features = ["serde_derive"] }
 tracing = "0.1.25"

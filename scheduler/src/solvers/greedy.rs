@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::solver::{ResourceState, Resources, Solver, TaskState};
-use common::{Error, ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
+use crate::Error;
+use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 
 pub struct GreedySolver;
 use priority_queue::PriorityQueue;
@@ -33,7 +34,6 @@ impl Solver for GreedySolver {
         // Make a new resource state, that the caller will use for updating the main resource state
         let mut resources = resources.0.clone();
         let mut options = vec![];
-        //let mut resources: Vec<ResourceState> = resources.0.clone().iter().filter(|&r| r.is_exclusive == requirements.exclusive).into().collect();
         for req in requirements.req.iter() {
             let quantity = req.quantity;
             // check if the pool of devices have room for the requested allocations
@@ -47,14 +47,17 @@ impl Solver for GreedySolver {
                                 // All the memory means taking ownership of the device being also
                                 // not preemptable. TODO: Should device be marked as no_shareable?
                                 if device.mem_usage == 0 {
-                                    Some((*index, device.dev.device_id()))
+                                    //Some(*index, device.dev.device_id()))
+                                    //Using a index instead of device_id, which varies on every
+                                    //call
+                                    Some(*index)
                                 } else {
                                     None
                                 }
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some((*index, device.dev.device_id()))
+                                    Some(*index)
                                 } else {
                                     None
                                 }
@@ -64,24 +67,18 @@ impl Solver for GreedySolver {
                         None
                     }
                 })
-                .collect::<Vec<(usize, usize)>>();
-            let idle_gpus_available = optional_resources
-                .clone()
-                .iter()
-                .filter(|(_, b)| idle_gpus.iter().any(|x| x == b))
-                .map(|(i, _)| *i)
                 .collect::<Vec<usize>>();
+            let idle_gpus_available = optional_resources
+                .iter()
+                .cloned()
+                .filter(|b| idle_gpus.iter().any(|x| x == b))
+                .collect::<Vec<usize>>();
+
             if idle_gpus_available.len() >= quantity {
                 options = vec![(idle_gpus_available, req.clone())];
                 break;
             } else if optional_resources.len() >= quantity {
-                options.push((
-                    optional_resources
-                        .iter()
-                        .map(|(index, _)| *index)
-                        .collect::<Vec<usize>>(),
-                    req.clone(),
-                ));
+                options.push((optional_resources, req.clone()));
             }
         }
         if !options.is_empty() {
