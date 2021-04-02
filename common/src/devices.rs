@@ -2,14 +2,16 @@ use rust_gpu_tools::opencl;
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[repr(C)]
 pub struct Device {
-    dev: &'static opencl::Device,
+    dev: opencl::Device,
     memory: u64,
     id: usize,
 }
 
 #[cfg(dummy_devices)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[repr(C)]
 pub struct Device {
     memory: u64,
     id: usize,
@@ -61,7 +63,8 @@ impl Device {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+#[repr(C)]
 pub struct Devices {
     gpu_devices: Vec<Device>,
     num_cpus: usize,
@@ -83,14 +86,21 @@ impl Devices {
 /// It includes the GPUs and the number of logical CPUs
 pub fn list_devices() -> Devices {
     #[cfg(not(dummy_devices))]
-    let gpu_devices = opencl::Device::all_iter()
-        .map(|dev| {
-            // Here we assume that every gpu device has a id value
-            let id = dev.cl_device_id() as u16 as usize;
-            let memory = dev.memory();
-            Device { dev, memory, id }
-        })
-        .collect::<Vec<Device>>();
+    let gpu_devices = {
+        let devs = opencl::Device::all();
+        devs.into_iter()
+            .map(|dev| {
+                // Here we assume that every gpu device has a id value
+                let id = dev.cl_device_id() as u16 as usize;
+                let memory = dev.memory();
+                Device {
+                    dev: dev.clone(),
+                    memory,
+                    id,
+                }
+            })
+            .collect::<Vec<Device>>()
+    };
 
     #[cfg(dummy_devices)]
     let gpu_devices = (0..3)
@@ -117,7 +127,11 @@ mod tests {
     #[test]
     fn check_devices() {
         let devices = list_devices();
-        println!("DEVICES: {:?}", devices);
+        println!(
+            "DEVICES: {:?} len {}",
+            devices,
+            std::mem::size_of::<Devices>()
+        );
         let gpu2 = devices.gpu_devices[2].clone();
         assert!(devices
             .exclusive_gpus()

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::sync::RwLock;
 
 use crate::handler::Handler;
@@ -9,11 +8,11 @@ use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
-use common::{ClientToken, Error, RequestMethod, ResourceType, TaskRequirements};
+use crate::Error;
+use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements};
 
 #[derive(Debug)]
 pub(crate) struct Scheduler {
-    _state_path: PathBuf,
     // Keep a cache of jobs on the system. each job_id has associated a job state
     // indicating the current iteration, and allocated resources and its requirements per resource
     tasks_state: RwLock<HashMap<u32, TaskState>>,
@@ -28,7 +27,7 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new<P: Into<PathBuf>>(path: P) -> Self {
+    pub fn new() -> Self {
         let devices = common::list_devices();
         // Created a solver
         let state = devices
@@ -52,7 +51,6 @@ impl Scheduler {
             .collect::<HashMap<usize, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
-            _state_path: path.into(),
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
             devices,
@@ -69,9 +67,8 @@ impl Scheduler {
         let mut resources = if let Ok(resc) = self.devices.try_write() {
             resc
         } else {
-            return SchedulerResponse::Schedule(Err(Error::Other(
-                "Can not read resources".to_string(),
-            )));
+            // TODO: Is this an error?
+            return SchedulerResponse::Schedule(Err(Error::RwError));
         };
 
         // First step is to check if there are enough resources. This avoids calling alloc
@@ -82,9 +79,10 @@ impl Scheduler {
 
         let mut solver = match create_solver(None) {
             Ok(solver) => solver,
-            Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
+            Err(_) => return SchedulerResponse::Schedule(Err(Error::NoSolver)),
         };
 
+        // Try passing a mutable reference to resources
         let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
             Some(res) => res,
             _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
@@ -110,7 +108,7 @@ impl Scheduler {
         // Update our plan
         let new_plan = match solver.solve_job_schedule(&*state) {
             Ok(plan) => plan,
-            Err(e) => return SchedulerResponse::Schedule(Err(Error::Solver(e.to_string()))),
+            Err(e) => return SchedulerResponse::Schedule(Err(Error::SolverOther(e.to_string()))),
         };
 
         tracing::info!("scheduler job_plan {:?}", new_plan);
@@ -185,7 +183,21 @@ impl Scheduler {
     }
 
     fn list_allocations(&self) -> SchedulerResponse {
-        SchedulerResponse::ListAllocations(vec![])
+        let alloc = self
+            .devices
+            .read()
+            .unwrap()
+            .0
+            .iter()
+            .filter_map(|(i, device)| {
+                if device.mem_usage() > 0 {
+                    Some((*i, device.available_memory()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<(usize, u64)>>();
+        SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
     fn release(&self, client: ClientToken) {

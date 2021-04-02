@@ -1,4 +1,5 @@
-use common::{Error, RequestMethod, ResourceAlloc};
+use crate::Error;
+use common::{RequestMethod, ResourceAlloc};
 use futures::channel::oneshot;
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum SchedulerResponse {
     Schedule(Result<Option<ResourceAlloc>, Error>),
     SchedulerWaitPreemptive(bool),
-    ListAllocations(Vec<u32>),
+    ListAllocations(Result<Vec<(usize, u64)>, Error>),
     Release,
     ReleasePreemptive,
 }

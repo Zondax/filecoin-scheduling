@@ -21,6 +21,7 @@ tokio = "1.2.0"
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
 priority-queue = "1.0.5"
+thiserror = "1.0.24"
 
 [features]
 default = ["greedy_solver"]

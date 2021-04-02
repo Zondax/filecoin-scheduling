@@ -1,4 +1,5 @@
-use common::{ClientToken, Error, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, ResourceAlloc, TaskRequirements};
+use scheduler::Error;
 
 #[jsonrpc_client::api]
 pub trait RpcClient {
@@ -12,7 +13,7 @@ pub trait RpcClient {
 
     async fn check_server(&self) -> Result<(), Error>;
 
-    async fn list_allocations(&self) -> Vec<u32>;
+    async fn list_allocations(&self) -> Result<Vec<(usize, u64)>, Error>;
 
     async fn release(&self, client: ClientToken) -> Result<(), Error>;
 
@@ -29,11 +30,11 @@ pub struct Client {
 impl Client {
     /// Creates a client
     /// `base_url` must be an address like: ip:port
-    pub fn new(base_url: &str, token: ClientToken) -> std::result::Result<Self, Error> {
+    pub fn new(base_url: &str, token: ClientToken) -> Result<Self, crate::Error> {
         let address = format!("http://{}", base_url);
         let base_url = address
             .parse::<jsonrpc_client::Url>()
-            .map_err(|e| Error::RpcError(e.to_string()))?;
+            .map_err(|_| crate::Error::InvalidAddress)?;
         let inner = reqwest::Client::new();
         Ok(Self {
             inner,
