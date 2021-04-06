@@ -13,7 +13,7 @@ pub fn find_idle_gpus(resources: &Resources) -> Vec<usize> {
         .0
         .iter()
         .filter(|(_, res)| !res.is_busy())
-        .map(|(_, res)| res.dev.device_id())
+        .map(|(index, _)| *index)
         .collect::<Vec<usize>>()
 }
 
