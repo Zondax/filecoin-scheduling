@@ -254,4 +254,28 @@ mod tests {
         assert_eq!(exclusivegpu.len(), 1);
         assert_eq!(exclusivegpu[0].device_id(), 2);
     }
+
+    #[test]
+    fn unique_id() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+
+        let set = Arc::new(Mutex::new(HashSet::new()));
+        let num_devices = list_devices().gpu_devices().len();
+
+        let mut handlers = vec![];
+        for _ in 0..5 {
+            let set = Arc::clone(&set);
+            handlers.push(std::thread::spawn(|| {
+                list_devices().gpu_devices().iter().for_each(move |dev| {
+                    set.lock().unwrap().insert(dev.device_id());
+                });
+            }));
+        }
+
+        for handle in handlers.into_iter() {
+            handle.join().unwrap()
+        }
+        assert_eq!(set.lock().unwrap().len(), num_devices);
+    }
 }
