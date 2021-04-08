@@ -33,10 +33,9 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(key, dev)| {
+            .map(|dev| {
                 (
-                    key,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: Default::default(),
@@ -48,7 +47,7 @@ impl Scheduler {
                     },
                 )
             })
-            .collect::<HashMap<usize, ResourceState>>();
+            .collect::<HashMap<u64, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
             tasks_state: RwLock::new(HashMap::new()),
@@ -182,6 +181,7 @@ impl Scheduler {
         }
     }
 
+    // returns (device_id, available memory)
     fn list_allocations(&self) -> SchedulerResponse {
         let alloc = self
             .devices
@@ -196,7 +196,7 @@ impl Scheduler {
                     None
                 }
             })
-            .collect::<Vec<(usize, u64)>>();
+            .collect::<Vec<(u64, u64)>>();
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 

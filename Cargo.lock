@@ -273,6 +273,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "fil-ocl-core",
  "num_cpus",
  "rust-gpu-tools",
  "serde",

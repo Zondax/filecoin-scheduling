@@ -58,7 +58,7 @@ impl ResourceState {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resources(pub HashMap<usize, ResourceState>);
+pub struct Resources(pub HashMap<u64, ResourceState>);
 
 impl Resources {
     pub fn available_memory(&self, exclusive: bool) -> u64 {
@@ -104,25 +104,25 @@ impl Resources {
         false
     }
 
-    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[usize]) {
+    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[u64]) {
         for id in devices {
             let _ = self.0.get_mut(id).map(|dev| dev.free_memory(mem));
         }
     }
 
-    pub fn has_busy_resources(&self, devices: &[usize]) -> bool {
+    pub fn has_busy_resources(&self, devices: &[u64]) -> bool {
         devices
             .iter()
             .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[usize]) {
+    pub fn set_busy_resources(&mut self, devices: &[u64]) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy());
         });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[usize]) {
+    pub fn unset_busy_resources(&mut self, devices: &[u64]) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_free());
         });
@@ -165,7 +165,7 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-    ) -> Option<(ResourceAlloc, HashMap<usize, ResourceState>)>;
+    ) -> Option<(ResourceAlloc, HashMap<u64, ResourceState>)>;
 }
 
 #[cfg(test)]
@@ -179,10 +179,9 @@ mod tests {
         let state_t1 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -212,10 +211,9 @@ mod tests {
         let state_t2 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 3,

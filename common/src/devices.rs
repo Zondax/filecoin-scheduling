@@ -1,4 +1,81 @@
+use fil_ocl_core::{ffi, get_device_info_raw, util, DeviceId as DeviceIdCore, Error};
 use rust_gpu_tools::opencl;
+use std::mem::{ManuallyDrop, MaybeUninit};
+
+const CL_DEVICE_PCI_SLOT_ID_NV: ffi::cl_uint = 0x4009;
+const CL_DEVICE_TOPOLOGY_AMD: ffi::cl_uint = 0x4037;
+const CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD: ffi::cl_uint = 1;
+
+#[repr(C)]
+struct Raw {
+    rtype: u32,
+    data: [u32; 5],
+}
+
+#[repr(C)]
+struct Pcie {
+    rtype: u32,
+    data: [u32; 17],
+    bus: u8,
+    device: u8,
+    function: u8,
+}
+
+#[repr(C)]
+union cl_device_topology_amd {
+    raw: ManuallyDrop<Raw>,
+    pcie: ManuallyDrop<Pcie>,
+}
+
+fn get_device_unique_id_nv(dev: &DeviceIdCore) -> Result<u32, Error> {
+    let result = get_device_info_raw(dev, CL_DEVICE_PCI_SLOT_ID_NV as _)?;
+    Ok(unsafe { util::bytes_into::<u32>(result)? })
+}
+
+#[allow(clippy::uninit_assumed_init)]
+fn get_device_unique_id_amd(dev: &DeviceIdCore) -> Result<u32, Error> {
+    use fil_ocl_core::ClDeviceIdPtr;
+
+    let mut topology: cl_device_topology_amd = unsafe { MaybeUninit::uninit().assume_init() };
+    let size = std::mem::size_of::<cl_device_topology_amd>();
+    let errcode = unsafe {
+        ffi::clGetDeviceInfo(
+            dev.as_ptr() as _,
+            CL_DEVICE_TOPOLOGY_AMD as _,
+            size as _,
+            &mut topology as *mut _ as *mut _,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if errcode < 0 {
+        return Err(fil_ocl_core::Error::from(
+            "<unavailable (CL_INVALID_OPERATION)>",
+        ));
+    }
+    unsafe {
+        if topology.raw.rtype == CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD {
+            let device = topology.pcie.device as u32;
+            let bus = topology.pcie.bus as u32;
+            let func = topology.pcie.function as u32;
+
+            Ok((device << 16) | (bus << 8) | func)
+        } else {
+            Err(fil_ocl_core::Error::from(
+                "<unavailable (CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD)>",
+            ))
+        }
+    }
+}
+
+fn hash(id: Option<u32>, name: String) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut s = DefaultHasher::new();
+    id.hash(&mut s);
+    name.hash(&mut s);
+    s.finish()
+}
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -6,7 +83,7 @@ use rust_gpu_tools::opencl;
 pub struct Device {
     dev: opencl::Device,
     memory: u64,
-    id: usize,
+    id: u64,
 }
 
 #[cfg(dummy_devices)]
@@ -14,13 +91,22 @@ pub struct Device {
 #[repr(C)]
 pub struct Device {
     memory: u64,
-    id: usize,
+    id: u64,
 }
 
 #[cfg(not(dummy_devices))]
 impl Device {
-    pub fn device_id(&self) -> usize {
-        self.dev.cl_device_id() as usize
+    pub fn device_id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn device_unique_id(&self) -> Result<Option<u32>, Error> {
+        let res = match self.brand() {
+            opencl::Brand::Nvidia => Some(get_device_unique_id_nv(self.dev.device.as_core())?),
+            opencl::Brand::Amd => Some(get_device_unique_id_amd(self.dev.device.as_core())?),
+            _ => None,
+        };
+        Ok(res)
     }
 
     pub fn name(&self) -> String {
@@ -38,12 +124,20 @@ impl Device {
     pub fn bus_id(&self) -> Option<opencl::BusId> {
         self.dev.bus_id()
     }
+
+    pub fn get_inner(&self) -> opencl::Device {
+        self.dev.clone()
+    }
 }
 
 #[cfg(dummy_devices)]
 impl Device {
-    pub fn device_id(&self) -> usize {
+    pub fn device_id(&self) -> u64 {
         self.id
+    }
+
+    pub fn device_unique_id(&self) -> Result<Option<u32>, Error> {
+        Ok(Some(self.id as _))
     }
 
     pub fn name(&self) -> String {
@@ -68,7 +162,7 @@ impl Device {
 pub struct Devices {
     gpu_devices: Vec<Device>,
     num_cpus: usize,
-    exclusive_gpus: Vec<usize>,
+    exclusive_gpus: Vec<u64>,
 }
 
 impl Devices {
@@ -76,7 +170,7 @@ impl Devices {
         self.gpu_devices.as_ref()
     }
 
-    pub fn exclusive_gpus(&self) -> &[usize] {
+    pub fn exclusive_gpus(&self) -> &[u64] {
         self.exclusive_gpus.as_ref()
     }
 }
@@ -90,9 +184,15 @@ pub fn list_devices() -> Devices {
         let devs = opencl::Device::all();
         devs.into_iter()
             .map(|dev| {
-                // Here we assume that every gpu device has a id value
-                let id = dev.cl_device_id() as u16 as usize;
                 let memory = dev.memory();
+                let unique_id = match dev.brand() {
+                    opencl::Brand::Nvidia => get_device_unique_id_nv(dev.device.as_core()).ok(),
+                    opencl::Brand::Amd => get_device_unique_id_amd(dev.device.as_core()).ok(),
+                    _ => None,
+                };
+
+                let name = dev.name();
+                let id = hash(unique_id, name);
                 Device {
                     dev: dev.clone(),
                     memory,
@@ -104,13 +204,16 @@ pub fn list_devices() -> Devices {
 
     #[cfg(dummy_devices)]
     let gpu_devices = (0..3)
-        .map(|i| Device { memory: 4, id: i })
+        .map(|i| Device {
+            memory: 4,
+            id: i as u64,
+        })
         .collect::<Vec<Device>>();
 
     #[cfg(not(dummy_devices))]
-    let exclusive_gpus: Vec<usize> = vec![];
+    let exclusive_gpus: Vec<u64> = vec![];
     #[cfg(dummy_devices)]
-    let exclusive_gpus: Vec<usize> = vec![2];
+    let exclusive_gpus: Vec<u64> = vec![2];
     let num_cpus = num_cpus::get();
     Devices {
         gpu_devices,
