@@ -68,7 +68,6 @@ pub struct TaskEstimations {
 #[derive(Default)]
 pub struct TaskReqBuilder {
     req: Vec<ResourceReq>,
-    exclusive: bool,
     deadline: Option<Deadline>,
     task_estimations: Option<TaskEstimations>,
 }
@@ -77,18 +76,12 @@ impl TaskReqBuilder {
     pub fn new() -> Self {
         Self {
             req: vec![],
-            exclusive: false,
             ..Default::default()
         }
     }
 
     pub fn resource_req(mut self, req: ResourceReq) -> Self {
         self.req.push(req);
-        self
-    }
-
-    pub fn exclusive(mut self, exclusive: bool) -> Self {
-        self.exclusive = exclusive;
         self
     }
 
@@ -115,7 +108,6 @@ impl TaskReqBuilder {
         TaskRequirements {
             req: self.req,
             deadline: self.deadline,
-            exclusive: self.exclusive,
             estimations: self.task_estimations,
         }
     }
@@ -128,7 +120,6 @@ impl TaskReqBuilder {
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
     pub deadline: Option<Deadline>,
-    pub exclusive: bool,
     pub estimations: Option<TaskEstimations>,
 }
 

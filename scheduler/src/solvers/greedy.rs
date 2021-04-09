@@ -37,7 +37,6 @@ impl Solver for GreedySolver {
             // check if the pool of devices have room for the requested allocations
             let optional_resources = resources
                 .iter_mut()
-                .filter(|(_, r)| r.is_exclusive == requirements.exclusive)
                 .filter_map(|(index, device)| {
                     if let ResourceType::Gpu(ref mem) = req.resource {
                         match mem {

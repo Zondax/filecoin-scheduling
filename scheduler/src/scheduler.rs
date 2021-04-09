@@ -43,10 +43,6 @@ impl Scheduler {
                         dev: dev.clone(),
                         mem_usage: Default::default(),
                         is_busy: Default::default(),
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })

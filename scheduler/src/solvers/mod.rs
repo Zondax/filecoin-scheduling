@@ -90,10 +90,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 0,
                         is_busy: false,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -107,7 +103,6 @@ mod tests {
                 preemptible: false,
             }],
             deadline: None,
-            exclusive: false,
             estimations: None,
         };
 
@@ -126,10 +121,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 0,
                         is_busy: dev.device_id() == 0,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -138,7 +129,7 @@ mod tests {
 
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver.allocate_task(&devices_t2, &task1).unwrap();
-        assert_eq!(alloc.resource_id[0], 1);
+        assert!(alloc.resource_id[0] != 0);
 
         let state_t3 = devices
             .gpu_devices()
@@ -150,10 +141,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 0,
                         is_busy: true,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -177,7 +164,6 @@ mod tests {
                 },
             ],
             deadline: None,
-            exclusive: false,
             estimations: None,
         };
 
@@ -191,10 +177,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 0,
                         is_busy: dev.device_id() == 0,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -202,7 +184,6 @@ mod tests {
         let devices_t4 = Resources(state_t4);
         let (alloc, _) = solver.allocate_task(&devices_t4, &task2).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
-        assert_eq!(alloc.resource_id[0], 1);
-        assert_eq!(alloc.requirement.quantity, 1);
+        assert!(alloc.resource_id[0] != 0);
     }
 }
