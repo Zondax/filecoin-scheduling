@@ -235,6 +235,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
             .or_insert_with(|| dev.memory());
     });
 
+    // map to memory => quantity
     let mut reqs: HashMap<u64, usize> = HashMap::new();
     resources.into_iter().for_each(|(_, memory)| {
         let entry = reqs.entry(memory).or_insert(0);
@@ -251,7 +252,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
 }
 
 /// Returns a tuple with the ID and available memory of devices being used
-pub fn list_allocations() -> Result<HashMap<usize, u64>, ClientError> {
+pub fn list_allocations() -> Result<HashMap<u64, u64>, ClientError> {
     let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
     let res = rt
         .block_on(async {
@@ -263,7 +264,7 @@ pub fn list_allocations() -> Result<HashMap<usize, u64>, ClientError> {
             })
         })
         .map(|res| res.unwrap());
-    res.map(|vec| vec.into_iter().collect::<HashMap<usize, u64>>())
+    res.map(|vec| vec.into_iter().collect::<HashMap<u64, u64>>())
 }
 
 async fn check_scheduler_service_or_launch(address: String) -> Result<(), ClientError> {
@@ -273,6 +274,16 @@ async fn check_scheduler_service_or_launch(address: String) -> Result<(), Client
     } else {
         launch_scheduler_process(address)
     }
+}
+
+pub fn get_device_by_id(id: u64) -> Option<common::Device> {
+    let devices = common::list_devices();
+    for dev in devices.gpu_devices() {
+        if dev.device_id() == id {
+            return Some(dev.clone());
+        }
+    }
+    None
 }
 
 #[cfg(test)]

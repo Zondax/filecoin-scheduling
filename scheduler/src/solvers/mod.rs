@@ -83,10 +83,9 @@ mod tests {
         let state_t1 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -120,10 +119,9 @@ mod tests {
         let state_t2 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -145,10 +143,9 @@ mod tests {
         let state_t3 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -187,10 +184,9 @@ mod tests {
         let state_t4 = devices
             .gpu_devices()
             .iter()
-            .enumerate()
-            .map(|(i, dev)| {
+            .map(|dev| {
                 (
-                    i,
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,

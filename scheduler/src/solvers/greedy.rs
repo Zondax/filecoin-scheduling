@@ -8,13 +8,13 @@ pub struct GreedySolver;
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
 
-pub fn find_idle_gpus(resources: &Resources) -> Vec<usize> {
+pub fn find_idle_gpus(resources: &Resources) -> Vec<u64> {
     resources
         .0
         .iter()
         .filter(|(_, res)| !res.is_busy())
-        .map(|(index, _)| *index)
-        .collect::<Vec<usize>>()
+        .map(|(id, _)| *id)
+        .collect::<Vec<u64>>()
 }
 
 impl Solver for GreedySolver {
@@ -22,10 +22,7 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-    ) -> Option<(
-        ResourceAlloc,
-        std::collections::HashMap<usize, ResourceState>,
-    )> {
+    ) -> Option<(ResourceAlloc, std::collections::HashMap<u64, ResourceState>)> {
         // Use heuristic criteria for picking up a resource depending on task requirements
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
@@ -67,12 +64,12 @@ impl Solver for GreedySolver {
                         None
                     }
                 })
-                .collect::<Vec<usize>>();
+                .collect::<Vec<u64>>();
             let idle_gpus_available = optional_resources
                 .iter()
                 .cloned()
                 .filter(|b| idle_gpus.iter().any(|x| x == b))
-                .collect::<Vec<usize>>();
+                .collect::<Vec<u64>>();
 
             if idle_gpus_available.len() >= quantity {
                 options = vec![(idle_gpus_available, req.clone())];
