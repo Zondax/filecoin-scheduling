@@ -9,9 +9,9 @@ pub use linearsolver::{
     JobAllocation, JobConstraint, JobDescription, JobPlan, JobRequirements, LinearSolverModel,
 };
 
+use crate::config::Settings;
 use crate::solver::Solver;
 use crate::Error;
-use common::Config;
 #[cfg(feature = "mip_solver")]
 use common::TaskRequirements;
 
@@ -60,12 +60,12 @@ impl From<RequirementsMap> for JobRequirements {
 
 // Remove later this option, Config will have a default value, use it
 #[cfg(feature = "mip_solver")]
-pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
+pub(crate) fn create_solver(_config: Option<&Settings>) -> Result<Box<dyn Solver>, Error> {
     Ok(Box::new(LinearSolverModel::new()))
 }
 
 #[cfg(feature = "greedy_solver")]
-pub fn create_solver(_config: Option<&Config>) -> Result<Box<dyn Solver>, Error> {
+pub(crate) fn create_solver(_config: Option<&Settings>) -> Result<Box<dyn Solver>, Error> {
     Ok(Box::new(GreedySolver))
 }
 

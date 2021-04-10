@@ -23,6 +23,14 @@ pub enum TaskResult {
     Done,
 }
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TaskType {
+    MerkleProof,
+    WinningPost,
+    WindowPost,
+}
+
 impl TaskResult {
     pub fn is_continue(&self) -> bool {
         matches!(self, Self::Continue)

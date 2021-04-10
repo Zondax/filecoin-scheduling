@@ -28,6 +28,9 @@ pub(crate) struct Scheduler {
 
 impl Scheduler {
     pub fn new() -> Self {
+        use crate::config::Settings;
+        // TODO: modify this later
+        let _ = Settings::new("/tmp/scheduler.toml");
         let devices = common::list_devices();
         // Created a solver
         let state = devices
