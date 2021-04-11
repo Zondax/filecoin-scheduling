@@ -122,7 +122,6 @@ mod tests {
     fn check_config() {
         let path = "/tmp/test.toml";
         let settings = Settings::new(path).unwrap();
-        println!("settings {:?}", settings);
         let set = {
             let mut s = Config::new();
             s.merge(File::with_name(path)).unwrap();

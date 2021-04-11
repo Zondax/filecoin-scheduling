@@ -4,9 +4,10 @@ use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use crate::Error;
 use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 
-pub struct GreedySolver;
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
+
+pub struct GreedySolver;
 
 pub fn find_idle_gpus(resources: &Resources) -> Vec<u64> {
     resources

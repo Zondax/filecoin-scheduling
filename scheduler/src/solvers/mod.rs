@@ -11,7 +11,6 @@ pub use linearsolver::{
 
 use crate::config::Settings;
 use crate::solver::Solver;
-use crate::Error;
 #[cfg(feature = "mip_solver")]
 use common::TaskRequirements;
 
@@ -60,13 +59,14 @@ impl From<RequirementsMap> for JobRequirements {
 
 // Remove later this option, Config will have a default value, use it
 #[cfg(feature = "mip_solver")]
-pub(crate) fn create_solver(_config: Option<&Settings>) -> Result<Box<dyn Solver>, Error> {
-    Ok(Box::new(LinearSolverModel::new()))
+pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
+    Box::new(LinearSolverModel::new())
 }
 
+// TODO: Not sure about the optional settings here which is more like a scheduler-wise info
 #[cfg(feature = "greedy_solver")]
-pub(crate) fn create_solver(_config: Option<&Settings>) -> Result<Box<dyn Solver>, Error> {
-    Ok(Box::new(GreedySolver))
+pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
+    Box::new(GreedySolver)
 }
 
 #[cfg(test)]
@@ -111,7 +111,7 @@ mod tests {
             estimations: None,
         };
 
-        let mut solver = create_solver(None).unwrap();
+        let mut solver = create_solver(None);
         //can allocate on any device so go
         let alloc = solver.allocate_task(&devices_t1, &task1);
         assert!(alloc.is_some());
