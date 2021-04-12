@@ -6,6 +6,7 @@ use client::{
     ResourceMemory, ResourceReq, ResourceType, TaskFunc, TaskReqBuilder, TaskRequirements,
     TaskResult,
 };
+use common::TaskType;
 use std::time::Duration;
 
 struct Test {
@@ -77,6 +78,7 @@ fn test_schedule() {
             let mut task_req = task_requirements();
             if i == 0 {
                 task_req.deadline = None;
+                task_req.task_type = Some(TaskType::WinningPost);
             }
             schedule_one_of(
                 client,

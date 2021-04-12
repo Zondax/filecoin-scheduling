@@ -85,6 +85,9 @@ impl Default for Settings {
                     2 => TaskType::WinningPost,
                     _ => TaskType::MerkleProof,
                 };
+                if task_i.task_type == TaskType::WinningPost {
+                    task_i.devices = vec![0];
+                }
                 task_i
             })
             .collect::<Vec<_>>();
