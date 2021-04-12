@@ -187,5 +187,37 @@ mod tests {
         let (alloc, _) = solver.allocate_task(&devices_t4, &task2, &None).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
         assert!(alloc.resource_id[0] != 0);
+
+        let task3 = TaskRequirements {
+            req: vec![
+                ResourceReq {
+                    resource: ResourceType::Gpu(ResourceMemory::Mem(4)),
+                    quantity: 1,
+                    preemptible: false,
+                },
+            ],
+            deadline: None,
+            estimations: None,
+            task_type: None,
+        };
+
+        let state_t5 = devices
+            .gpu_devices()
+            .iter()
+            .map(|dev| {
+                (
+                    dev.device_id(),
+                    ResourceState {
+                        dev: dev.clone(),
+                        mem_usage: 0,
+                        is_busy: dev.device_id() == 0,
+                    },
+                )
+            })
+            .collect::<HashMap<_, ResourceState>>();
+        let devices_t5 = Resources(state_t5);
+        let (alloc, _) = solver.allocate_task(&devices_t5, &task3, &Some(vec![0])).unwrap();
+        //allocate to 0 anyway since the task really needs to, even if it is busy..
+        assert!(alloc.resource_id[0] == 0);
     }
 }

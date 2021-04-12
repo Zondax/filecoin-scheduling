@@ -31,7 +31,7 @@ impl Solver for GreedySolver {
 
         let device_restrictions = restrictions
             .clone()
-            .unwrap_or(resources.0.keys().map(|x| *x).collect::<Vec<u64>>());
+            .unwrap_or_else(||resources.0.keys().copied().collect::<Vec<u64>>());
 
         let idle_gpus = find_idle_gpus(resources);
         // Make a new resource state, that the caller will use for updating the main resource state

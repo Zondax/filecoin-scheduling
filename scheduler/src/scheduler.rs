@@ -14,12 +14,9 @@ use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements, TaskTyp
 
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
-    scheduler_settings: &Vec<Task>,
+    scheduler_settings: &[Task],
 ) -> Option<Vec<u64>> {
-    if tasktype.is_none() {
-        return None;
-    }
-    let this_task = tasktype.unwrap();
+    let this_task = tasktype?;
     Some(
         scheduler_settings
             .iter()
