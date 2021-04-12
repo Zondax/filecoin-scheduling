@@ -189,13 +189,11 @@ mod tests {
         assert!(alloc.resource_id[0] != 0);
 
         let task3 = TaskRequirements {
-            req: vec![
-                ResourceReq {
-                    resource: ResourceType::Gpu(ResourceMemory::Mem(4)),
-                    quantity: 1,
-                    preemptible: false,
-                },
-            ],
+            req: vec![ResourceReq {
+                resource: ResourceType::Gpu(ResourceMemory::Mem(4)),
+                quantity: 1,
+                preemptible: false,
+            }],
             deadline: None,
             estimations: None,
             task_type: None,
@@ -216,7 +214,9 @@ mod tests {
             })
             .collect::<HashMap<_, ResourceState>>();
         let devices_t5 = Resources(state_t5);
-        let (alloc, _) = solver.allocate_task(&devices_t5, &task3, &Some(vec![0])).unwrap();
+        let (alloc, _) = solver
+            .allocate_task(&devices_t5, &task3, &Some(vec![0]))
+            .unwrap();
         //allocate to 0 anyway since the task really needs to, even if it is busy..
         assert!(alloc.resource_id[0] == 0);
     }
