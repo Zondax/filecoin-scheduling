@@ -55,24 +55,35 @@ impl Task {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub(crate) struct Service {
+    address: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Settings {
     pub tasks_settings: Vec<Task>,
+    pub service: Service,
 }
 
 impl Default for Settings {
     fn default() -> Self {
+        let service = Service {
+            address: "127.0.0.1:9000".to_string(),
+        };
         let exec_time = 60;
         let memory = 2;
-        let devices = common::list_devices()
+        let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
             .map(|dev| dev.device_id())
             .collect::<Vec<_>>();
+        let mut first_devices = all_devices.clone();
+        first_devices.truncate(2);
         let task = Task {
             exec_time,
             memory,
-            devices,
+            devices: first_devices,
             task_type: TaskType::MerkleProof,
         };
         // create a setting with 3 task description
@@ -86,13 +97,16 @@ impl Default for Settings {
                     _ => TaskType::MerkleProof,
                 };
                 if task_i.task_type == TaskType::WinningPost {
-                    task_i.devices = vec![0];
+                    task_i.devices = [all_devices[2]].to_vec();
                 }
                 task_i
             })
             .collect::<Vec<_>>();
 
-        Settings { tasks_settings }
+        Settings {
+            tasks_settings,
+            service,
+        }
     }
 }
 

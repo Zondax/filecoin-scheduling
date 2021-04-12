@@ -46,7 +46,7 @@ pub(crate) struct Scheduler {
 impl Scheduler {
     pub fn new() -> Self {
         // TODO: modify this later
-        let settings = RwLock::new(Settings::new("/tmp/scheduler.toml").unwrap());
+        let settings = RwLock::new(Settings::new("/tmp/scheduler.toml").unwrap_or_default());
         let devices = common::list_devices();
         // Created a solver
         let state = devices
