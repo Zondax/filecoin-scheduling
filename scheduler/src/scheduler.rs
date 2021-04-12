@@ -28,6 +28,9 @@ pub(crate) struct Scheduler {
 
 impl Scheduler {
     pub fn new() -> Self {
+        use crate::config::Settings;
+        // TODO: modify this later
+        let _ = Settings::new("/tmp/scheduler.toml");
         let devices = common::list_devices();
         // Created a solver
         let state = devices
@@ -76,11 +79,7 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Ok(None));
         }
 
-        let mut solver = match create_solver(None) {
-            Ok(solver) => solver,
-            Err(_) => return SchedulerResponse::Schedule(Err(Error::NoSolver)),
-        };
-
+        let mut solver = create_solver(None);
         // Try passing a mutable reference to resources
         let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
             Some(res) => res,
@@ -213,16 +212,11 @@ impl Scheduler {
                     .unwrap()
                     .free_memory(m, &state.allocation.resource_id);
             }
-            if let Ok(mut solver) = create_solver(None) {
-                // Update our plan
-                let state = self.tasks_state.read().unwrap();
-                match solver.solve_job_schedule(&*state) {
-                    // Solve first then, assign the solution to our queue
-                    // by doing so we do not hold the lock much time allowing other process to
-                    // read/write in the meantime
-                    Ok(plan) => *self.jobs_queue.write().unwrap() = plan,
-                    _ => return,
-                };
+            let mut solver = create_solver(None);
+            // Update our plan
+            let state = self.tasks_state.read().unwrap();
+            if let Ok(plan) = solver.solve_job_schedule(&*state) {
+                *self.jobs_queue.write().unwrap() = plan
             }
         } else {
             tracing::warn!("Task resources already released");
