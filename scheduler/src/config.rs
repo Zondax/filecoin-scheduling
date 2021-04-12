@@ -45,17 +45,23 @@ pub struct Task {
     task_type: TaskType,
 }
 
+impl Task {
+    pub fn get_task_type(&self) -> TaskType {
+        self.task_type
+    }
+
+    pub fn get_devices(&self) -> Vec<u64> {
+        self.devices.clone()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Settings {
-    pub scheduler: Scheduler,
     pub tasks_settings: Vec<Task>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        let scheduler = Scheduler {
-            address: "127.0.0.1:9000".to_string(),
-        };
         let exec_time = 60;
         let memory = 2;
         let devices = common::list_devices()
@@ -83,10 +89,7 @@ impl Default for Settings {
             })
             .collect::<Vec<_>>();
 
-        Settings {
-            scheduler,
-            tasks_settings,
-        }
+        Settings { tasks_settings }
     }
 }
 

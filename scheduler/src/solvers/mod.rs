@@ -104,11 +104,12 @@ mod tests {
             }],
             deadline: None,
             estimations: None,
+            task_type: None,
         };
 
         let mut solver = create_solver(None);
         //can allocate on any device so go
-        let alloc = solver.allocate_task(&devices_t1, &task1);
+        let alloc = solver.allocate_task(&devices_t1, &task1, &None);
         assert!(alloc.is_some());
 
         let state_t2 = devices
@@ -128,7 +129,7 @@ mod tests {
         let devices_t2 = Resources(state_t2);
 
         //resource 0 is busy so should allocate on idle GPU instead
-        let (alloc, _) = solver.allocate_task(&devices_t2, &task1).unwrap();
+        let (alloc, _) = solver.allocate_task(&devices_t2, &task1, &None).unwrap();
         assert!(alloc.resource_id[0] != 0);
 
         let state_t3 = devices
@@ -147,7 +148,7 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let devices_t3 = Resources(state_t3);
         //everything busy so should allocate on any GPU instead
-        let alloc = solver.allocate_task(&devices_t3, &task1);
+        let alloc = solver.allocate_task(&devices_t3, &task1, &None);
         assert!(alloc.is_some());
 
         let task2 = TaskRequirements {
@@ -165,6 +166,7 @@ mod tests {
             ],
             deadline: None,
             estimations: None,
+            task_type: None,
         };
 
         let state_t4 = devices
@@ -182,7 +184,7 @@ mod tests {
             })
             .collect::<HashMap<_, ResourceState>>();
         let devices_t4 = Resources(state_t4);
-        let (alloc, _) = solver.allocate_task(&devices_t4, &task2).unwrap();
+        let (alloc, _) = solver.allocate_task(&devices_t4, &task2, &None).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
         assert!(alloc.resource_id[0] != 0);
     }

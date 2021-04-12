@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::RwLock;
 
+use crate::config::{Settings, Task};
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::solver::{ResourceState, Resources, TaskState};
@@ -9,7 +10,25 @@ use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
 use crate::Error;
-use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements};
+use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements, TaskType};
+
+pub fn match_task_devices(
+    tasktype: Option<TaskType>,
+    scheduler_settings: &Vec<Task>,
+) -> Option<Vec<u64>> {
+    if tasktype.is_none() {
+        return None;
+    }
+    let this_task = tasktype.unwrap();
+    Some(
+        scheduler_settings
+            .iter()
+            .filter(|task| task.get_task_type() == this_task)
+            .map(|task| task.get_devices())
+            .flatten()
+            .collect::<Vec<u64>>(),
+    )
+}
 
 #[derive(Debug)]
 pub(crate) struct Scheduler {
@@ -24,13 +43,13 @@ pub(crate) struct Scheduler {
     jobs_queue: RwLock<VecDeque<u32>>,
 
     devices: RwLock<Resources>,
+    settings: RwLock<Settings>,
 }
 
 impl Scheduler {
     pub fn new() -> Self {
-        use crate::config::Settings;
         // TODO: modify this later
-        let _ = Settings::new("/tmp/scheduler.toml");
+        let settings = RwLock::new(Settings::new("/tmp/scheduler.toml").unwrap());
         let devices = common::list_devices();
         // Created a solver
         let state = devices
@@ -52,6 +71,7 @@ impl Scheduler {
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
             devices,
+            settings,
         }
     }
 
@@ -69,6 +89,11 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Err(Error::RwError));
         };
 
+        let restrictions = match_task_devices(
+            requirements.task_type,
+            &self.settings.read().unwrap().tasks_settings,
+        );
+
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
         if !resources.has_min_available_memory(&requirements) {
@@ -77,10 +102,11 @@ impl Scheduler {
 
         let mut solver = create_solver(None);
         // Try passing a mutable reference to resources
-        let (alloc, new_resources) = match solver.allocate_task(&resources, &requirements) {
-            Some(res) => res,
-            _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
-        };
+        let (alloc, new_resources) =
+            match solver.allocate_task(&resources, &requirements, &restrictions) {
+                Some(res) => res,
+                _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
+            };
 
         resources.0 = new_resources;
 

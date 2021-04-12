@@ -155,6 +155,7 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
+        restrictions: &Option<Vec<u64>>,
     ) -> Option<(ResourceAlloc, HashMap<u64, ResourceState>)>;
 }
 
@@ -190,6 +191,7 @@ mod tests {
             }],
             deadline: None,
             estimations: None,
+            task_type: None,
         };
         assert!(devices_t1.has_min_available_memory(&task1));
 
@@ -217,6 +219,7 @@ mod tests {
             }],
             deadline: None,
             estimations: None,
+            task_type: None,
         };
 
         //should fit!
@@ -228,6 +231,7 @@ mod tests {
             }],
             deadline: None,
             estimations: None,
+            task_type: None,
         };
 
         let devices_t2 = Resources(state_t2);

@@ -70,6 +70,7 @@ pub struct TaskReqBuilder {
     req: Vec<ResourceReq>,
     deadline: Option<Deadline>,
     task_estimations: Option<TaskEstimations>,
+    task_type: Option<TaskType>,
 }
 
 impl TaskReqBuilder {
@@ -104,11 +105,17 @@ impl TaskReqBuilder {
         self
     }
 
+    pub fn with_task_type(mut self, task: TaskType) -> Self {
+        self.task_type = Some(task);
+        self
+    }
+
     pub fn build(self) -> TaskRequirements {
         TaskRequirements {
             req: self.req,
             deadline: self.deadline,
             estimations: self.task_estimations,
+            task_type: self.task_type,
         }
     }
 }
@@ -121,6 +128,7 @@ pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
     pub deadline: Option<Deadline>,
     pub estimations: Option<TaskEstimations>,
+    pub task_type: Option<TaskType>,
 }
 
 impl TaskRequirements {
