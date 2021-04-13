@@ -68,27 +68,21 @@ pub struct TaskEstimations {
 #[derive(Default)]
 pub struct TaskReqBuilder {
     req: Vec<ResourceReq>,
-    exclusive: bool,
     deadline: Option<Deadline>,
     task_estimations: Option<TaskEstimations>,
+    task_type: Option<TaskType>,
 }
 
 impl TaskReqBuilder {
     pub fn new() -> Self {
         Self {
             req: vec![],
-            exclusive: false,
             ..Default::default()
         }
     }
 
     pub fn resource_req(mut self, req: ResourceReq) -> Self {
         self.req.push(req);
-        self
-    }
-
-    pub fn exclusive(mut self, exclusive: bool) -> Self {
-        self.exclusive = exclusive;
         self
     }
 
@@ -111,12 +105,17 @@ impl TaskReqBuilder {
         self
     }
 
+    pub fn with_task_type(mut self, task: TaskType) -> Self {
+        self.task_type = Some(task);
+        self
+    }
+
     pub fn build(self) -> TaskRequirements {
         TaskRequirements {
             req: self.req,
             deadline: self.deadline,
-            exclusive: self.exclusive,
             estimations: self.task_estimations,
+            task_type: self.task_type,
         }
     }
 }
@@ -128,8 +127,8 @@ impl TaskReqBuilder {
 pub struct TaskRequirements {
     pub req: Vec<ResourceReq>,
     pub deadline: Option<Deadline>,
-    pub exclusive: bool,
     pub estimations: Option<TaskEstimations>,
+    pub task_type: Option<TaskType>,
 }
 
 impl TaskRequirements {

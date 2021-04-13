@@ -6,6 +6,7 @@ use client::{
     ResourceMemory, ResourceReq, ResourceType, TaskFunc, TaskReqBuilder, TaskRequirements,
     TaskResult,
 };
+use common::TaskType;
 use std::time::Duration;
 
 struct Test {
@@ -75,9 +76,20 @@ fn test_schedule() {
             let client = register(i, i as u64).unwrap();
             let mut test_func = Test::new(i as _);
             let mut task_req = task_requirements();
+            //Tasktype => allocated on gpu 0 or 1
             if i == 0 {
                 task_req.deadline = None;
+                task_req.task_type = Some(TaskType::MerkleProof);
             }
+            //Tasktype => allocated on gpu 0 or 1
+            if i == 1 {
+                task_req.task_type = Some(TaskType::WindowPost);
+            }
+            //Since this tasktype = WindowPost, it is the first task to be allocated on gpu 2
+            if i == 2 {
+                task_req.task_type = Some(TaskType::WinningPost);
+            }
+            //if i == 3,4 => allocated on gpu 0 or 1 or 2
             schedule_one_of(
                 client,
                 &mut test_func,
@@ -86,51 +98,6 @@ fn test_schedule() {
             )
         }));
         std::thread::sleep(Duration::from_secs(2));
-    }
-    for j in joiner.into_iter() {
-        let res = j.join().unwrap();
-        assert!(res.is_ok());
-    }
-
-    if let Some(h) = handler {
-        h.close();
-    }
-}
-
-#[test]
-fn test_with_exclusivetask() {
-    //let file_appender =
-    //    RollingFileAppender::new(Rotation::HOURLY, "../client/tests", "test_schedule.log");
-    //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    //tracing_subscriber::fmt().with_writer(non_blocking).init();
-    //tracing_subscriber::fmt().with_writer(io::stdout).init();
-
-    let handler = if let Ok(handle) = spawn_scheduler_with_handler("127.0.0.1:5000") {
-        Some(handle)
-    } else {
-        None
-    };
-
-    let mut joiner = vec![];
-    for i in 0..5 {
-        joiner.push(std::thread::spawn(move || {
-            let client = register(i, i as u64).unwrap();
-            let mut test_func = Test::new(i as _);
-            let mut task_req = task_requirements();
-            if i == 0 {
-                task_req.deadline = None;
-            }
-            if i == 4 {
-                task_req.exclusive = true;
-            }
-            schedule_one_of(
-                client,
-                &mut test_func,
-                Some(task_req),
-                Duration::from_secs(20),
-            )
-        }));
-        std::thread::sleep(Duration::from_secs(1));
     }
     for j in joiner.into_iter() {
         let res = j.join().unwrap();

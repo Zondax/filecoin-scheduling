@@ -23,10 +23,15 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
+        restrictions: &Option<Vec<u64>>,
     ) -> Option<(ResourceAlloc, std::collections::HashMap<u64, ResourceState>)> {
         // Use heuristic criteria for picking up a resource depending on task requirements
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
+
+        let device_restrictions = restrictions
+            .clone()
+            .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<u64>>());
 
         let idle_gpus = find_idle_gpus(resources);
         // Make a new resource state, that the caller will use for updating the main resource state
@@ -37,7 +42,6 @@ impl Solver for GreedySolver {
             // check if the pool of devices have room for the requested allocations
             let optional_resources = resources
                 .iter_mut()
-                .filter(|(_, r)| r.is_exclusive == requirements.exclusive)
                 .filter_map(|(index, device)| {
                     if let ResourceType::Gpu(ref mem) = req.resource {
                         match mem {
@@ -65,11 +69,13 @@ impl Solver for GreedySolver {
                         None
                     }
                 })
+                .filter(|b| device_restrictions.iter().any(|x| x == b))
                 .collect::<Vec<u64>>();
             let idle_gpus_available = optional_resources
                 .iter()
                 .cloned()
                 .filter(|b| idle_gpus.iter().any(|x| x == b))
+                .filter(|b| device_restrictions.iter().any(|x| x == b))
                 .collect::<Vec<u64>>();
 
             if idle_gpus_available.len() >= quantity {

@@ -11,8 +11,6 @@ pub struct ResourceState {
     pub dev: Device,
     /// Current memory in use
     pub mem_usage: u64,
-    /// Mark device as exclusive
-    pub is_exclusive: bool,
     /// Using resource?
     pub is_busy: bool,
 }
@@ -61,42 +59,34 @@ impl ResourceState {
 pub struct Resources(pub HashMap<u64, ResourceState>);
 
 impl Resources {
-    pub fn available_memory(&self, exclusive: bool) -> u64 {
-        self.0
-            .iter()
-            .filter(|(_, dev)| dev.is_exclusive == exclusive)
-            .map(|(_, dev)| dev.available_memory())
-            .sum()
+    pub fn available_memory(&self) -> u64 {
+        self.0.iter().map(|(_, dev)| dev.available_memory()).sum()
     }
 
     pub fn has_min_available_memory(&self, requirements: &TaskRequirements) -> bool {
         for req in &requirements.req {
-            let selected_resources = self
-                .0
-                .iter()
-                .filter(|(_, dev)| dev.is_exclusive == requirements.exclusive)
-                .filter_map(|(_, device)| {
-                    if let ResourceType::Gpu(ref mem) = req.resource {
-                        match mem {
-                            ResourceMemory::All => {
-                                if device.mem_usage == 0 {
-                                    Some(1)
-                                } else {
-                                    None
-                                }
-                            }
-                            ResourceMemory::Mem(value) => {
-                                if device.available_memory() >= *value {
-                                    Some(1)
-                                } else {
-                                    None
-                                }
+            let selected_resources = self.0.iter().filter_map(|(_, device)| {
+                if let ResourceType::Gpu(ref mem) = req.resource {
+                    match mem {
+                        ResourceMemory::All => {
+                            if device.mem_usage == 0 {
+                                Some(1)
+                            } else {
+                                None
                             }
                         }
-                    } else {
-                        None
+                        ResourceMemory::Mem(value) => {
+                            if device.available_memory() >= *value {
+                                Some(1)
+                            } else {
+                                None
+                            }
+                        }
                     }
-                });
+                } else {
+                    None
+                }
+            });
             if selected_resources.count() >= req.quantity {
                 return true;
             }
@@ -165,6 +155,7 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
+        restrictions: &Option<Vec<u64>>,
     ) -> Option<(ResourceAlloc, HashMap<u64, ResourceState>)>;
 }
 
@@ -186,10 +177,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 0,
                         is_busy: false,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -203,8 +190,8 @@ mod tests {
                 preemptible: false,
             }],
             deadline: None,
-            exclusive: false,
             estimations: None,
+            task_type: None,
         };
         assert!(devices_t1.has_min_available_memory(&task1));
 
@@ -218,10 +205,6 @@ mod tests {
                         dev: dev.clone(),
                         mem_usage: 3,
                         is_busy: false,
-                        is_exclusive: devices
-                            .exclusive_gpus()
-                            .iter()
-                            .any(|&i| i == dev.device_id()),
                     },
                 )
             })
@@ -235,8 +218,8 @@ mod tests {
                 preemptible: false,
             }],
             deadline: None,
-            exclusive: false,
             estimations: None,
+            task_type: None,
         };
 
         //should fit!
@@ -247,25 +230,12 @@ mod tests {
                 preemptible: false,
             }],
             deadline: None,
-            exclusive: false,
             estimations: None,
-        };
-
-        //should not fit as it is exclusive only!
-        let task4 = TaskRequirements {
-            req: vec![ResourceReq {
-                resource: ResourceType::Gpu(ResourceMemory::Mem(1)),
-                quantity: 2,
-                preemptible: false,
-            }],
-            deadline: None,
-            exclusive: true,
-            estimations: None,
+            task_type: None,
         };
 
         let devices_t2 = Resources(state_t2);
         assert!(!devices_t2.has_min_available_memory(&task2));
         assert!(devices_t2.has_min_available_memory(&task3));
-        assert!(!devices_t2.has_min_available_memory(&task4));
     }
 }
