@@ -40,13 +40,13 @@ pub(crate) struct Scheduler {
     jobs_queue: RwLock<VecDeque<u32>>,
 
     devices: RwLock<Resources>,
-    settings: RwLock<Settings>,
+    settings: Settings,
 }
 
 impl Scheduler {
     pub fn new() -> Self {
         // TODO: modify this later
-        let settings = RwLock::new(Settings::new("/tmp/scheduler.toml").unwrap_or_default());
+        let settings = Settings::new("/tmp/scheduler.toml").unwrap_or_default();
         let devices = common::list_devices();
         // Created a solver
         let state = devices
@@ -86,10 +86,8 @@ impl Scheduler {
             return SchedulerResponse::Schedule(Err(Error::RwError));
         };
 
-        let restrictions = match_task_devices(
-            requirements.task_type,
-            &self.settings.read().unwrap().tasks_settings,
-        );
+        let restrictions =
+            match_task_devices(requirements.task_type, &self.settings.tasks_settings);
 
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
