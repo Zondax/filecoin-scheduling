@@ -238,9 +238,8 @@ dependencies = [
  "ipmpsc",
  "jsonrpc-http-server",
  "jsonrpc_client",
- "nix 0.19.1",
+ "nix",
  "rand 0.8.3",
- "raw_sync",
  "reqwest",
  "scheduler",
  "serde 1.0.124",
@@ -1315,18 +1314,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nix"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa9b4819da1bc61c0ea48b63b7bc8604064dd43013e7cc325df098d49cd7c18a"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if 1.0.0",
- "libc",
-]
-
-[[package]]
 name = "nodrop"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,19 +1717,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3190ef7066a446f2e7f42e239d161e905420ccab01eb967c9eb27d21b2322a73"
 dependencies = [
  "rand_core 0.6.2",
-]
-
-[[package]]
-name = "raw_sync"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a34bde3561f980a51c70495164200569a11662644fe5af017f0b5d7015688cc"
-dependencies = [
- "cfg-if 0.1.10",
- "libc",
- "nix 0.20.0",
- "rand 0.8.3",
- "winapi 0.3.9",
 ]
 
 [[package]]
