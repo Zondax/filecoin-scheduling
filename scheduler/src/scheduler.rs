@@ -161,6 +161,21 @@ impl Scheduler {
         SchedulerResponse::Schedule(Ok(Some(alloc)))
     }
 
+    fn log_stalled_jobs(&self) {
+        let queue = self.jobs_queue.read().unwrap();
+        let state = self.tasks_state.read().unwrap();
+        for job_id in queue.iter() {
+            let task = state.get(&job_id).unwrap();
+            if task_is_stalled(
+                task.last_seen.load(Ordering::Relaxed),
+                task.requirements.task_type,
+                &self.settings,
+            ) {
+                tracing::warn!("Process {} is stalling!!", job_id);
+            }
+        }
+    }
+
     fn wait_preemptive(&self, client: ClientToken) -> bool {
         tracing::info!("scheduler: client {} wait preemtive", client.process_id());
         let state = self.tasks_state.read().unwrap();
@@ -177,6 +192,7 @@ impl Scheduler {
         {
             let resources = self.devices.read().unwrap();
             if resources.has_busy_resources(&current_task.allocation.resource_id) {
+                self.log_stalled_jobs();
                 return true; //client should sleep 2 seconds (LONG)
             }
         }
