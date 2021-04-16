@@ -78,7 +78,7 @@ fn test_schedule() {
             let mut task_req = task_requirements();
             //Tasktype => allocated on gpu 0 or 1
             if i == 0 {
-                task_req.deadline = None;
+                //         task_req.deadline = None;
                 task_req.task_type = Some(TaskType::MerkleProof);
             }
             //Tasktype => allocated on gpu 0 or 1

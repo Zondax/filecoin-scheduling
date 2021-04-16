@@ -1,11 +1,13 @@
+use chrono::Utc;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
 use crate::config::{Settings, Task};
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{ResourceState, Resources, TaskState};
+use crate::solver::{task_is_stalled, ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
@@ -109,11 +111,14 @@ impl Scheduler {
         // allowing others to take it if needed
         drop(resources);
 
+        let time: u64 = Utc::now().timestamp() as u64;
+
         // prepare the task
         let task_state = TaskState {
             requirements,
             current_iteration: 0,
             allocation: alloc.clone(),
+            last_seen: AtomicU64::new(time),
         };
 
         // Add the task to our list of jobs
@@ -136,8 +141,6 @@ impl Scheduler {
 
     fn wait_preemptive(&self, client: ClientToken) -> bool {
         tracing::info!("scheduler: client {} wait preemtive", client.process_id());
-
-        let queue = self.jobs_queue.read().unwrap();
         let state = self.tasks_state.read().unwrap();
         let current_task = if let Some(task) = state.get(&client.process_id()) {
             task
@@ -146,55 +149,74 @@ impl Scheduler {
             // This is an error or just return true??
             return true;
         };
+        current_task
+            .last_seen
+            .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
         {
             let resources = self.devices.read().unwrap();
             if resources.has_busy_resources(&current_task.allocation.resource_id) {
                 return true; //client should sleep 2 seconds (LONG)
             }
         }
-        if let Some(job) = queue.front() {
-            if *job == client.process_id() {
-                //tracing::info!("client {} already upfront of the queue", *job);
-                let devwrite = self.devices.try_write();
-                if devwrite.is_err() {
-                    return true; //client should sleep short
+        let mut wait = false;
+        {
+            let queue = self.jobs_queue.read().unwrap();
+            tracing::info!("scheduler job_plan {:?}", queue);
+            if let Some(job) = queue.front() {
+                if *job == client.process_id() {
+                    //tracing::info!("client {} already upfront of the queue", *job);
+                    wait = false;
+                } else {
+                    //Checks if this task needs to wait for its turn as indicated in the plan
+                    //may be the resources are its and can continue immediately
+                    // This is expensive, we can do better by havving an associated table between
+                    // resources and tasks using it.
+                    for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
+                        let next_task = state.get(job_id).unwrap();
+                        wait = current_task.allocation.resource_id.iter().any(|dev_id| {
+                            next_task
+                                .allocation
+                                .resource_id
+                                .iter()
+                                .any(|id| dev_id == id)
+                        });
+                        if wait {
+                            break;
+                        }
+                    }
                 }
-                let mut resources_write = devwrite.unwrap();
-                resources_write.set_busy_resources(&current_task.allocation.resource_id);
-                false
             } else {
-                let mut wait = false;
-                //Checks if this task needs to wait for its turn as indicated in the plan
-                //may be the resources are its and can continue immediately
-                // This is expensive, we can do better by havving an associated table between
-                // resources and tasks using it.
-                for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
-                    let next_task = state.get(job_id).unwrap();
-                    wait = current_task.allocation.resource_id.iter().any(|dev_id| {
-                        next_task
-                            .allocation
-                            .resource_id
-                            .iter()
-                            .any(|id| dev_id == id)
-                    });
-                    if wait {
-                        break;
-                    }
-                }
-                if !wait {
-                    let devwrite = self.devices.try_write();
-                    if devwrite.is_err() {
-                        return true;
-                    }
-                    let mut resources_write = devwrite.unwrap();
-                    resources_write.set_busy_resources(&current_task.allocation.resource_id);
-                }
-                wait
+                tracing::warn!("Queue empty!");
+                wait = false
             }
-        } else {
-            tracing::warn!("Queue empty!");
-            false
         }
+        if !wait {
+            let devwrite = self.devices.try_write();
+            if devwrite.is_err() {
+                return true;
+            }
+            let mut resources_write = devwrite.unwrap();
+            resources_write.set_busy_resources(&current_task.allocation.resource_id);
+        } else {
+            let push_back: bool;
+            {
+                let queue = self.jobs_queue.read().unwrap();
+                let front_task = queue.front().unwrap();
+                let task = state.get(&front_task).unwrap();
+                push_back = task_is_stalled(task.last_seen.load(Ordering::Relaxed));
+            }
+            if push_back {
+                let queue = self.jobs_queue.try_write();
+                if queue.is_err() {
+                    return true;
+                }
+                let mut queue_write = queue.unwrap();
+                let job = queue_write.pop_front().unwrap();
+                queue_write.push_back(job);
+                tracing::warn!("Pushing process {} to back!!", job);
+            }
+        }
+        wait
     }
 
     // returns (device_id, available memory)
