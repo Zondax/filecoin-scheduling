@@ -7,7 +7,7 @@ use std::sync::RwLock;
 use crate::config::{Settings, Task};
 use crate::handler::Handler;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{task_is_stalled, ResourceState, Resources, TaskState};
+use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
@@ -27,6 +27,28 @@ pub fn match_task_devices(
             .flatten()
             .collect::<Vec<u64>>(),
     )
+}
+
+pub fn task_is_stalled(
+    last_seen: u64,
+    tasktype: Option<TaskType>,
+    scheduler_settings: &Settings,
+) -> bool {
+    let min_wait_time = scheduler_settings.time_settings.min_wait_time;
+    if tasktype.is_none() {
+        return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
+    }
+    let this_task = tasktype.unwrap();
+    let time_of_task = scheduler_settings
+        .tasks_settings
+        .iter()
+        .find(|task| task.get_task_type() == this_task)
+        .map(|task| task.get_task_exec_time());
+    if time_of_task.is_none() {
+        //should not happen though....
+        return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
+    }
+    Utc::now().timestamp() as u64 - time_of_task.unwrap() > last_seen
 }
 
 #[derive(Debug)]
@@ -126,7 +148,7 @@ impl Scheduler {
         state.insert(client.process_id(), task_state);
 
         // Update our plan
-        let new_plan = match solver.solve_job_schedule(&*state) {
+        let new_plan = match solver.solve_job_schedule(&*state, &self.settings) {
             Ok(plan) => plan,
             Err(e) => return SchedulerResponse::Schedule(Err(Error::SolverOther(e.to_string()))),
         };
@@ -203,7 +225,11 @@ impl Scheduler {
                 let queue = self.jobs_queue.read().unwrap();
                 let front_task = queue.front().unwrap();
                 let task = state.get(&front_task).unwrap();
-                push_back = task_is_stalled(task.last_seen.load(Ordering::Relaxed));
+                push_back = task_is_stalled(
+                    task.last_seen.load(Ordering::Relaxed),
+                    task.requirements.task_type,
+                    &self.settings,
+                );
             }
             if push_back {
                 let queue = self.jobs_queue.try_write();
@@ -254,7 +280,7 @@ impl Scheduler {
             let mut solver = create_solver(None);
             // Update our plan
             let state = self.tasks_state.read().unwrap();
-            if let Ok(plan) = solver.solve_job_schedule(&*state) {
+            if let Ok(plan) = solver.solve_job_schedule(&*state, &self.settings) {
                 *self.jobs_queue.write().unwrap() = plan
             }
         } else {

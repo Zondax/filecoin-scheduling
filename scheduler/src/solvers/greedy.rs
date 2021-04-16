@@ -1,6 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::solver::{task_is_stalled, ResourceState, Resources, Solver, TaskState};
+use crate::config::Settings;
+use crate::scheduler::task_is_stalled;
+use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use crate::Error;
 use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 
@@ -109,6 +111,7 @@ impl Solver for GreedySolver {
     fn solve_job_schedule(
         &mut self,
         input: &HashMap<u32, TaskState>,
+        scheduler_settings: &Settings,
     ) -> Result<VecDeque<u32>, Error> {
         //Criteria A: Use task end time as a priority indicator. The sooner the deadline the higher
         //the priority
@@ -123,7 +126,11 @@ impl Solver for GreedySolver {
         // iterate our tasks for making the triplet pushing it into the queue
         for (job_id, state) in input.iter() {
             // Intead of Reverse we can do something like deadline.end - chronos::now()?
-            let is_stalled = Reverse(task_is_stalled(state.last_seen.load(Ordering::Relaxed)));
+            let is_stalled = Reverse(task_is_stalled(
+                state.last_seen.load(Ordering::Relaxed),
+                state.requirements.task_type,
+                scheduler_settings,
+            ));
 
             let deadline = state
                 .requirements

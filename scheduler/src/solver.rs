@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
+use crate::config::Settings;
 use crate::Error;
-use chrono::Utc;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
 use std::sync::atomic::AtomicU64;
 
@@ -132,10 +132,6 @@ pub struct TaskState {
     pub last_seen: AtomicU64,
 }
 
-pub fn task_is_stalled(last_seen: u64) -> bool {
-    Utc::now().timestamp() as u64 - 5 > last_seen
-}
-
 impl TaskState {
     pub fn end_timestamp(&self) -> i64 {
         self.requirements
@@ -157,6 +153,7 @@ pub trait Solver {
     fn solve_job_schedule(
         &mut self,
         input: &HashMap<u32, TaskState>,
+        scheduler_settings: &Settings,
     ) -> Result<VecDeque<u32>, Error>;
 
     fn allocate_task(
