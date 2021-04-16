@@ -97,7 +97,11 @@ impl Default for Settings {
                     _ => TaskType::MerkleProof,
                 };
                 if task_i.task_type == TaskType::WinningPost {
-                    task_i.devices = [all_devices[2]].to_vec();
+                    if cfg!(dummy_devices) {
+                        task_i.devices = [all_devices[2]].to_vec();
+                    } else {
+                        task_i.devices = all_devices.clone();
+                    }
                 }
                 task_i
             })
