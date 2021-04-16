@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
+use crate::config::Settings;
+use crate::scheduler::task_is_stalled;
 use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use crate::Error;
 use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
@@ -8,6 +10,7 @@ use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
 
 pub struct GreedySolver;
+use std::sync::atomic::Ordering;
 
 pub fn find_idle_gpus(resources: &Resources) -> Vec<u64> {
     resources
@@ -108,6 +111,7 @@ impl Solver for GreedySolver {
     fn solve_job_schedule(
         &mut self,
         input: &HashMap<u32, TaskState>,
+        scheduler_settings: &Settings,
     ) -> Result<VecDeque<u32>, Error> {
         //Criteria A: Use task end time as a priority indicator. The sooner the deadline the higher
         //the priority
@@ -122,11 +126,17 @@ impl Solver for GreedySolver {
         // iterate our tasks for making the triplet pushing it into the queue
         for (job_id, state) in input.iter() {
             // Intead of Reverse we can do something like deadline.end - chronos::now()?
-            let condition = state
+            let is_stalled = Reverse(task_is_stalled(
+                state.last_seen.load(Ordering::Relaxed),
+                state.requirements.task_type,
+                scheduler_settings,
+            ));
+
+            let deadline = state
                 .requirements
                 .deadline
                 .map_or(i64::MAX, |d| d.end_timestamp_secs());
-            let finish_time = Reverse(condition);
+            let finish_time = Reverse(deadline);
             let mem_usage = match &state.allocation.requirement.resource {
                 ResourceType::Gpu(mem) => match mem {
                     // This device is not preemptable so we put this at the end of our priority
@@ -138,12 +148,13 @@ impl Solver for GreedySolver {
                 },
                 ResourceType::Cpu => unimplemented!("We handle just Gpu resources"),
             };
-            let triplet = (
+            let conditions = (
+                is_stalled,
                 finish_time,
                 mem_usage,
                 state.allocation.requirement.quantity,
             );
-            priority_queue.push(job_id, triplet);
+            priority_queue.push(job_id, conditions);
         }
 
         Ok(priority_queue

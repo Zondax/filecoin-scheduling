@@ -31,11 +31,6 @@ impl DeserializeWith for TaskType {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
-pub(crate) struct Scheduler {
-    address: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
     exec_time: u64,
@@ -50,20 +45,30 @@ impl Task {
         self.task_type
     }
 
+    pub fn get_task_exec_time(&self) -> u64 {
+        self.exec_time
+    }
+
     pub fn get_devices(&self) -> Vec<u64> {
         self.devices.clone()
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
-pub(crate) struct Service {
+pub struct Service {
     address: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct TimeSettings {
+    pub min_wait_time: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub(crate) struct Settings {
+pub struct Settings {
     pub tasks_settings: Vec<Task>,
     pub service: Service,
+    pub time_settings: TimeSettings,
 }
 
 impl Default for Settings {
@@ -71,6 +76,8 @@ impl Default for Settings {
         let service = Service {
             address: "127.0.0.1:9000".to_string(),
         };
+
+        let time_settings = TimeSettings { min_wait_time: 60 };
         let exec_time = 60;
         let memory = 2;
         let all_devices = common::list_devices()
@@ -110,6 +117,7 @@ impl Default for Settings {
         Settings {
             tasks_settings,
             service,
+            time_settings,
         }
     }
 }

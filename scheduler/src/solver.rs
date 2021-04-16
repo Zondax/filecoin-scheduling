@@ -1,7 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 
+use crate::config::Settings;
 use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
+use std::sync::atomic::AtomicU64;
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -119,13 +121,15 @@ impl Resources {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TaskState {
     pub requirements: TaskRequirements,
     pub current_iteration: u16,
     // The list of jobs associates with this task, each job is a requirement plus the resource
     // assigned to it accordingly.
     pub allocation: ResourceAlloc,
+
+    pub last_seen: AtomicU64,
 }
 
 impl TaskState {
@@ -149,6 +153,7 @@ pub trait Solver {
     fn solve_job_schedule(
         &mut self,
         input: &HashMap<u32, TaskState>,
+        scheduler_settings: &Settings,
     ) -> Result<VecDeque<u32>, Error>;
 
     fn allocate_task(
