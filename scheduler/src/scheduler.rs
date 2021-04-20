@@ -1,7 +1,7 @@
 use chrono::Utc;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::sync::RwLock;
 
 use crate::config::{Settings, Task};
@@ -144,6 +144,7 @@ impl Scheduler {
             current_iteration: 0,
             allocation: alloc.clone(),
             last_seen: AtomicU64::new(time),
+            aborted: AtomicBool::new(false),
         };
 
         // Add the task to our list of jobs
@@ -183,6 +184,11 @@ impl Scheduler {
         tracing::info!("scheduler: client {} wait preemtive", client.process_id());
         let state = self.tasks_state.read().unwrap();
         let current_task = state.get(&client.process_id()).ok_or(Error::RwError)?;
+        if current_task
+            .aborted
+            .load(Ordering::Relaxed){
+            return Ok(PreemptionResponse::Abort);
+        }
         current_task
             .last_seen
             .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
@@ -303,6 +309,16 @@ impl Scheduler {
         }
     }
 
+    fn abort(&self, client: u32) -> Result<(), Error>{
+        tracing::warn!("aborting client {}", client);
+        let state = self.tasks_state.read().unwrap();
+        let current_task = state.get(&client).ok_or(Error::RwError)?;
+        current_task
+            .aborted
+            .store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
     fn monitor(&self) -> Result<MonitorInfo, String> {
         let task_states = self.tasks_state.read().map_err(|e| e.to_string())?;
         let task_states = task_states
@@ -352,9 +368,8 @@ impl Handler for Scheduler {
                 self.release_preemptive(client);
                 SchedulerResponse::ReleasePreemptive
             }
-            RequestMethod::Abort(_client_id) => {
-                //TODO: Implement abort logic
-                SchedulerResponse::Abort
+            RequestMethod::Abort(client_id) => {
+                SchedulerResponse::Abort(self.abort(client_id))
             }
             RequestMethod::Monitoring => SchedulerResponse::Monitoring(self.monitor()),
         };

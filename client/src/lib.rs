@@ -116,9 +116,24 @@ async fn execute_task<'a, T, E: From<ClientError>>(
     task.init(Some(alloc))?;
     let mut cont = TaskResult::Continue;
     while cont == TaskResult::Continue {
-        while wait_preemptive(client, timeout).await? == PreemptionResponse::Wait {
-            tokio::time::sleep(Duration::from_millis(1000)).await
+        let mut wait = true;
+        while wait {
+            let preemtive_state = wait_preemptive(client, timeout).await?;
+            match preemtive_state {
+                PreemptionResponse::Wait => tokio::time::sleep(Duration::from_millis(1000)).await,
+                PreemptionResponse::Execute => {
+                    //final check client-side execution?
+                    wait = false;
+                }
+                PreemptionResponse::Abort => {
+                    warn!("Client {} aborted", client.token.process_id());
+                    release_preemptive(client).await?;
+                    release(client).await?;
+                    return task.end(Some(alloc));
+                }
+            }
         }
+
         cont = task.task(Some(alloc))?;
         info!(
             "Client {} task iteration completed",

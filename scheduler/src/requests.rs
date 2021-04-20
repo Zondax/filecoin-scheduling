@@ -11,7 +11,7 @@ pub enum SchedulerResponse {
     ListAllocations(Result<Vec<(u64, u64)>, Error>),
     Release,
     ReleasePreemptive,
-    Abort,
+    Abort(Result<(),Error>),
     Monitoring(Result<MonitorInfo, String>),
 }
 

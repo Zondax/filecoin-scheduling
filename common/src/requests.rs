@@ -8,7 +8,7 @@ pub enum RequestMethod {
     WaitPreemptive(ClientToken),
     Release(ClientToken),
     ReleasePreemptive(ClientToken),
-    Abort(u64),
+    Abort(u32),
     Monitoring,
 }
 
