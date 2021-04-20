@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod handler;
+mod monitor;
 mod requests;
 mod scheduler;
 mod server;
@@ -9,6 +10,7 @@ mod solvers;
 
 pub use error::Error;
 pub use handler::Handler;
+pub use monitor::*;
 pub use server::RpcMethods;
 pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};

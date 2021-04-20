@@ -1,0 +1,19 @@
+[package]
+name = "monitor"
+version = "0.1.0"
+authors = ["Zondax GmbH <info@zondax.ch>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jsonrpc_client = { version = "0.5.1", features = ["reqwest"] }
+reqwest = "0.11.0"
+clap = "2.33.3"
+colorful = "0.2.1"
+anyhow = "1.0.40"
+scheduler = { path = "../scheduler/" }
+common = { path = "../common/" }
+tokio = { version = "1.1.0", features = ["full"] }
+futures = "0.3.12"
+tui = "0.14.0"

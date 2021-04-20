@@ -2,6 +2,7 @@
 members = [
     "scheduler",
     "client",
+    "monitor",
 ]
 
 [profile.release]
