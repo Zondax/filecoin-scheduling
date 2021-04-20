@@ -11,3 +11,10 @@ pub enum RequestMethod {
     Abort(u64),
     Monitoring,
 }
+
+#[derive(Serialize, Deserialize, Eq, PartialEq)]
+pub enum PreemptionResponse {
+    Execute,
+    Wait,
+    Abort,
+}

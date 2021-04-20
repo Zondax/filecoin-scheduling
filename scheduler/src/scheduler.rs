@@ -13,7 +13,9 @@ use crate::solvers::create_solver;
 #[cfg(feature = "mip_solver")]
 use crate::solvers::RequirementsMap;
 use crate::Error;
-use common::{ClientToken, RequestMethod, ResourceType, TaskRequirements, TaskType};
+use common::{
+    ClientToken, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements, TaskType,
+};
 
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
@@ -177,16 +179,10 @@ impl Scheduler {
         }
     }
 
-    fn wait_preemptive(&self, client: ClientToken) -> bool {
+    fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
         tracing::info!("scheduler: client {} wait preemtive", client.process_id());
         let state = self.tasks_state.read().unwrap();
-        let current_task = if let Some(task) = state.get(&client.process_id()) {
-            task
-        } else {
-            // Task that is not in our job_queue is asking for preemption
-            // This is an error or just return true??
-            return true;
-        };
+        let current_task = state.get(&client.process_id()).ok_or(Error::RwError)?;
         current_task
             .last_seen
             .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
@@ -194,7 +190,7 @@ impl Scheduler {
             let resources = self.devices.read().unwrap();
             if resources.has_busy_resources(&current_task.allocation.resource_id) {
                 self.log_stalled_jobs();
-                return true; //client should sleep 2 seconds (LONG)
+                return Ok(PreemptionResponse::Wait); //client should sleep 2 seconds (LONG)
             }
         }
         let mut wait = false;
@@ -230,12 +226,9 @@ impl Scheduler {
             }
         }
         if !wait {
-            let devwrite = self.devices.try_write();
-            if devwrite.is_err() {
-                return true;
-            }
-            let mut resources_write = devwrite.unwrap();
+            let mut resources_write = self.devices.try_write().map_err(|_| Error::RwError)?;
             resources_write.set_busy_resources(&current_task.allocation.resource_id);
+            Ok(PreemptionResponse::Execute)
         } else {
             let push_back: bool;
             {
@@ -249,17 +242,13 @@ impl Scheduler {
                 );
             }
             if push_back {
-                let queue = self.jobs_queue.try_write();
-                if queue.is_err() {
-                    return true;
-                }
-                let mut queue_write = queue.unwrap();
+                let mut queue_write = self.jobs_queue.try_write().map_err(|_| Error::RwError)?;
                 let job = queue_write.pop_front().unwrap();
                 queue_write.push_back(job);
                 tracing::warn!("Pushing process {} to back!!", job);
             }
+            Ok(PreemptionResponse::Wait)
         }
-        wait
     }
 
     // returns (device_id, available memory)

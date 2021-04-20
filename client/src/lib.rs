@@ -7,8 +7,9 @@ mod global_mutex;
 mod rpc_client;
 
 pub use common::{
-    list_devices, ClientToken, Deadline, Devices, ResourceAlloc, ResourceMemory, ResourceReq,
-    ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder, TaskRequirements, TaskResult,
+    list_devices, ClientToken, Deadline, Devices, PreemptionResponse, ResourceAlloc,
+    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
+    TaskRequirements, TaskResult,
 };
 pub use error::*;
 pub use rpc_client::*;
@@ -115,7 +116,7 @@ async fn execute_task<'a, T, E: From<ClientError>>(
     task.init(Some(alloc))?;
     let mut cont = TaskResult::Continue;
     while cont == TaskResult::Continue {
-        while wait_preemptive(client, timeout).await? {
+        while wait_preemptive(client, timeout).await? == PreemptionResponse::Wait {
             tokio::time::sleep(Duration::from_millis(1000)).await
         }
         cont = task.task(Some(alloc))?;
@@ -167,11 +168,14 @@ async fn wait_allocation(
 }
 
 #[tracing::instrument(level = "info", skip(client))]
-async fn wait_preemptive(client: &Client, _timeout: Duration) -> Result<bool, ClientError> {
-    Ok(client
+async fn wait_preemptive(
+    client: &Client,
+    _timeout: Duration,
+) -> Result<PreemptionResponse, ClientError> {
+    client
         .wait_preemptive(client.token)
-        .await
-        .map_err(ClientError::RpcError)?)
+        .await?
+        .map_err(ClientError::Scheduler)
 }
 
 #[tracing::instrument(level = "info", skip(client))]

@@ -8,7 +8,7 @@ use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
-use common::{ClientToken, RequestMethod, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
 
 type AllocationResult = std::result::Result<Vec<(u64, u64)>, Error>;
 
@@ -22,7 +22,10 @@ pub trait RpcMethods {
     ) -> BoxFuture<Result<std::result::Result<Option<ResourceAlloc>, Error>>>;
 
     #[rpc(name = "wait_preemptive")]
-    fn wait_preemptive(&self, task: ClientToken) -> BoxFuture<Result<bool>>;
+    fn wait_preemptive(
+        &self,
+        task: ClientToken,
+    ) -> BoxFuture<Result<std::result::Result<PreemptionResponse, Error>>>;
 
     #[rpc(name = "list_allocations")]
     fn list_allocations(&self) -> BoxFuture<Result<AllocationResult>>;
@@ -77,7 +80,10 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn wait_preemptive(&self, client: ClientToken) -> BoxFuture<Result<bool>> {
+    fn wait_preemptive(
+        &self,
+        client: ClientToken,
+    ) -> BoxFuture<Result<std::result::Result<PreemptionResponse, Error>>> {
         let method = RequestMethod::WaitPreemptive(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -86,7 +92,7 @@ impl<H: Handler> RpcMethods for Server<H> {
             receiver
                 .map(|e| match e {
                     Ok(SchedulerResponse::SchedulerWaitPreemptive(res)) => Ok(res),
-                    _ => Ok(true),
+                    _ => unreachable!(),
                 })
                 .boxed(),
         )
