@@ -128,7 +128,6 @@ async fn execute_task<'a, T, E: From<ClientError>>(
                 PreemptionResponse::Abort => {
                     warn!("Client {} aborted", client.token.process_id());
                     release_preemptive(client).await?;
-                    release(client).await?;
                     return task.end(Some(alloc));
                 }
             }
