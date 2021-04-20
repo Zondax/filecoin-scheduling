@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::config::Settings;
 use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -164,8 +164,8 @@ impl DeserializeWith for AtomicU64 {
 }
 impl SerializeWith for AtomicBool {
     fn serialize_with<S>(v: &AtomicBool, s: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         s.serialize_bool(v.load(Ordering::Relaxed))
     }
@@ -173,8 +173,8 @@ impl SerializeWith for AtomicBool {
 
 impl DeserializeWith for AtomicBool {
     fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let s = String::deserialize(de)?;
 
@@ -202,8 +202,8 @@ pub struct TaskState {
     pub last_seen: AtomicU64,
 
     #[serde(
-    deserialize_with = "AtomicBool::deserialize_with",
-    serialize_with = "AtomicBool::serialize_with"
+        deserialize_with = "AtomicBool::deserialize_with",
+        serialize_with = "AtomicBool::serialize_with"
     )]
     pub aborted: AtomicBool,
 }
