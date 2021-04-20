@@ -5,6 +5,7 @@ use futures::channel::oneshot;
 use futures::FutureExt;
 
 use crate::handler::Handler;
+use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
 use common::{ClientToken, RequestMethod, ResourceAlloc, TaskRequirements};
@@ -37,6 +38,12 @@ pub trait RpcMethods {
         &self,
         client: ClientToken,
     ) -> BoxFuture<Result<std::result::Result<(), Error>>>;
+
+    #[rpc(name = "abort")]
+    fn abort(&self, client: u64) -> BoxFuture<Result<std::result::Result<(), String>>>;
+
+    #[rpc(name = "monitoring")]
+    fn monitoring(&self) -> BoxFuture<Result<std::result::Result<MonitorInfo, String>>>;
 }
 
 pub struct Server<H: Handler>(H);
@@ -129,6 +136,38 @@ impl<H: Handler> RpcMethods for Server<H> {
             receiver
                 .map(|e| match e {
                     Ok(SchedulerResponse::ReleasePreemptive) => Ok(Ok(())),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
+    // For some reason we can not return () here, the is a bug on the client library that
+    // expects a Result, Option or a Sized type.
+    fn abort(&self, client: u64) -> BoxFuture<Result<std::result::Result<(), String>>> {
+        let method = RequestMethod::Abort(client);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::Abort) => Ok(Ok(())),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
+    fn monitoring(&self) -> BoxFuture<Result<std::result::Result<MonitorInfo, String>>> {
+        let method = RequestMethod::Monitoring;
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::Monitoring(info)) => Ok(info),
                     _ => unreachable!(),
                 })
                 .boxed(),

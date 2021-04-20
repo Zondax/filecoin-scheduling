@@ -6,6 +6,7 @@ use std::sync::RwLock;
 
 use crate::config::{Settings, Task};
 use crate::handler::Handler;
+use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
@@ -312,6 +313,35 @@ impl Scheduler {
             resources_write.unset_busy_resources(&current_task.allocation.resource_id);
         }
     }
+
+    fn monitor(&self) -> Result<MonitorInfo, String> {
+        let task_states = self.tasks_state.read().map_err(|e| e.to_string())?;
+        let task_states = task_states
+            .iter()
+            .map(|(id, state)| MonitorTask {
+                id: *id,
+                alloc: state.allocation.clone(),
+                task_type: state.requirements.task_type,
+                deadline: state.requirements.deadline,
+                last_seen: state.last_seen.load(Ordering::Relaxed),
+            })
+            .collect::<Vec<_>>();
+        let resources = self.devices.read().map_err(|e| e.to_string())?;
+        let resources = resources
+            .0
+            .iter()
+            .map(|(id, state)| GpuResource {
+                device_id: *id,
+                name: state.dev.name(),
+                mem_usage: state.mem_usage,
+                is_busy: state.is_busy,
+            })
+            .collect::<Vec<_>>();
+        Ok(MonitorInfo {
+            task_states,
+            resources,
+        })
+    }
 }
 
 impl Handler for Scheduler {
@@ -333,6 +363,11 @@ impl Handler for Scheduler {
                 self.release_preemptive(client);
                 SchedulerResponse::ReleasePreemptive
             }
+            RequestMethod::Abort(_client_id) => {
+                //TODO: Implement abort logic
+                SchedulerResponse::Abort
+            }
+            RequestMethod::Monitoring => SchedulerResponse::Monitoring(self.monitor()),
         };
         let _ = sender.send(response);
     }

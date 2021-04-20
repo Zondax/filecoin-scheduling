@@ -1,3 +1,4 @@
+use crate::monitor::MonitorInfo;
 use crate::Error;
 use common::{RequestMethod, ResourceAlloc};
 use futures::channel::oneshot;
@@ -10,6 +11,8 @@ pub enum SchedulerResponse {
     ListAllocations(Result<Vec<(u64, u64)>, Error>),
     Release,
     ReleasePreemptive,
+    Abort,
+    Monitoring(Result<MonitorInfo, String>),
 }
 
 pub struct SchedulerRequest {

@@ -1,9 +1,11 @@
+use serde::{de::Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
 use crate::config::Settings;
 use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -121,7 +123,47 @@ impl Resources {
     }
 }
 
-#[derive(Debug)]
+pub trait SerializeWith
+where
+    Self: Sized,
+{
+    fn serialize_with<S>(x: &Self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
+
+pub trait DeserializeWith: Sized {
+    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>;
+}
+
+impl SerializeWith for AtomicU64 {
+    fn serialize_with<S>(v: &AtomicU64, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        s.serialize_u64(v.load(Ordering::Relaxed))
+    }
+}
+
+impl DeserializeWith for AtomicU64 {
+    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(de)?;
+
+        match s.parse::<u64>() {
+            Ok(value) => Ok(AtomicU64::new(value)),
+            Err(_) => Err(serde::de::Error::custom(
+                "error trying to deserialize u64 for task last_seen timestamp",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TaskState {
     pub requirements: TaskRequirements,
     pub current_iteration: u16,
@@ -129,7 +171,22 @@ pub struct TaskState {
     // assigned to it accordingly.
     pub allocation: ResourceAlloc,
 
+    #[serde(
+        deserialize_with = "AtomicU64::deserialize_with",
+        serialize_with = "AtomicU64::serialize_with"
+    )]
     pub last_seen: AtomicU64,
+}
+
+impl Clone for TaskState {
+    fn clone(&self) -> Self {
+        Self {
+            requirements: self.requirements.clone(),
+            current_iteration: self.current_iteration,
+            allocation: self.allocation.clone(),
+            last_seen: AtomicU64::new(self.last_seen.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl TaskState {
