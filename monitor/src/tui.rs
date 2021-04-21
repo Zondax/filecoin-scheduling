@@ -38,7 +38,7 @@ pub fn run_app(
 
     // App
     let mut app = App {
-        tabs: TabsState::new(vec!["Gpus", "Taks"]),
+        tabs: TabsState::new(vec!["Gpus", "Tasks"]),
     };
     let mut table = GpuTable::new(7);
     let mut task_table = TaskTable::new();
@@ -50,7 +50,7 @@ pub fn run_app(
 
             Err(TryRecvError::Disconnected) => {
                 return Err(
-                    "Channel pipe closed - datat thread was closed or server connection"
+                    "Channel pipe closed - data thread or server conection was closed"
                         .to_string()
                         .into(),
                 )
@@ -130,7 +130,6 @@ where
 {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
     let normal_style = Style::default().bg(Color::Blue);
-    // gpu, name, memory, in_use, is_busy, num_jobs, current_job
     let header_cells = [
         "Gpu",
         "Name",
@@ -174,7 +173,6 @@ where
 {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
     let normal_style = Style::default().bg(Color::Blue);
-    // job, gpus, end, last_seen
     let header_cells = ["Job", "Gpus", "end", "last-seen"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
