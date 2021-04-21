@@ -315,16 +315,26 @@ impl Scheduler {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn monitor(&self) -> Result<MonitorInfo, String> {
+        tracing::warn!("External service is monitoring the scheduler service");
         let task_states = self.tasks_state.read().map_err(|e| e.to_string())?;
         let task_states = task_states
             .iter()
-            .map(|(id, state)| MonitorTask {
-                id: *id,
-                alloc: state.allocation.clone(),
-                task_type: state.requirements.task_type,
-                deadline: state.requirements.deadline,
-                last_seen: state.last_seen.load(Ordering::Relaxed),
+            .map(|(id, state)| {
+                let last_seen = state.last_seen.load(Ordering::Relaxed);
+                MonitorTask {
+                    id: *id,
+                    alloc: state.allocation.clone(),
+                    task_type: state.requirements.task_type,
+                    deadline: state.requirements.deadline,
+                    last_seen,
+                    stalled: task_is_stalled(
+                        last_seen,
+                        state.requirements.task_type,
+                        &self.settings,
+                    ),
+                }
             })
             .collect::<Vec<_>>();
         let resources = self.devices.read().map_err(|e| e.to_string())?;
@@ -334,6 +344,7 @@ impl Scheduler {
             .map(|(id, state)| GpuResource {
                 device_id: *id,
                 name: state.dev.name(),
+                memory: state.dev.memory(),
                 mem_usage: state.mem_usage,
                 is_busy: state.is_busy,
             })
@@ -341,6 +352,13 @@ impl Scheduler {
         Ok(MonitorInfo {
             task_states,
             resources,
+            job_plan: self
+                .jobs_queue
+                .read()
+                .map_err(|e| e.to_string())?
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
         })
     }
 }
