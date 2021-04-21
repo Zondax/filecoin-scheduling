@@ -36,7 +36,7 @@ impl TaskTable {
                     }
                     row.push(format!("{:?}", job.alloc.resource_id.as_slice()));
                     if let Some(d) = job.deadline {
-                        row.push(d.1.to_string());
+                        row.push(d.1.format("%H:%M:%S").to_string());
                     } else {
                         row.push("".to_string());
                     }
@@ -50,7 +50,11 @@ impl TaskTable {
 
             root.push(row);
         }
-        self.items = root;
+        if !root.is_empty() {
+            self.items = root;
+        } else {
+            self.items = vec![vec!["".to_string(); TASK_NUM_COLUMNS]; TASK_NUM_COLUMNS];
+        }
     }
 
     #[allow(dead_code)]

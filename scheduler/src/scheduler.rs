@@ -317,7 +317,7 @@ impl Scheduler {
 
     #[tracing::instrument(level = "trace", skip(self))]
     fn monitor(&self) -> Result<MonitorInfo, String> {
-        tracing::warn!("External service is monitoring the scheduler service");
+        tracing::trace!("External service is monitoring the scheduler service");
         let task_states = self.tasks_state.read().map_err(|e| e.to_string())?;
         let task_states = task_states
             .iter()

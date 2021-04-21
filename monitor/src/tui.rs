@@ -12,10 +12,10 @@ use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::Altern
 use tui::{
     backend::Backend,
     backend::TermionBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, Row, Table, Tabs},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Tabs, Wrap},
     Frame, Terminal,
 };
 
@@ -38,29 +38,38 @@ pub fn run_app(
 
     // App
     let mut app = App {
-        tabs: TabsState::new(vec!["Gpus", "Taks"]),
+        tabs: TabsState::new(vec!["Gpus", "Tasks"]),
     };
     let mut table = GpuTable::new(7);
     let mut task_table = TaskTable::new();
+    let mut service_down = true;
+    let mut address = "".to_string();
 
     // Main loop
     loop {
         match data_recv.try_recv() {
-            Ok(MonitorEvent::Abort) => return Err("Client abort".to_string().into()),
+            Ok(MonitorEvent::Abort) => unreachable!(),
 
             Err(TryRecvError::Disconnected) => {
                 return Err(
-                    "Channel pipe closed - datat thread was closed or server connection"
+                    "Channel pipe closed - data thread or server conection was closed"
                         .to_string()
                         .into(),
                 )
             }
             Ok(MonitorEvent::NewData(info)) => {
                 //update our data here
+                service_down = false;
                 table.update(&info);
                 task_table.update(&info);
             }
-            Err(_) => {} // no data
+            Ok(MonitorEvent::NoSchedulerService(addr)) => {
+                address = addr;
+                service_down = true;
+            }
+            Err(_) => {
+                //service_down = false;
+            } // channel empty
         }
 
         terminal.draw(|f| {
@@ -96,11 +105,16 @@ pub fn run_app(
                         .bg(Color::Black),
                 );
             f.render_widget(tabs, chunks[0]);
-            match app.tabs.index {
-                0 => draw_gpu_table(f, &mut app, chunks[1], &mut table),
-                1 => draw_task_table(f, &mut app, chunks[1], &mut task_table),
-                _ => unreachable!(),
-            };
+
+            if service_down {
+                draw_popup(f, chunks[1], address.clone());
+            } else {
+                match app.tabs.index {
+                    0 => draw_gpu_table(f, &mut app, chunks[1], &mut table),
+                    1 => draw_task_table(f, &mut app, chunks[1], &mut task_table),
+                    _ => unreachable!(),
+                };
+            }
         })?;
 
         if let Event::Input(input) = events.next()? {
@@ -124,13 +138,58 @@ pub fn run_app(
     Ok(())
 }
 
+fn draw_popup<B>(f: &mut Frame<B>, area: Rect, text: String)
+where
+    B: Backend,
+{
+    let text = vec![Spans::from(Span::styled(
+        format!("Scheduler service not running at: {}", text),
+        Style::default().bg(Color::Red),
+    ))];
+
+    let block = Block::default().title("Error").borders(Borders::ALL);
+    let paragraph = Paragraph::new(text.clone())
+        .block(block)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+
+    let area = centered_rect(60, 20, area);
+    f.render_widget(Clear, area); //this clears out the background
+    f.render_widget(paragraph, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(popup_layout[1])[1]
+}
+
 fn draw_gpu_table<B>(f: &mut Frame<B>, _app: &mut App, area: Rect, table: &mut GpuTable)
 where
     B: Backend,
 {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
     let normal_style = Style::default().bg(Color::Blue);
-    // gpu, name, memory, in_use, is_busy, num_jobs, current_job
     let header_cells = [
         "Gpu",
         "Name",
@@ -174,7 +233,6 @@ where
 {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
     let normal_style = Style::default().bg(Color::Blue);
-    // job, gpus, end, last_seen
     let header_cells = ["Job", "Gpus", "end", "last-seen"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));

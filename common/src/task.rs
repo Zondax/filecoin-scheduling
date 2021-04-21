@@ -38,7 +38,7 @@ impl TaskResult {
 }
 
 /// Deadline struct to configure when the task should be started and finished
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Deadline(pub DateTime<Utc>, pub DateTime<Utc>);
 
 impl Deadline {

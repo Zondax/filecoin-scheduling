@@ -23,6 +23,7 @@ const RATE: &str = "500";
 pub enum MonitorEvent {
     NewData(MonitorInfo),
     Abort,
+    NoSchedulerService(String),
 }
 
 fn monitoring(
@@ -33,6 +34,8 @@ fn monitoring(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new(address)?;
     let rt = Runtime::new().unwrap();
+    let mut info: MonitorInfo = Default::default();
+    let mut down = false;
     loop {
         match recv.try_recv() {
             Ok(MonitorEvent::Abort) => return Err("Client close connection".into()),
@@ -40,9 +43,21 @@ fn monitoring(
             Ok(_) | Err(_) => {}
         }
         match rt.block_on(async { client.monitoring().await }) {
-            Ok(res) => sender.send(MonitorEvent::NewData(res?))?,
-            Err(_) => {
-                std::thread::sleep(Duration::from_millis(rate as _));
+            Ok(res) => {
+                down = false;
+                if let Ok(i) = res {
+                    if info != i {
+                        info = i.clone();
+                        sender.send(MonitorEvent::NewData(i))?;
+                    }
+                }
+            }
+            Err(e) => {
+                if !down {
+                    sender.send(MonitorEvent::NoSchedulerService(e.to_string()))?;
+                    down = true;
+                }
+                std::thread::sleep(Duration::from_millis(100));
                 continue;
             }
         }
@@ -89,14 +104,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SubCommand::with_name("abort")
                 .about("Make a request for aborting a client execution")
                 .arg(
-                    Arg::with_name("client")
-                        .short("c")
-                        .long("client")
-                        .value_name("ClientId")
-                        .help("The client id")
+                    Arg::with_name("job")
+                        .short("j")
+                        .long("job")
+                        .value_name("Job id")
+                        .help("The job id")
                         .required(true)
                         .takes_value(true)
-                        .help("The client id whose resources are going to be released"),
+                        .help("The job-id whose execution is going to be interrupted"),
                 ),
         )
         .get_matches();
@@ -120,11 +135,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if let Some(matches) = matches.subcommand_matches("abort") {
         let id: &str = matches
-            .value_of("client")
-            .ok_or_else(|| "No client_id arg".to_string())?;
+            .value_of("job")
+            .ok_or_else(|| "The abort command requires a job-id".to_string())?;
         let id = id.parse::<u64>().map_err(|e| e.to_string())?;
         abort(&address, id).map_err(|e| e.into())
     } else {
-        Err("Nither monitor nor abort sub-command".to_string().into())
+        Err("Neither monitor nor abort sub-command".to_string().into())
     }
 }

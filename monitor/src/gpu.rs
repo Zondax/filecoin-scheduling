@@ -64,7 +64,11 @@ impl GpuTable {
 
             root.push(row);
         }
-        self.items = root;
+        if !root.is_empty() {
+            self.items = root;
+        } else {
+            self.items = vec![vec!["".to_string(); NUM_COLUMNS]; NUM_COLUMNS];
+        }
     }
 
     #[allow(dead_code)]
