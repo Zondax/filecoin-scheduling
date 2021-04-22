@@ -13,6 +13,8 @@ pub enum Error {
     Scheduler(#[from] SchedulerError),
     #[error("Can not parse the provided address")]
     InvalidAddress,
+    #[error("Job was aborted by an external client")]
+    Aborted,
     #[error("Unknown error: `{0}`")]
     Other(String),
 }
