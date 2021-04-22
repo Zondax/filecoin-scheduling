@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::config::Settings;
 use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -162,6 +162,30 @@ impl DeserializeWith for AtomicU64 {
         }
     }
 }
+impl SerializeWith for AtomicBool {
+    fn serialize_with<S>(v: &AtomicBool, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        s.serialize_bool(v.load(Ordering::Relaxed))
+    }
+}
+
+impl DeserializeWith for AtomicBool {
+    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(de)?;
+
+        match s.parse::<bool>() {
+            Ok(value) => Ok(AtomicBool::new(value)),
+            Err(_) => Err(serde::de::Error::custom(
+                "error trying to deserialize boolean for task abort flag",
+            )),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TaskState {
@@ -176,6 +200,12 @@ pub struct TaskState {
         serialize_with = "AtomicU64::serialize_with"
     )]
     pub last_seen: AtomicU64,
+
+    #[serde(
+        deserialize_with = "AtomicBool::deserialize_with",
+        serialize_with = "AtomicBool::serialize_with"
+    )]
+    pub aborted: AtomicBool,
 }
 
 impl Clone for TaskState {
@@ -185,6 +215,7 @@ impl Clone for TaskState {
             current_iteration: self.current_iteration,
             allocation: self.allocation.clone(),
             last_seen: AtomicU64::new(self.last_seen.load(Ordering::Relaxed)),
+            aborted: AtomicBool::new(self.aborted.load(Ordering::Relaxed)),
         }
     }
 }

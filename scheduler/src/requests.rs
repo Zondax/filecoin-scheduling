@@ -1,17 +1,17 @@
 use crate::monitor::MonitorInfo;
 use crate::Error;
-use common::{RequestMethod, ResourceAlloc};
+use common::{PreemptionResponse, RequestMethod, ResourceAlloc};
 use futures::channel::oneshot;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub enum SchedulerResponse {
     Schedule(Result<Option<ResourceAlloc>, Error>),
-    SchedulerWaitPreemptive(bool),
+    SchedulerWaitPreemptive(Result<PreemptionResponse, Error>),
     ListAllocations(Result<Vec<(u64, u64)>, Error>),
     Release,
     ReleasePreemptive,
-    Abort,
+    Abort(Result<(), Error>),
     Monitoring(Result<MonitorInfo, String>),
 }
 

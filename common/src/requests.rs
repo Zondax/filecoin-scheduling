@@ -8,6 +8,13 @@ pub enum RequestMethod {
     WaitPreemptive(ClientToken),
     Release(ClientToken),
     ReleasePreemptive(ClientToken),
-    Abort(u64),
+    Abort(u32),
     Monitoring,
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq)]
+pub enum PreemptionResponse {
+    Execute,
+    Wait,
+    Abort,
 }

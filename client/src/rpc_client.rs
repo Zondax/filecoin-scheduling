@@ -1,4 +1,4 @@
-use common::{ClientToken, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
 
 #[jsonrpc_client::api]
@@ -9,7 +9,7 @@ pub trait RpcClient {
         task: TaskRequirements,
     ) -> Result<Option<ResourceAlloc>, Error>;
 
-    async fn wait_preemptive(&self, client: ClientToken) -> bool;
+    async fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error>;
 
     async fn check_server(&self) -> Result<(), Error>;
 
