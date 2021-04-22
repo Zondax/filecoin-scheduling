@@ -89,7 +89,6 @@ pub fn schedule_one_of<T, E: From<ClientError>>(
         check_scheduler_service_or_launch(address).await?;
         let allocation = wait_allocation(&client, req, timeout).await?;
         let result = execute_task(&client, timeout, task_func, &allocation).await;
-        // Ii will fails only if the service does down
         let _ = release(&client).await;
         result
     })
@@ -114,31 +113,30 @@ async fn execute_task<'a, T, E: From<ClientError>>(
     alloc: &ResourceAlloc,
 ) -> Result<T, E> {
     task.init(Some(alloc))?;
-    let mut cont = TaskResult::Continue;
-    while cont == TaskResult::Continue {
-        let mut wait = true;
-        while wait {
-            let preemtive_state = wait_preemptive(client, timeout).await?;
-            match preemtive_state {
-                PreemptionResponse::Wait => tokio::time::sleep(Duration::from_millis(1000)).await,
-                PreemptionResponse::Execute => {
-                    //final check client-side execution?
-                    wait = false;
-                }
-                PreemptionResponse::Abort => {
-                    warn!("Client {} aborted", client.token.process_id());
-                    release_preemptive(client).await?;
-                    return task.end(Some(alloc));
+    loop {
+        let preemtive_state = wait_preemptive(client, timeout).await?;
+        match preemtive_state {
+            PreemptionResponse::Wait => {
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+                continue;
+            }
+            PreemptionResponse::Execute => {
+                let cont = task.task(Some(alloc))?;
+                release_preemptive(client).await?;
+                info!(
+                    "Client {} task iteration completed",
+                    client.token.process_id()
+                );
+                if cont == TaskResult::Done {
+                    break;
                 }
             }
+            PreemptionResponse::Abort => {
+                warn!("Client {} aborted", client.token.process_id());
+                release_preemptive(client).await?;
+                return Err(E::from(ClientError::Aborted));
+            }
         }
-
-        cont = task.task(Some(alloc))?;
-        info!(
-            "Client {} task iteration completed",
-            client.token.process_id()
-        );
-        release_preemptive(client).await?;
     }
 
     task.end(Some(alloc))
