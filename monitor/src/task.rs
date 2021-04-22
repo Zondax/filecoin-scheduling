@@ -50,7 +50,11 @@ impl TaskTable {
 
             root.push(row);
         }
-        self.items = root;
+        if !root.is_empty() {
+            self.items = root;
+        } else {
+            self.items = vec![vec!["".to_string(); TASK_NUM_COLUMNS]; TASK_NUM_COLUMNS];
+        }
     }
 
     #[allow(dead_code)]

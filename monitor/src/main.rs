@@ -40,7 +40,10 @@ fn monitoring(
             Ok(_) | Err(_) => {}
         }
         match rt.block_on(async { client.monitoring().await }) {
-            Ok(res) => sender.send(MonitorEvent::NewData(res?))?,
+            Ok(res) => {
+                let info = res.unwrap_or_default();
+                sender.send(MonitorEvent::NewData(info))?
+            }
             Err(_) => {}
         }
 
@@ -86,14 +89,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SubCommand::with_name("abort")
                 .about("Make a request for aborting a client execution")
                 .arg(
-                    Arg::with_name("client")
-                        .short("c")
-                        .long("client")
-                        .value_name("ClientId")
-                        .help("The client id")
+                    Arg::with_name("job")
+                        .short("j")
+                        .long("job")
+                        .value_name("Job id")
+                        .help("The job id")
                         .required(true)
                         .takes_value(true)
-                        .help("The client id whose resources are going to be released"),
+                        .help("The job-id whose execution is going to be interrupted"),
                 ),
         )
         .get_matches();
@@ -117,8 +120,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if let Some(matches) = matches.subcommand_matches("abort") {
         let id: &str = matches
-            .value_of("client")
-            .ok_or_else(|| "The abort command requires a clientID".to_string())?;
+            .value_of("job")
+            .ok_or_else(|| "The abort command requires a job-id".to_string())?;
         let id = id.parse::<u64>().map_err(|e| e.to_string())?;
         abort(&address, id).map_err(|e| e.into())
     } else {
