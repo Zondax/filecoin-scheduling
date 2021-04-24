@@ -2,8 +2,8 @@
 members = [
     "scheduler",
     "client",
-    "monitor",
 ]
+exclude = ["monitor"]
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
