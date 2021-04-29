@@ -81,7 +81,7 @@ impl Scheduler {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: Default::default(),

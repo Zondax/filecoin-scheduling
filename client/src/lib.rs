@@ -246,9 +246,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
     // or in case there are not available. Just get the current devices inthe system and propose
     // them as a requirement
     common::list_devices().gpu_devices().iter().for_each(|dev| {
-        resources
-            .entry(dev.device_id())
-            .or_insert_with(|| dev.memory());
+        resources.entry(dev.hash()).or_insert_with(|| dev.memory());
     });
 
     // map to memory => quantity
@@ -292,10 +290,10 @@ async fn check_scheduler_service_or_launch(address: String) -> Result<(), Client
     }
 }
 
-pub fn get_device_by_id(id: u64) -> Option<common::Device> {
+pub fn get_device_by_hash(hash: u64) -> Option<common::Device> {
     let devices = common::list_devices();
     for dev in devices.gpu_devices() {
-        if dev.device_id() == id {
+        if dev.hash() == hash {
             return Some(dev.clone());
         }
     }

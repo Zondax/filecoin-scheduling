@@ -85,7 +85,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -117,11 +117,11 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.device_id() == 0,
+                        is_busy: dev.hash() == 0,
                     },
                 )
             })
@@ -137,7 +137,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -174,11 +174,11 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.device_id() == 0,
+                        is_busy: dev.hash() == 0,
                     },
                 )
             })
@@ -204,11 +204,11 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.device_id() == 0,
+                        is_busy: dev.hash() == 0,
                     },
                 )
             })
