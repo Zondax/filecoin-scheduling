@@ -83,7 +83,7 @@ impl Default for Settings {
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
-            .map(|dev| dev.device_id())
+            .map(|dev| dev.hash()) // use the hash instead of unique id, robustness
             .collect::<Vec<_>>();
         let mut first_devices = all_devices.clone();
         first_devices.truncate(2);

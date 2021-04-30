@@ -265,7 +265,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -293,7 +293,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id(),
+                    dev.hash(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 3,

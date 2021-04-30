@@ -83,7 +83,10 @@ fn hash(id: Option<u32>, name: String) -> u64 {
 pub struct Device {
     dev: opencl::Device,
     memory: u64,
-    id: u64,
+    // the unique id
+    id: Option<u32>,
+    // the device name + unique_id hash
+    hash: u64,
 }
 
 #[cfg(dummy_devices)]
@@ -91,22 +94,24 @@ pub struct Device {
 #[repr(C)]
 pub struct Device {
     memory: u64,
-    id: u64,
+    id: Option<u32>,
+    hash: u64,
 }
 
 #[cfg(not(dummy_devices))]
 impl Device {
-    pub fn device_id(&self) -> u64 {
-        self.id
+    pub fn hash(&self) -> u64 {
+        self.hash
     }
 
-    pub fn device_unique_id(&self) -> Result<Option<u32>, Error> {
-        let res = match self.brand() {
-            opencl::Brand::Nvidia => Some(get_device_unique_id_nv(self.dev.device.as_core())?),
-            opencl::Brand::Amd => Some(get_device_unique_id_amd(self.dev.device.as_core())?),
-            _ => None,
-        };
-        Ok(res)
+    pub fn device_id(&self) -> Option<u32> {
+        self.id
+        //let res = match self.brand() {
+        //opencl::Brand::Nvidia => Some(get_device_unique_id_nv(self.dev.device.as_core())?),
+        //opencl::Brand::Amd => Some(get_device_unique_id_amd(self.dev.device.as_core())?),
+        //_ => None,
+        //};
+        //Ok(res)
     }
 
     pub fn name(&self) -> String {
@@ -132,16 +137,16 @@ impl Device {
 
 #[cfg(dummy_devices)]
 impl Device {
-    pub fn device_id(&self) -> u64 {
+    pub fn hash(&self) -> u64 {
+        self.hash
+    }
+
+    pub fn device_id(&self) -> Option<u32> {
         self.id
     }
 
-    pub fn device_unique_id(&self) -> Result<Option<u32>, Error> {
-        Ok(Some(self.id as _))
-    }
-
     pub fn name(&self) -> String {
-        format!("dummy_dev{}", self.id)
+        format!("dummy_dev{}", self.hash)
     }
 
     pub fn memory(&self) -> u64 {
@@ -153,7 +158,7 @@ impl Device {
     }
 
     pub fn bus_id(&self) -> Option<opencl::BusId> {
-        Some(self.id as _)
+        self.id
     }
 }
 
@@ -180,18 +185,19 @@ pub fn list_devices() -> Devices {
         devs.into_iter()
             .map(|dev| {
                 let memory = dev.memory();
-                let unique_id = match dev.brand() {
+                let id = match dev.brand() {
                     opencl::Brand::Nvidia => get_device_unique_id_nv(dev.device.as_core()).ok(),
                     opencl::Brand::Amd => get_device_unique_id_amd(dev.device.as_core()).ok(),
                     _ => None,
                 };
 
                 let name = dev.name();
-                let id = hash(unique_id, name);
+                let hash = hash(id, name);
                 Device {
                     dev: dev.clone(),
                     memory,
                     id,
+                    hash,
                 }
             })
             .collect::<Vec<Device>>()
@@ -201,7 +207,8 @@ pub fn list_devices() -> Devices {
     let gpu_devices = (0..3)
         .map(|i| Device {
             memory: 4,
-            id: i as u64,
+            id: Some(i as u32),
+            hash: i as u64,
         })
         .collect::<Vec<Device>>();
 
@@ -240,7 +247,7 @@ mod tests {
             let set = Arc::clone(&set);
             handlers.push(std::thread::spawn(|| {
                 list_devices().gpu_devices().iter().for_each(move |dev| {
-                    set.lock().unwrap().insert(dev.device_id());
+                    set.lock().unwrap().insert(dev.hash());
                 });
             }));
         }
