@@ -73,7 +73,7 @@ fn test_schedule() {
     let mut joiner = vec![];
     for i in 0..5 {
         joiner.push(std::thread::spawn(move || {
-            let client = register(i, i as u64).unwrap();
+            let client = register::<Error>(i, i as u64).unwrap();
             let mut test_func = Test::new(i as _);
             let mut task_req = task_requirements();
             //Tasktype => allocated on gpu 0 or 1

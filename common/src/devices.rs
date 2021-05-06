@@ -106,12 +106,6 @@ impl Device {
 
     pub fn device_id(&self) -> Option<u32> {
         self.id
-        //let res = match self.brand() {
-        //opencl::Brand::Nvidia => Some(get_device_unique_id_nv(self.dev.device.as_core())?),
-        //opencl::Brand::Amd => Some(get_device_unique_id_amd(self.dev.device.as_core())?),
-        //_ => None,
-        //};
-        //Ok(res)
     }
 
     pub fn name(&self) -> String {
@@ -124,10 +118,6 @@ impl Device {
 
     pub fn brand(&self) -> opencl::Brand {
         self.dev.brand()
-    }
-
-    pub fn bus_id(&self) -> Option<opencl::BusId> {
-        self.dev.bus_id()
     }
 
     pub fn get_inner(&self) -> opencl::Device {
@@ -155,10 +145,6 @@ impl Device {
 
     pub fn brand(&self) -> opencl::Brand {
         unimplemented!()
-    }
-
-    pub fn bus_id(&self) -> Option<opencl::BusId> {
-        self.id
     }
 }
 

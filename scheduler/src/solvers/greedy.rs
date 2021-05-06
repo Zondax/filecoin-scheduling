@@ -49,16 +49,10 @@ impl Solver for GreedySolver {
                     if let ResourceType::Gpu(ref mem) = req.resource {
                         match mem {
                             ResourceMemory::All => {
-                                // All the memory means taking ownership of the device being also
-                                // not preemptable. TODO: Should device be marked as no_shareable?
-                                if device.mem_usage == 0 {
-                                    //Some(*index, device.dev.device_id()))
-                                    //Using a index instead of device_id, which varies on every
-                                    //call
-                                    Some(*index)
-                                } else {
-                                    None
-                                }
+                                // Requesting all device memory is not an issue
+                                // we assume the caller would handle the devices' memory
+                                // management
+                                Some(*index)
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {

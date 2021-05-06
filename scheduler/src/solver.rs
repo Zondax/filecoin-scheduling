@@ -72,13 +72,10 @@ impl Resources {
             let selected_resources = self.0.iter().filter_map(|(_, device)| {
                 if let ResourceType::Gpu(ref mem) = req.resource {
                     match mem {
-                        ResourceMemory::All => {
-                            if device.mem_usage == 0 {
-                                Some(1)
-                            } else {
-                                None
-                            }
-                        }
+                        // The caller takes care of memory management on devices.
+                        // the scheduler will indicate when the caller should flush
+                        // memory on preemption
+                        ResourceMemory::All => Some(1),
                         ResourceMemory::Mem(value) => {
                             if device.available_memory() >= *value {
                                 Some(1)

@@ -1792,8 +1792,7 @@ dependencies = [
 [[package]]
 name = "rust-gpu-tools"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39a221f75523a16675b1b3b78aa70cc361c4fffde33255a3d4414419a5f1347d"
+source = "git+https://github.com/Zondax/rust-gpu-tools.git?branch=unique_id#de2975e34651fbfb643671a3493eef65e3428e6b"
 dependencies = [
  "dirs",
  "fil-ocl",
