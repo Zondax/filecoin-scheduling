@@ -11,14 +11,14 @@ pub use common::{
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult, TaskType,
 };
-pub use error::*;
+//pub use error::*;
 pub use rpc_client::*;
 use scheduler::run_scheduler;
 pub use scheduler::spawn_scheduler_with_handler;
 
 use tokio::runtime::Runtime;
 
-use error::Error as ClientError;
+pub use error::Error;
 use rpc_client::{Client, RpcClient};
 
 const SERVER_ADDRESS: &str = "127.0.0.1:5000";
@@ -38,12 +38,12 @@ fn server_address() -> String {
 }
 
 #[tracing::instrument(level = "info")]
-pub fn abort(_client: ClientToken) -> Result<(), ClientError> {
+pub fn abort(_client: ClientToken) -> Result<(), Error> {
     Ok(())
 }
 
 #[tracing::instrument(level = "info", skip(pid, client_id))]
-pub fn register<E: From<ClientError>>(pid: u32, client_id: u64) -> Result<Client, E> {
+pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
     info!("new client: {} - with process_id: {}", client_id, pid);
     let token = ClientToken::new(pid, client_id);
     // TODO: Here we look for the config file and get the address from there as other params as
@@ -69,7 +69,7 @@ pub fn register<E: From<ClientError>>(pid: u32, client_id: u64) -> Result<Client
 /// possible that the client have to wait for resources to be freed when other task are done. If it expires and Error would be returned indicating it was
 /// the case.
 #[tracing::instrument(level = "info", skip(timeout, task_func, req, client))]
-pub fn schedule_one_of<T, E: From<ClientError>>(
+pub fn schedule_one_of<T, E: From<Error>>(
     client: Client,
     task_func: &mut dyn TaskFunc<Output = T, Error = E>,
     req: Option<TaskRequirements>,
@@ -83,7 +83,7 @@ pub fn schedule_one_of<T, E: From<ClientError>>(
 
     let req = req.unwrap();
 
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
+    let rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
 
     rt.block_on(async {
         check_scheduler_service_or_launch(address).await?;
@@ -106,7 +106,7 @@ fn execute_without_scheduler<T, E>(
 }
 
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
-async fn execute_task<'a, T, E: From<ClientError>>(
+async fn execute_task<'a, T, E: From<Error>>(
     client: &Client,
     timeout: Duration,
     task: &mut dyn TaskFunc<Output = T, Error = E>,
@@ -134,7 +134,7 @@ async fn execute_task<'a, T, E: From<ClientError>>(
             PreemptionResponse::Abort => {
                 warn!("Client {} aborted", client.token.process_id());
                 release_preemptive(client).await?;
-                return Err(E::from(ClientError::Aborted));
+                return Err(E::from(Error::Aborted));
             }
         }
     }
@@ -142,18 +142,18 @@ async fn execute_task<'a, T, E: From<ClientError>>(
     task.end(Some(alloc))
 }
 
-#[tracing::instrument(level = "info", skip(client, requirements, timeout))]
+#[tracing::instrument(level = "info", skip(client, requirements, timeout), fields(pid = client.token.pid))]
 async fn wait_allocation(
     client: &Client,
     requirements: TaskRequirements,
     timeout: std::time::Duration,
-) -> Result<ResourceAlloc, ClientError> {
+) -> Result<ResourceAlloc, Error> {
     let call_res = async {
         loop {
             if let Some(alloc) = client
                 .wait_allocation(client.token, requirements.clone())
                 .await?
-                .map_err(ClientError::Scheduler)?
+                .map_err(Error::Scheduler)?
             {
                 info!(
                     "Client: {} - got allocation {:?}",
@@ -164,7 +164,7 @@ async fn wait_allocation(
             } else {
                 // There are not available resources at this point so we have to try
                 // again.
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 warn!(
                     "No available resources for client: {} - waiting",
                     client.token.process_id()
@@ -176,22 +176,19 @@ async fn wait_allocation(
 
     tokio::time::timeout(timeout, call_res)
         .await
-        .map_err(|_| ClientError::Timeout)?
+        .map_err(|_| Error::Timeout)?
 }
 
-#[tracing::instrument(level = "info", skip(client))]
-async fn wait_preemptive(
-    client: &Client,
-    _timeout: Duration,
-) -> Result<PreemptionResponse, ClientError> {
+#[tracing::instrument(level = "info", skip(client, _timeout), fields(pid = client.token.pid))]
+async fn wait_preemptive(client: &Client, _timeout: Duration) -> Result<PreemptionResponse, Error> {
     client
         .wait_preemptive(client.token)
         .await?
-        .map_err(ClientError::Scheduler)
+        .map_err(Error::Scheduler)
 }
 
-#[tracing::instrument(level = "info", skip(client))]
-async fn release_preemptive(client: &Client) -> Result<(), ClientError> {
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
+async fn release_preemptive(client: &Client) -> Result<(), Error> {
     info!(
         "Release preemptive for client {}",
         client.token.process_id()
@@ -199,36 +196,40 @@ async fn release_preemptive(client: &Client) -> Result<(), ClientError> {
     client
         .release_preemptive(client.token)
         .await?
-        .map_err(ClientError::Scheduler)
+        .map_err(Error::Scheduler)
 }
 
 #[tracing::instrument(level = "info", skip(client))]
-async fn release(client: &Client) -> Result<(), ClientError> {
+async fn release(client: &Client) -> Result<(), Error> {
     info!("Client: {} releasing resources", client.token.process_id());
     client
         .release(client.token)
         .await?
-        .map_err(ClientError::Scheduler)
+        .map_err(Error::Scheduler)
 }
 
 #[allow(dead_code)]
-fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
+#[tracing::instrument(level = "info", skip(address))]
+fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
             // make the parent process wait for the service to run
-            std::thread::sleep(Duration::from_millis(500));
+            info!("waiting for service to start");
+            std::thread::sleep(Duration::from_millis(1000));
             Ok(())
         }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
             if mutex.try_lock().is_ok() {
                 run_scheduler(&address).unwrap();
+            } else {
+                info!("another process launching the scheduler - exiting");
             }
             Ok(())
         }
-        Err(e) => Err(ClientError::Other(e.to_string())),
+        Err(e) => Err(Error::Other(e.to_string())),
     }
 }
 
@@ -236,7 +237,7 @@ fn launch_scheduler_process(address: String) -> Result<(), ClientError> {
 /// - Get the current allocations in the scheduler, push any resource thas has not been allocated and use it as requirements
 /// - If there are not available resources, which means all memory is used
 /// it would list the raw devices information and use that as requirements.
-pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientError> {
+pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
     // Get the current devices state.
     // removing those that do not have available memory
     let mut resources = list_allocations()?;
@@ -266,26 +267,29 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
 }
 
 /// Returns a tuple with the ID and available memory of devices being used
-pub fn list_allocations() -> Result<HashMap<u64, u64>, ClientError> {
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
+pub fn list_allocations() -> Result<HashMap<u64, u64>, Error> {
+    let rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
     let res = rt
         .block_on(async {
             check_scheduler_service_or_launch(server_address()).await?;
             let client = Client::new(&server_address(), Default::default())?;
             client.list_allocations().await.map_err(|e| {
                 error!("{}", e.to_string());
-                ClientError::Other(e.to_string())
+                Error::Other(e.to_string())
             })
         })
         .map(|res| res.unwrap());
     res.map(|vec| vec.into_iter().collect::<HashMap<u64, u64>>())
 }
 
-async fn check_scheduler_service_or_launch(address: String) -> Result<(), ClientError> {
+#[tracing::instrument(level = "info")]
+async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
     let client = Client::new(&address, Default::default())?;
     if client.check_server().await.is_ok() {
+        info!("Scheduler service already started");
         Ok(())
     } else {
+        warn!("Scheduler service not running - trying to launch it");
         launch_scheduler_process(address)
     }
 }
@@ -308,7 +312,7 @@ mod tests {
 
     impl TaskFunc for TaskTest {
         type Output = String;
-        type Error = ClientError;
+        type Error = Error;
 
         fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::Output, Self::Error> {
             Ok("HelloWorld".to_string())
@@ -341,7 +345,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pid: u32 = rng.gen();
         let client_id: u64 = rng.gen();
-        let token = register::<ClientError>(pid, client_id).unwrap();
+        let token = register::<Error>(pid, client_id).unwrap();
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
@@ -353,7 +357,7 @@ mod tests {
         );
         // Accept just this type of error
         if let Err(e) = res {
-            assert!(matches!(e, ClientError::Timeout));
+            assert!(matches!(e, Error::Timeout));
         }
         handle.close();
     }
