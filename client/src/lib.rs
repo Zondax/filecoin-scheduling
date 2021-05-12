@@ -210,22 +210,32 @@ async fn release(client: &Client) -> Result<(), Error> {
 
 #[allow(dead_code)]
 #[tracing::instrument(level = "info", skip(address))]
-fn launch_scheduler_process(address: String) -> Result<(), Error> {
+async fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
+
+    // TODO this call might block, rework later as M2
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
-            // make the parent process wait for the service to run
-            info!("waiting for service to start");
-            std::thread::sleep(Duration::from_millis(1000));
+            loop {
+                // make the parent process wait for the service to run
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                if check_scheduler_service(address.clone()).await.is_err() {
+                    warn!("service has not been started yet, trying again in 500 ms");
+                } else {
+                    break;
+                }
+            }
             Ok(())
         }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
             if mutex.try_lock().is_ok() {
-                run_scheduler(&address).unwrap();
+                while let Err(e) = run_scheduler(&address) {
+                    error!("Error starting scheduler service {}", e.to_string());
+                }
             } else {
-                info!("another process launching the scheduler - exiting");
+                info!("another process started the scheduler - exiting");
             }
             Ok(())
         }
@@ -236,7 +246,7 @@ fn launch_scheduler_process(address: String) -> Result<(), Error> {
 /// Helper function for creating a ResourceReq list
 /// - Get the current allocations in the scheduler, push any resource thas has not been allocated and use it as requirements
 /// - If there are not available resources, which means all memory is used
-/// it would list the raw devices information and use that as requirements.
+/// errorit would list the raw devices information and use that as requirements.
 pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
     // Get the current devices state.
     // removing those that do not have available memory
@@ -284,13 +294,27 @@ pub fn list_allocations() -> Result<HashMap<u64, u64>, Error> {
 
 #[tracing::instrument(level = "info")]
 async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
-    let client = Client::new(&address, Default::default())?;
-    if client.check_server().await.is_ok() {
-        info!("Scheduler service already started");
+    if check_scheduler_service(address.clone()).await.is_ok() {
         Ok(())
     } else {
         warn!("Scheduler service not running - trying to launch it");
-        launch_scheduler_process(address)
+        launch_scheduler_process(address).await
+    }
+}
+
+#[tracing::instrument(level = "info")]
+async fn check_scheduler_service(address: String) -> Result<(), Error> {
+    let client = Client::new(&address, Default::default())?;
+    match client.check_server().await {
+        Ok(_) => {
+            info!("Scheduler service running");
+            Ok(())
+        }
+        Err(e) => {
+            let err = e.to_string();
+            error!("Scheduler service not running  {}", err);
+            Err(Error::Other(err))
+        }
     }
 }
 
