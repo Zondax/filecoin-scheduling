@@ -20,7 +20,7 @@ use common::{
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
     scheduler_settings: &[Task],
-) -> Option<Vec<u64>> {
+) -> Option<Vec<String>> {
     let this_task = tasktype?;
     Some(
         scheduler_settings
@@ -28,7 +28,7 @@ pub fn match_task_devices(
             .filter(|task| task.get_task_type() == this_task)
             .map(|task| task.get_devices())
             .flatten()
-            .collect::<Vec<u64>>(),
+            .collect::<Vec<String>>(),
     )
 }
 
@@ -79,17 +79,22 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .map(|dev| {
-                (
-                    dev.hash(),
-                    ResourceState {
-                        dev: dev.clone(),
-                        mem_usage: Default::default(),
-                        is_busy: Default::default(),
-                    },
-                )
+            .filter_map(|dev| {
+                // ignore for now devices that does not support uuid
+                if let Some(id) = dev.device_id() {
+                    Some((
+                        id,
+                        ResourceState {
+                            dev: dev.clone(),
+                            mem_usage: Default::default(),
+                            is_busy: Default::default(),
+                        },
+                    ))
+                } else {
+                    None
+                }
             })
-            .collect::<HashMap<u64, ResourceState>>();
+            .collect::<HashMap<String, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
             tasks_state: RwLock::new(HashMap::new()),
@@ -265,12 +270,12 @@ impl Scheduler {
             .iter()
             .filter_map(|(i, device)| {
                 if device.mem_usage() > 0 {
-                    Some((*i, device.available_memory()))
+                    Some((i.clone(), device.available_memory()))
                 } else {
                     None
                 }
             })
-            .collect::<Vec<(u64, u64)>>();
+            .collect::<Vec<(String, u64)>>();
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
@@ -342,7 +347,7 @@ impl Scheduler {
             .0
             .iter()
             .map(|(id, state)| GpuResource {
-                device_id: *id,
+                device_id: id.clone(),
                 name: state.dev.name(),
                 memory: state.dev.memory(),
                 mem_usage: state.mem_usage,

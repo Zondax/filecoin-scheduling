@@ -10,7 +10,7 @@ use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
 use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
 
-type AllocationResult = std::result::Result<Vec<(u64, u64)>, Error>;
+type AllocationResult = std::result::Result<Vec<(String, u64)>, Error>;
 
 #[rpc(server)]
 pub trait RpcMethods {

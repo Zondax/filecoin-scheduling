@@ -22,7 +22,7 @@ pub struct Task {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct GpuResource {
     pub name: String,
-    pub device_id: u64,
+    pub device_id: String,
     pub memory: u64,
     pub mem_usage: u64,
     pub is_busy: bool,

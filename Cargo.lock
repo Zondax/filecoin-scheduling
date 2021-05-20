@@ -254,7 +254,6 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "fil-ocl-core",
  "num_cpus",
  "rust-gpu-tools",
  "serde 1.0.125",
@@ -1792,10 +1791,11 @@ dependencies = [
 [[package]]
 name = "rust-gpu-tools"
 version = "0.3.0"
-source = "git+https://github.com/Zondax/rust-gpu-tools.git?branch=unique_id#de2975e34651fbfb643671a3493eef65e3428e6b"
+source = "git+https://github.com/Zondax/rust-gpu-tools.git?branch=unique_id#3d4a2b7a8ade7e5f5f77234c8509728f5e4ea6ac"
 dependencies = [
  "dirs",
  "fil-ocl",
+ "hex",
  "lazy_static",
  "log",
  "sha2 0.8.2",

@@ -69,6 +69,7 @@ pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
     Box::new(GreedySolver)
 }
 
+#[cfg(dummy_devices)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,7 +86,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.hash(),
+                    dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -117,7 +118,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.hash(),
+                    dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -130,14 +131,14 @@ mod tests {
 
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver.allocate_task(&devices_t2, &task1, &None).unwrap();
-        assert!(alloc.resource_id[0] != 0);
+        assert!(alloc.resource_id[0] != "0");
 
         let state_t3 = devices
             .gpu_devices()
             .iter()
             .map(|dev| {
                 (
-                    dev.hash(),
+                    dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -174,7 +175,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.hash(),
+                    dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -186,7 +187,7 @@ mod tests {
         let devices_t4 = Resources(state_t4);
         let (alloc, _) = solver.allocate_task(&devices_t4, &task2, &None).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
-        assert!(alloc.resource_id[0] != 0);
+        assert!(alloc.resource_id[0] != "0");
 
         let task3 = TaskRequirements {
             req: vec![ResourceReq {
@@ -204,7 +205,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.hash(),
+                    dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -215,9 +216,9 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let devices_t5 = Resources(state_t5);
         let (alloc, _) = solver
-            .allocate_task(&devices_t5, &task3, &Some(vec![0]))
+            .allocate_task(&devices_t5, &task3, &Some(vec!["0".to_string()]))
             .unwrap();
         //allocate to 0 anyway since the task really needs to, even if it is busy..
-        assert!(alloc.resource_id[0] == 0);
+        assert!(alloc.resource_id[0] == "0");
     }
 }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum SchedulerResponse {
     Schedule(Result<Option<ResourceAlloc>, Error>),
     SchedulerWaitPreemptive(Result<PreemptionResponse, Error>),
-    ListAllocations(Result<Vec<(u64, u64)>, Error>),
+    ListAllocations(Result<Vec<(String, u64)>, Error>),
     Release,
     ReleasePreemptive,
     Abort(Result<(), Error>),

@@ -12,13 +12,13 @@ use std::cmp::Reverse;
 pub struct GreedySolver;
 use std::sync::atomic::Ordering;
 
-pub fn find_idle_gpus(resources: &Resources) -> Vec<u64> {
+pub fn find_idle_gpus(resources: &Resources) -> Vec<String> {
     resources
         .0
         .iter()
         .filter(|(_, res)| !res.is_busy())
-        .map(|(id, _)| *id)
-        .collect::<Vec<u64>>()
+        .map(|(id, _)| id.clone())
+        .collect::<Vec<String>>()
 }
 
 impl Solver for GreedySolver {
@@ -26,15 +26,18 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<u64>>,
-    ) -> Option<(ResourceAlloc, std::collections::HashMap<u64, ResourceState>)> {
+        restrictions: &Option<Vec<String>>,
+    ) -> Option<(
+        ResourceAlloc,
+        std::collections::HashMap<String, ResourceState>,
+    )> {
         // Use heuristic criteria for picking up a resource depending on task requirements
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
 
         let device_restrictions = restrictions
             .clone()
-            .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<u64>>());
+            .unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<String>>());
 
         let idle_gpus = find_idle_gpus(resources);
         // Make a new resource state, that the caller will use for updating the main resource state
@@ -52,11 +55,11 @@ impl Solver for GreedySolver {
                                 // Requesting all device memory is not an issue
                                 // we assume the caller would handle the devices' memory
                                 // management
-                                Some(*index)
+                                Some(index.clone())
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some(*index)
+                                    Some(index.clone())
                                 } else {
                                     None
                                 }
@@ -67,13 +70,13 @@ impl Solver for GreedySolver {
                     }
                 })
                 .filter(|b| device_restrictions.iter().any(|x| x == b))
-                .collect::<Vec<u64>>();
+                .collect::<Vec<String>>();
             let idle_gpus_available = optional_resources
                 .iter()
                 .cloned()
                 .filter(|b| idle_gpus.iter().any(|x| x == b))
                 .filter(|b| device_restrictions.iter().any(|x| x == b))
-                .collect::<Vec<u64>>();
+                .collect::<Vec<String>>();
 
             if idle_gpus_available.len() >= quantity {
                 options = vec![(idle_gpus_available, req.clone())];
