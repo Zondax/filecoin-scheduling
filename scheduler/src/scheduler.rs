@@ -81,18 +81,16 @@ impl Scheduler {
             .iter()
             .filter_map(|dev| {
                 // ignore for now devices that does not support uuid
-                if let Some(id) = dev.device_id() {
-                    Some((
+                dev.device_id().map(|id| {
+                    (
                         id,
                         ResourceState {
                             dev: dev.clone(),
                             mem_usage: Default::default(),
                             is_busy: Default::default(),
                         },
-                    ))
-                } else {
-                    None
-                }
+                    )
+                })
             })
             .collect::<HashMap<String, ResourceState>>();
         let devices = RwLock::new(Resources(state));
