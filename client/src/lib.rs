@@ -94,7 +94,7 @@ pub fn schedule_one_of<T, E: From<Error>>(
     })
 }
 
-fn execute_without_scheduler<T, E>(
+pub fn execute_without_scheduler<T, E>(
     task_func: &mut dyn TaskFunc<Output = T, Error = E>,
 ) -> Result<T, E> {
     task_func.init(None)?;
