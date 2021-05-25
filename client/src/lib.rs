@@ -28,6 +28,17 @@ const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 // processes running on tests, having a static address is the best approach so far.
 const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
 
+// deadline values for winning and window post tasks.
+// for simplicity it is defined here but later it can move to
+// other place where it makes more sense to be.
+// 20 secs giving a marging of 5 secs
+const WINNING_POST_END_DEADLINE: u64 = 20;
+// 25 mins marging of 5 mins
+const WINDOW_POST_END_DEADLINE: u64 = 1500;
+
+// for winning post this imeout is use to fallback to CPU
+const WINNING_POST_TIMEOUT: u64 = 10;
+
 fn server_address() -> String {
     if !cfg!(test) {
         // This can change so the address might come from a configuration file along other settings
@@ -81,7 +92,23 @@ pub fn schedule_one_of<T, E: From<Error>>(
         return execute_without_scheduler(task_func);
     }
 
-    let req = req.unwrap();
+    let mut req = req.unwrap();
+
+    let timeout = match req.task_type {
+        Some(TaskType::WindowPost) => {
+            // modify the deadline only if it is empty
+            req.deadline
+                .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
+            Duration::from_secs(WINNING_POST_TIMEOUT)
+        }
+        Some(TaskType::WinningPost) => {
+            // modify the deadline only if it is empty
+            req.deadline
+                .get_or_insert(Deadline::from_secs(0, WINNING_POST_END_DEADLINE));
+            timeout
+        }
+        _ => timeout,
+    };
 
     let rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
 
