@@ -16,7 +16,7 @@ pub struct Device {
 #[repr(C)]
 pub struct Device {
     memory: u64,
-    id: Option<String>,
+    id: Option<opencl::DeviceUuid>,
     hash: u64,
 }
 
@@ -27,8 +27,8 @@ impl Device {
     }
 
     // as device id we use the hex-string  uuid
-    pub fn device_id(&self) -> Option<String> {
-        self.id.map(|id| id.to_string())
+    pub fn device_id(&self) -> Option<opencl::DeviceUuid> {
+        self.id
     }
 
     pub fn device_pci_id(&self) -> Option<u32> {

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use common::TaskType;
+use rust_gpu_tools::opencl::DeviceUuid;
+use std::convert::TryFrom;
 
 pub trait DeserializeWith: Sized {
     fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
@@ -83,7 +85,7 @@ impl Default for Settings {
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
-            .map(|dev| dev.device_id().unwrap_or_default()) // use the hash instead of unique id, robustness
+            .map(|dev| dev.device_id().map(|d| d.to_string()).unwrap_or_default()) // use the hash instead of unique id, robustness
             .collect::<Vec<_>>();
         let mut first_devices = all_devices.clone();
         first_devices.truncate(2);
@@ -94,7 +96,7 @@ impl Default for Settings {
             task_type: TaskType::MerkleProof,
         };
         // create a setting with 3 task description
-        let tasks_settings = (0..3)
+        let tasks_settings = (0..1)
             .map(|i| {
                 let mut task_i = task.clone();
                 task_i.task_type = match i {

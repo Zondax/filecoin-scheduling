@@ -24,14 +24,17 @@ impl GpuTable {
         let mut num_jobs = HashMap::new();
         for job in info.task_states.iter() {
             job.alloc.resource_id.iter().for_each(|id| {
-                let counter = num_jobs.entry(id).or_insert(0);
+                let counter = num_jobs.entry(id.to_string()).or_insert(0);
                 *counter += 1;
             })
         }
 
         for resource in info.resources.iter() {
             let mut row = vec![];
-            let njobs = format!("{}", num_jobs.get(&resource.device_id).unwrap_or(&0));
+            let njobs = format!(
+                "{}",
+                num_jobs.get(&resource.device_id.to_string()).unwrap_or(&0)
+            );
             let mut current_job = "".to_string();
             for id in info.job_plan.iter() {
                 info.task_states
@@ -42,7 +45,7 @@ impl GpuTable {
                             .alloc
                             .resource_id
                             .iter()
-                            .any(|dev_id| *dev_id == resource.device_id)
+                            .any(|dev_id| *dev_id.to_string() == resource.device_id.to_string())
                         {
                             Some(id)
                         } else {

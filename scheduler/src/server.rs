@@ -9,8 +9,9 @@ use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
 use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
+use rust_gpu_tools::opencl::DeviceUuid;
 
-type AllocationResult = std::result::Result<Vec<(String, u64)>, Error>;
+type AllocationResult = std::result::Result<Vec<(DeviceUuid, u64)>, Error>;
 
 #[rpc(server)]
 pub trait RpcMethods {

@@ -5,6 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::config::Settings;
 use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
+use rust_gpu_tools::opencl::DeviceUuid;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
@@ -60,7 +61,7 @@ impl ResourceState {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resources(pub HashMap<String, ResourceState>);
+pub struct Resources(pub HashMap<DeviceUuid, ResourceState>);
 
 impl Resources {
     pub fn available_memory(&self) -> u64 {
@@ -95,25 +96,25 @@ impl Resources {
         false
     }
 
-    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[String]) {
+    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[DeviceUuid]) {
         for id in devices {
             let _ = self.0.get_mut(id).map(|dev| dev.free_memory(mem));
         }
     }
 
-    pub fn has_busy_resources(&self, devices: &[String]) -> bool {
+    pub fn has_busy_resources(&self, devices: &[DeviceUuid]) -> bool {
         devices
             .iter()
             .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[String]) {
+    pub fn set_busy_resources(&mut self, devices: &[DeviceUuid]) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy());
         });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[String]) {
+    pub fn unset_busy_resources(&mut self, devices: &[DeviceUuid]) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_free());
         });
@@ -245,8 +246,8 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<String>>,
-    ) -> Option<(ResourceAlloc, HashMap<String, ResourceState>)>;
+        restrictions: &Option<Vec<DeviceUuid>>,
+    ) -> Option<(ResourceAlloc, HashMap<DeviceUuid, ResourceState>)>;
 }
 
 #[cfg(dummy_devices)]
