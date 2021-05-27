@@ -46,7 +46,6 @@ impl Solver for GreedySolver {
         let mut options = vec![];
         for req in requirements.req.iter() {
             let quantity = req.quantity;
-            println!("REQ: {:?}", req);
             // check if the pool of devices have room for the requested allocations
             let optional_resources = resources
                 .iter_mut()
@@ -88,7 +87,6 @@ impl Solver for GreedySolver {
             }
         }
         if !options.is_empty() {
-            println!("GOT RESOURCES *****************************************");
             let selected_req = options[0].1.clone();
             let mut selected_resources = options[0].0.clone();
             selected_resources.truncate(selected_req.quantity as usize);
