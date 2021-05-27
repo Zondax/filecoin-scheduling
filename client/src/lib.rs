@@ -38,17 +38,17 @@ fn server_address() -> String {
 }
 
 #[tracing::instrument(level = "info")]
-pub fn abort(_client: ClientToken) -> Result<(), ClientError> {
+pub fn abort(_client: ClientToken) -> Result<(), Error> {
     Ok(())
 }
 
 #[tracing::instrument(level = "info", skip(pid, client_id))]
-pub fn register(pid: u32, client_id: u64) -> Result<Client, ClientError> {
+pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
     info!("new client: {} - with process_id: {}", client_id, pid);
     let token = ClientToken::new(pid, client_id);
     // TODO: Here we look for the config file and get the address from there as other params as
     // well
-    Client::new(&server_address(), token)
+    Client::new(&server_address(), token).map_err(E::from)
 }
 
 /// Schedules a task
@@ -341,7 +341,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pid: u32 = rng.gen();
         let client_id: u64 = rng.gen();
-        let token = register(pid, client_id).unwrap();
+        let token = register::<Error>(pid, client_id).unwrap();
 
         let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
 
