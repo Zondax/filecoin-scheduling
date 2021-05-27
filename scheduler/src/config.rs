@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use common::TaskType;
-use rust_gpu_tools::opencl::DeviceUuid;
-use std::convert::TryFrom;
 
 pub trait DeserializeWith: Sized {
     fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
@@ -76,7 +74,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         let service = Service {
-            address: "127.0.0.1:9000".to_string(),
+            address: "127.0.0.1:5000".to_string(),
         };
 
         let time_settings = TimeSettings { min_wait_time: 60 };
@@ -96,7 +94,7 @@ impl Default for Settings {
             task_type: TaskType::MerkleProof,
         };
         // create a setting with 3 task description
-        let tasks_settings = (0..1)
+        let tasks_settings = (0..3)
             .map(|i| {
                 let mut task_i = task.clone();
                 task_i.task_type = match i {

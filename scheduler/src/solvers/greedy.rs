@@ -9,7 +9,6 @@ use common::{ResourceAlloc, ResourceMemory, ResourceType, TaskRequirements};
 use priority_queue::PriorityQueue;
 use rust_gpu_tools::opencl::DeviceUuid;
 use std::cmp::Reverse;
-use std::convert::TryFrom;
 
 pub struct GreedySolver;
 use std::sync::atomic::Ordering;
@@ -47,6 +46,7 @@ impl Solver for GreedySolver {
         let mut options = vec![];
         for req in requirements.req.iter() {
             let quantity = req.quantity;
+            println!("REQ: {:?}", req);
             // check if the pool of devices have room for the requested allocations
             let optional_resources = resources
                 .iter_mut()
@@ -57,11 +57,11 @@ impl Solver for GreedySolver {
                                 // Requesting all device memory is not an issue
                                 // we assume the caller would handle the devices' memory
                                 // management
-                                Some(index.clone())
+                                Some(*index)
                             }
                             ResourceMemory::Mem(value) => {
                                 if device.available_memory() >= *value {
-                                    Some(index.clone())
+                                    Some(*index)
                                 } else {
                                     None
                                 }
@@ -88,6 +88,7 @@ impl Solver for GreedySolver {
             }
         }
         if !options.is_empty() {
+            println!("GOT RESOURCES *****************************************");
             let selected_req = options[0].1.clone();
             let mut selected_resources = options[0].0.clone();
             selected_resources.truncate(selected_req.quantity as usize);
@@ -96,19 +97,13 @@ impl Solver for GreedySolver {
                     .get_mut(index)
                     .map(|dev| dev.update_memory_usage(&selected_req.resource));
             });
-            if let Ok(res) = selected_resources
-                .into_iter()
-                .map(|s| DeviceUuid::try_from(s))
-                .collect::<Result<Vec<DeviceUuid>, _>>()
-            {
-                return Some((
-                    ResourceAlloc {
-                        requirement: selected_req,
-                        resource_id: res,
-                    },
-                    resources,
-                ));
-            }
+            return Some((
+                ResourceAlloc {
+                    requirement: selected_req,
+                    resource_id: selected_resources,
+                },
+                resources,
+            ));
         }
         None
     }

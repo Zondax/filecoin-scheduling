@@ -5,8 +5,8 @@ use std::io::Error as IoError;
 pub enum Error {
     #[error("GlobalMutex error")]
     GlobalMutex(#[from] IoError),
-    #[error("Rpc client error ")]
-    RpcError(#[from] jsonrpc_client::Error<reqwest::Error>),
+    #[error("Rpc client error: `{0}`")]
+    RpcError(String),
     #[error("Timeout")]
     Timeout,
     #[error("Scheduler error")]

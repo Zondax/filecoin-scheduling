@@ -269,7 +269,7 @@ impl Scheduler {
             .iter()
             .filter_map(|(i, device)| {
                 if device.mem_usage() > 0 {
-                    Some((i.clone(), device.available_memory()))
+                    Some((*i, device.available_memory()))
                 } else {
                     None
                 }

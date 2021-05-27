@@ -13,12 +13,18 @@ nix = "0.19.1"
 reqwest = "0.11.0"
 scheduler = { path = "../scheduler/" }
 serde = { version = "1.0.122", features = ["serde_derive"] }
-tokio = { version = "1.1.0", features = ["full"] }
+#tokio = { version = "1.1.0", features = ["full"] }
+tokio = { version = "0.2", features = ["full"]}
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
 chrono = "0.4.19"
 fs2 = "0.4.3"
 thiserror = "1.0.24"
+jsonrpc-core = "17.0.0"
+jsonrpc-core-client = { version = "17.0.0", features = ["http"] }
+#jsonrpc-client-transports = "17.0.0"
+rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id" , features = ["serde_support"]}
+#rust-gpu-tools = { version = "0.3.0", path = "../../rust-gpu-tools" , features = ["serde_support"]}
 
 [dev-dependencies]
 ipmpsc = "0.5.0"
