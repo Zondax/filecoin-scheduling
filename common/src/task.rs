@@ -46,6 +46,17 @@ impl Deadline {
         Self(start, finish)
     }
 
+    pub fn from_secs(start: u64, end: u64) -> Self {
+        let start = chrono::Utc::now() + chrono::Duration::seconds(start as _);
+        let end = start + chrono::Duration::seconds(end as _);
+        Self::new(start, end)
+    }
+
+    pub fn default_now() -> Self {
+        let start = chrono::Utc::now();
+        Self::new(start, start)
+    }
+
     pub fn start_timestamp_secs(&self) -> i64 {
         self.0.timestamp()
     }
