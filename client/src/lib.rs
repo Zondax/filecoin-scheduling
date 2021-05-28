@@ -1,3 +1,4 @@
+use rust_gpu_tools::opencl::DeviceUuid;
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -246,7 +247,9 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
     // or in case there are not available. Just get the current devices inthe system and propose
     // them as a requirement
     common::list_devices().gpu_devices().iter().for_each(|dev| {
-        resources.entry(dev.hash()).or_insert_with(|| dev.memory());
+        if let Some(uuid) = dev.device_id() {
+            resources.entry(uuid).or_insert_with(|| dev.memory());
+        }
     });
 
     // map to memory => quantity
@@ -266,8 +269,8 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, ClientErr
 }
 
 /// Returns a tuple with the ID and available memory of devices being used
-pub fn list_allocations() -> Result<HashMap<u64, u64>, ClientError> {
-    let rt = Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?;
+pub fn list_allocations() -> Result<HashMap<DeviceUuid, u64>, Error> {
+    let rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
     let res = rt
         .block_on(async {
             check_scheduler_service_or_launch(server_address()).await?;
@@ -278,7 +281,7 @@ pub fn list_allocations() -> Result<HashMap<u64, u64>, ClientError> {
             })
         })
         .map(|res| res.unwrap());
-    res.map(|vec| vec.into_iter().collect::<HashMap<u64, u64>>())
+    res.map(|vec| vec.into_iter().collect::<HashMap<DeviceUuid, u64>>())
 }
 
 async fn check_scheduler_service_or_launch(address: String) -> Result<(), ClientError> {

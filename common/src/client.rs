@@ -1,6 +1,6 @@
 #[derive(Copy, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ClientToken {
-    pub(crate) pid: u32,
+    pub pid: u32,
     pub(crate) client_id: u64,
 }
 

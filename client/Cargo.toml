@@ -19,6 +19,7 @@ tracing-futures = "0.2.4"
 chrono = "0.4.19"
 fs2 = "0.4.3"
 thiserror = "1.0.24"
+rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id" , features = ["serde_support"]}
 
 [dev-dependencies]
 ipmpsc = "0.5.0"

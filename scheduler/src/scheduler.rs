@@ -16,20 +16,21 @@ use crate::Error;
 use common::{
     ClientToken, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements, TaskType,
 };
+use rust_gpu_tools::opencl::DeviceUuid;
+use std::convert::TryFrom;
 
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
     scheduler_settings: &[Task],
-) -> Option<Vec<u64>> {
+) -> Option<Vec<DeviceUuid>> {
     let this_task = tasktype?;
-    Some(
-        scheduler_settings
-            .iter()
-            .filter(|task| task.get_task_type() == this_task)
-            .map(|task| task.get_devices())
-            .flatten()
-            .collect::<Vec<u64>>(),
-    )
+    scheduler_settings
+        .iter()
+        .filter(|task| task.get_task_type() == this_task)
+        .map(|task| task.get_devices())
+        .flatten()
+        .map(|id| DeviceUuid::try_from(id.as_ref()).ok())
+        .collect::<Option<Vec<DeviceUuid>>>()
 }
 
 pub fn task_is_stalled(
@@ -79,17 +80,20 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .map(|dev| {
-                (
-                    dev.hash(),
-                    ResourceState {
-                        dev: dev.clone(),
-                        mem_usage: Default::default(),
-                        is_busy: Default::default(),
-                    },
-                )
+            .filter_map(|dev| {
+                // ignore for now devices that does not support uuid
+                dev.device_id().map(|id| {
+                    (
+                        id,
+                        ResourceState {
+                            dev: dev.clone(),
+                            mem_usage: Default::default(),
+                            is_busy: Default::default(),
+                        },
+                    )
+                })
             })
-            .collect::<HashMap<u64, ResourceState>>();
+            .collect::<HashMap<DeviceUuid, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
             tasks_state: RwLock::new(HashMap::new()),
@@ -270,7 +274,7 @@ impl Scheduler {
                     None
                 }
             })
-            .collect::<Vec<(u64, u64)>>();
+            .collect::<Vec<(DeviceUuid, u64)>>();
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
@@ -342,7 +346,7 @@ impl Scheduler {
             .0
             .iter()
             .map(|(id, state)| GpuResource {
-                device_id: *id,
+                device_id: id.to_string(),
                 name: state.dev.name(),
                 memory: state.dev.memory(),
                 mem_usage: state.mem_usage,

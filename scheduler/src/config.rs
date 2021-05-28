@@ -35,7 +35,7 @@ impl DeserializeWith for TaskType {
 pub struct Task {
     exec_time: u64,
     memory: u64,
-    devices: Vec<u64>,
+    devices: Vec<String>,
     #[serde(deserialize_with = "TaskType::deserialize_with")]
     task_type: TaskType,
 }
@@ -49,7 +49,7 @@ impl Task {
         self.exec_time
     }
 
-    pub fn get_devices(&self) -> Vec<u64> {
+    pub fn get_devices(&self) -> Vec<String> {
         self.devices.clone()
     }
 }
@@ -74,7 +74,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         let service = Service {
-            address: "127.0.0.1:9000".to_string(),
+            address: "127.0.0.1:5000".to_string(),
         };
 
         let time_settings = TimeSettings { min_wait_time: 60 };
@@ -83,7 +83,7 @@ impl Default for Settings {
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
-            .map(|dev| dev.hash()) // use the hash instead of unique id, robustness
+            .map(|dev| dev.device_id().map(|d| d.to_string()).unwrap_or_default())
             .collect::<Vec<_>>();
         let mut first_devices = all_devices.clone();
         first_devices.truncate(2);
@@ -105,7 +105,7 @@ impl Default for Settings {
                 };
                 if task_i.task_type == TaskType::WinningPost {
                     if cfg!(dummy_devices) {
-                        task_i.devices = [all_devices[2]].to_vec();
+                        task_i.devices = [all_devices[2].clone()].to_vec();
                     } else {
                         task_i.devices = all_devices.clone();
                     }

@@ -1,3 +1,5 @@
+use rust_gpu_tools::opencl::DeviceUuid;
+
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
 
@@ -13,7 +15,7 @@ pub trait RpcClient {
 
     async fn check_server(&self) -> Result<(), Error>;
 
-    async fn list_allocations(&self) -> Result<Vec<(u64, u64)>, Error>;
+    async fn list_allocations(&self) -> Result<Vec<(DeviceUuid, u64)>, Error>;
 
     async fn release(&self, client: ClientToken) -> Result<(), Error>;
 
