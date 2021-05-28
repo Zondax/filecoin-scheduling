@@ -8,17 +8,18 @@ edition = "2018"
 common = { path = "../common/" }
 futures = "0.3.12"
 jsonrpc-http-server = "17.0.0"
-jsonrpc_client = { version = "0.5.0", features = ["reqwest"] }
 nix = "0.19.1"
 reqwest = "0.11.0"
 scheduler = { path = "../scheduler/" }
 serde = { version = "1.0.122", features = ["serde_derive"] }
-tokio = { version = "1.1.0", features = ["full"] }
+tokio = { version = "0.2", features = ["time"]}
 tracing = "0.1.22"
 tracing-futures = "0.2.4"
 chrono = "0.4.19"
 fs2 = "0.4.3"
 thiserror = "1.0.24"
+jsonrpc-core = "17.0.0"
+jsonrpc-core-client = { version = "17.0.0", features = ["http"] }
 rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id" , features = ["serde_support"]}
 
 [dev-dependencies]
