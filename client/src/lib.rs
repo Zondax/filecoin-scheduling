@@ -10,7 +10,7 @@ mod rpc_client;
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
-    TaskRequirements, TaskResult,
+    TaskRequirements, TaskResult, TaskType,
 };
 
 pub use rpc_client::{Client, RpcCaller};
@@ -22,11 +22,29 @@ use tokio::runtime::Runtime;
 pub use error::Error;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:5000";
+// delay in milliseconds between calls to wait_allocation/preemptive
+// this might be part of a configuration file.
+const WAIT_ALLOCATION_DELAY: u64 = 500;
+const WAIT_PREEMPTIVE_DELAY: u64 = 500;
+
+// number of tries before returning an error when starting the scheduler service
+const START_SERVER_RETRIES: u64 = 3;
 
 // The initial idea for testing addresses was using std::net::TcpListener::bind(x.x.x.x:0)
 // that returns a random port that is not being used, but considering that we may have multiple
 // processes running on tests, having a static address is the best approach so far.
 const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
+
+// deadline values for winning and window post tasks.
+// for simplicity it is defined here but later it can move to
+// other place where it makes more sense to be.
+// 20 secs giving a marging of 5 secs
+const WINNING_POST_END_DEADLINE: u64 = 20;
+// 25 mins marging of 5 mins
+const WINDOW_POST_END_DEADLINE: u64 = 1500;
+
+// for winning post this imeout is use to fallback to CPU
+const WINNING_POST_TIMEOUT: u64 = 10;
 
 fn server_address() -> String {
     if !cfg!(test) {
@@ -81,8 +99,24 @@ pub fn schedule_one_of<T, E: From<Error>>(
         return execute_without_scheduler(task_func);
     }
 
-    let req = req.unwrap();
+    let mut req = req.unwrap();
     info!("scheduling task_type {:?}", req.task_type);
+
+    let timeout = match req.task_type {
+        Some(TaskType::WindowPost) => {
+            // modify the deadline only if it is empty
+            req.deadline
+                .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
+            Duration::from_secs(WINNING_POST_TIMEOUT)
+        }
+        Some(TaskType::WinningPost) => {
+            // modify the deadline only if it is empty
+            req.deadline
+                .get_or_insert(Deadline::from_secs(0, WINNING_POST_END_DEADLINE));
+            timeout
+        }
+        _ => timeout,
+    };
 
     let mut rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
 
@@ -119,10 +153,13 @@ async fn execute_task<'a, T, E: From<Error>>(
 ) -> Result<T, E> {
     task.init(Some(alloc))?;
     loop {
-        let preemtive_state = wait_preemptive(client, timeout).await?;
+        let preemtive_state = tokio::time::timeout(timeout, wait_preemptive(client, timeout))
+            .await
+            .map_err(|_| Error::Timeout)??;
+
         match preemtive_state {
             PreemptionResponse::Wait => {
-                tokio::time::delay_for(Duration::from_millis(1000)).await;
+                tokio::time::delay_for(Duration::from_millis(WAIT_PREEMPTIVE_DELAY)).await;
                 continue;
             }
             PreemptionResponse::Execute => {
@@ -155,34 +192,28 @@ async fn wait_allocation(
 ) -> Result<ResourceAlloc, Error> {
     let call_res = async {
         loop {
-            if let Some(alloc) = client
+            let alloc_state = client
                 .wait_allocation(requirements.clone())
                 .await
                 .map_err(|e| {
                     error!("rpc error: {}", e.to_string());
                     Error::RpcError(e.to_string())
-                })?
-                .map_err(|e| {
-                    error!("scheduler error: {}", e.to_string());
-                    Error::Scheduler(e)
-                })?
-            {
+                })??;
+            if let Some(alloc) = alloc_state {
                 info!(
                     "Client: {} - got allocation {:?}",
                     client.token.process_id(),
-                    alloc
+                    alloc.resource_id
                 );
                 return Ok(alloc);
-            } else {
-                // There are not available resources at this point so we have to try
-                // again.
-                tokio::time::delay_for(Duration::from_millis(500)).await;
-                warn!(
-                    "No available resources for client: {} - waiting",
-                    client.token.process_id()
-                );
-                continue;
             }
+            // There are not available resources at this point so we have to try
+            // again.
+            tokio::time::delay_for(Duration::from_millis(WAIT_ALLOCATION_DELAY)).await;
+            warn!(
+                "No available resources for client: {} - waiting",
+                client.token.process_id()
+            );
         }
     };
 
@@ -229,14 +260,19 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
 
-    // TODO this call might block, rework later as M2
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
+            // number of retries to start the scheduler service
+            let mut retries = START_SERVER_RETRIES;
             loop {
                 // make the parent process wait for the service to run
                 tokio::time::delay_for(Duration::from_millis(500)).await;
                 if check_scheduler_service(address.clone()).await.is_err() {
+                    retries -= 1;
                     warn!("service has not been started yet, trying again in 500 ms");
+                    if retries == 0 {
+                        return Err(Error::Other("Can not start scheduler service".to_string()));
+                    }
                 } else {
                     break;
                 }
@@ -246,8 +282,13 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
             if mutex.try_lock().is_ok() {
+                let mut retries = START_SERVER_RETRIES;
                 while let Err(e) = run_scheduler(&address) {
                     error!("Error starting scheduler service {}", e.to_string());
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Other("Can not start scheduler service".to_string()));
+                    }
                 }
             } else {
                 info!("another process started the scheduler - exiting");
