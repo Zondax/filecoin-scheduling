@@ -79,18 +79,16 @@ impl Default for Settings {
 
         let time_settings = TimeSettings { min_wait_time: 60 };
         let exec_time = 60;
-        let memory = 2;
+        let memory = 1024 * 32; // 32 kib
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
             .map(|dev| dev.device_id().map(|d| d.to_string()).unwrap_or_default())
             .collect::<Vec<_>>();
-        let mut first_devices = all_devices.clone();
-        first_devices.truncate(2);
         let task = Task {
             exec_time,
             memory,
-            devices: first_devices,
+            devices: all_devices.clone(),
             task_type: TaskType::MerkleProof,
         };
         // create a setting with 3 task description
@@ -98,17 +96,12 @@ impl Default for Settings {
             .map(|i| {
                 let mut task_i = task.clone();
                 task_i.task_type = match i {
-                    0 => task.task_type,
                     1 => TaskType::WindowPost,
                     2 => TaskType::WinningPost,
                     _ => TaskType::MerkleProof,
                 };
-                if task_i.task_type == TaskType::WinningPost {
-                    if cfg!(dummy_devices) {
-                        task_i.devices = [all_devices[2].clone()].to_vec();
-                    } else {
-                        task_i.devices = all_devices.clone();
-                    }
+                if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
+                    task_i.devices = [all_devices[2].clone()].to_vec();
                 }
                 task_i
             })

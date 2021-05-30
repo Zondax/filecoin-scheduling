@@ -78,16 +78,18 @@ fn test_schedule() {
             let mut task_req = task_requirements();
             //Tasktype => allocated on gpu 0 or 1
             if i == 0 {
-                //         task_req.deadline = None;
                 task_req.task_type = Some(TaskType::MerkleProof);
+                task_req.deadline = None;
             }
             //Tasktype => allocated on gpu 0 or 1
             if i == 1 {
                 task_req.task_type = Some(TaskType::WindowPost);
+                task_req.deadline = None;
             }
             //Since this tasktype = WindowPost, it is the first task to be allocated on gpu 2
             if i == 2 {
                 task_req.task_type = Some(TaskType::WinningPost);
+                task_req.deadline = None;
             }
             //if i == 3,4 => allocated on gpu 0 or 1 or 2
             schedule_one_of(

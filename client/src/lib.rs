@@ -262,20 +262,17 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
-            // number of retries to start the scheduler service
+            // number of retries to check scheduler-srvice before returning an error
             let mut retries = START_SERVER_RETRIES;
-            loop {
+            tokio::time::delay_for(Duration::from_millis(500)).await;
+            while check_scheduler_service(address.clone()).await.is_err() {
                 // make the parent process wait for the service to run
-                tokio::time::delay_for(Duration::from_millis(500)).await;
-                if check_scheduler_service(address.clone()).await.is_err() {
-                    retries -= 1;
-                    warn!("service has not been started yet, trying again in 500 ms");
-                    if retries == 0 {
-                        return Err(Error::Other("Can not start scheduler service".to_string()));
-                    }
-                } else {
-                    break;
+                warn!("service has not been started yet, trying again in 500 ms");
+                retries -= 1;
+                if retries == 0 {
+                    return Err(Error::Other("Can not start scheduler service".to_string()));
                 }
+                tokio::time::delay_for(Duration::from_millis(500)).await;
             }
             Ok(())
         }
