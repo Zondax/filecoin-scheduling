@@ -24,13 +24,17 @@ pub fn match_task_devices(
     scheduler_settings: &[Task],
 ) -> Option<Vec<DeviceUuid>> {
     let this_task = tasktype?;
-    scheduler_settings
-        .iter()
-        .filter(|task| task.get_task_type() == this_task)
-        .map(|task| task.get_devices())
-        .flatten()
-        .map(|id| DeviceUuid::try_from(id.as_ref()).ok())
-        .collect::<Option<Vec<DeviceUuid>>>()
+    for task in scheduler_settings {
+        if task.get_task_type() == this_task {
+            let restrictions = task
+                .get_devices()
+                .iter()
+                .map(|id| DeviceUuid::try_from(id.as_ref()).ok())
+                .collect::<Option<Vec<_>>>();
+            return restrictions;
+        }
+    }
+    None
 }
 
 pub fn task_is_stalled(
@@ -57,12 +61,9 @@ pub fn task_is_stalled(
 
 #[derive(Debug)]
 pub(crate) struct Scheduler {
-    // Keep a cache of jobs on the system. each job_id has associated a job state
+    // Keep a cache of jobs on the system. each job_id has an associated job state
     // indicating the current iteration, and allocated resources and its requirements per resource
     tasks_state: RwLock<HashMap<u32, TaskState>>,
-    // A simple priority queue indexed by the resource_id, each resource could be assigned to
-    // different jobs. being the job at the up-front the current "owner". The priority queue is
-    // done by comparing deadlines
 
     // Sorted jobs to be executed.
     jobs_queue: RwLock<VecDeque<u32>>,
@@ -72,9 +73,7 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new() -> Self {
-        // TODO: modify this later
-        let settings = Settings::new("/tmp/scheduler.toml").unwrap_or_default();
+    pub fn new(settings: Settings) -> Self {
         let devices = common::list_devices();
         // Created a solver
         let state = devices
@@ -113,7 +112,6 @@ impl Scheduler {
         let mut resources = if let Ok(resc) = self.devices.try_write() {
             resc
         } else {
-            // TODO: Is this an error?
             return SchedulerResponse::Schedule(Err(Error::RwError));
         };
 
@@ -157,11 +155,13 @@ impl Scheduler {
 
         // Update our plan
         let new_plan = match solver.solve_job_schedule(&*state, &self.settings) {
-            Ok(plan) => plan,
+            Ok(plan) => {
+                tracing::info!("scheduler job_plan {:?}", plan);
+                plan
+            }
             Err(e) => return SchedulerResponse::Schedule(Err(Error::SolverOther(e.to_string()))),
         };
 
-        tracing::info!("scheduler job_plan {:?}", new_plan);
         {
             *self.jobs_queue.write().expect("Jobs queue unwritable") = new_plan;
         }
@@ -184,77 +184,106 @@ impl Scheduler {
         }
     }
 
-    fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
-        tracing::info!("scheduler: client {} wait preemtive", client.process_id());
-        let state = self.tasks_state.read().unwrap();
+    // this client has to wait if another is curently using the resource it shares
+    fn wait_for_busy_resources(&self, client: ClientToken) -> Result<bool, Error> {
+        let state = self.tasks_state.read().map_err(|_| Error::RwError)?;
         let current_task = state.get(&client.process_id()).ok_or(Error::RwError)?;
-        if current_task.aborted.load(Ordering::Relaxed) {
-            return Ok(PreemptionResponse::Abort);
-        }
+        let resources = self.devices.read().map_err(|_| Error::RwError)?;
+        Ok(resources.has_busy_resources(&current_task.allocation.resource_id))
+    }
+
+    // returns a boolean indicationg if the task has to wait or not according
+    // to the priority queue and the task resources
+    fn check_priority_queue(&self, client: ClientToken) -> Result<bool, Error> {
+        let queue = self.jobs_queue.read().map_err(|_| Error::RwError)?;
+        let state = self.tasks_state.read().map_err(|_| Error::RwError)?;
+        let current_task = state.get(&client.process_id()).unwrap();
+        // update the last_seen counter
         current_task
             .last_seen
             .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
-        {
-            let resources = self.devices.read().unwrap();
-            if resources.has_busy_resources(&current_task.allocation.resource_id) {
-                self.log_stalled_jobs();
-                return Ok(PreemptionResponse::Wait); //client should sleep 2 seconds (LONG)
-            }
-        }
-        let mut wait = false;
-        {
-            let queue = self.jobs_queue.read().unwrap();
-            tracing::info!("scheduler job_plan {:?}", queue);
-            if let Some(job) = queue.front() {
-                if *job == client.process_id() {
-                    //tracing::info!("client {} already upfront of the queue", *job);
-                    wait = false;
-                } else {
-                    //Checks if this task needs to wait for its turn as indicated in the plan
-                    //may be the resources are its and can continue immediately
-                    // This is expensive, we can do better by havving an associated table between
-                    // resources and tasks using it.
-                    for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
-                        let next_task = state.get(job_id).unwrap();
-                        wait = current_task.allocation.resource_id.iter().any(|dev_id| {
-                            next_task
-                                .allocation
-                                .resource_id
-                                .iter()
-                                .any(|id| dev_id == id)
-                        });
-                        if wait {
-                            break;
-                        }
+        // check the job plan to see if the task is up-front the queue or not
+        tracing::info!("scheduler job_plan {:?}", *queue);
+        if let Some(job) = queue.front() {
+            // return immediately if the task is at the front of the queue
+            if *job == client.process_id() {
+                let mut resources_write = self.devices.try_write().map_err(|_| Error::RwError)?;
+                resources_write.set_busy_resources(&current_task.allocation.resource_id);
+                Ok(false)
+            } else {
+                // we can create a sub-queue using all the tasks that use the same resource
+                // as current_task. then we compare the first task in the sub-queue, like: if sub_queue[0] == current_task, return false, otherwise
+                // return true indicating that this task has to wait.
+                // this would enter in conflict with stalled tasks that might be using the same
+                // resource, but we do not know if a stalled task is still alive and using it
+                let mut wait = false;
+                for job_id in queue.iter().take_while(|id| **id != client.process_id()) {
+                    let next_task = state.get(job_id).unwrap();
+                    wait = current_task.allocation.resource_id.iter().any(|dev_id| {
+                        next_task
+                            .allocation
+                            .resource_id
+                            .iter()
+                            .any(|id| dev_id == id)
+                    });
+                    if wait {
+                        break;
                     }
                 }
-            } else {
-                tracing::warn!("Queue empty!");
-                wait = false
+                Ok(wait)
             }
+        } else {
+            tracing::warn!("Queue empty!");
+            Ok(false)
         }
-        if !wait {
-            let mut resources_write = self.devices.try_write().map_err(|_| Error::RwError)?;
-            resources_write.set_busy_resources(&current_task.allocation.resource_id);
+    }
+
+    fn abort_client(&self, client: ClientToken) -> Result<bool, Error> {
+        let state = self.tasks_state.read().map_err(|_| Error::RwError)?;
+        let current_task = state.get(&client.process_id()).ok_or(Error::RwError)?;
+        Ok(current_task.aborted.load(Ordering::Relaxed))
+    }
+
+    // check the job at the front of the queue
+    // moving it to the back if it is stalled
+    // although its resources are not released. stalled jobs
+    // will continue  blocking other jobs from continuing with its execution
+    // we need to define what to do with them.
+    fn check_stalled_front_job(&self) -> Result<(), Error> {
+        let mut queue = self.jobs_queue.try_write().map_err(|_| Error::RwError)?;
+        let state = self.tasks_state.read().map_err(|_| Error::RwError)?;
+        let front_task = queue.front().ok_or(Error::RwError)?;
+        let task = state.get(&front_task).ok_or(Error::UnknownClient)?;
+        let push_back: bool;
+        push_back = task_is_stalled(
+            task.last_seen.load(Ordering::Relaxed),
+            task.requirements.task_type,
+            &self.settings,
+        );
+        if push_back {
+            let job = queue.pop_front().ok_or(Error::RwError)?;
+            queue.push_back(job);
+            tracing::warn!("Pushing process {} to back!!", job);
+        }
+        Ok(())
+    }
+
+    fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
+        tracing::info!("scheduler: client {} wait preemtive", client.process_id());
+
+        if self.abort_client(client)? {
+            return Ok(PreemptionResponse::Abort);
+        }
+
+        // fast path the task's resource is being used by another task
+        if self.wait_for_busy_resources(client)? {
+            return Ok(PreemptionResponse::Wait);
+        }
+
+        if !self.check_priority_queue(client)? {
             Ok(PreemptionResponse::Execute)
         } else {
-            let push_back: bool;
-            {
-                let queue = self.jobs_queue.read().unwrap();
-                let front_task = queue.front().unwrap();
-                let task = state.get(&front_task).unwrap();
-                push_back = task_is_stalled(
-                    task.last_seen.load(Ordering::Relaxed),
-                    task.requirements.task_type,
-                    &self.settings,
-                );
-            }
-            if push_back {
-                let mut queue_write = self.jobs_queue.try_write().map_err(|_| Error::RwError)?;
-                let job = queue_write.pop_front().unwrap();
-                queue_write.push_back(job);
-                tracing::warn!("Pushing process {} to back!!", job);
-            }
+            let _ = self.check_stalled_front_job();
             Ok(PreemptionResponse::Wait)
         }
     }
@@ -300,6 +329,7 @@ impl Scheduler {
         } else {
             tracing::warn!("Task resources already released");
         }
+        self.log_stalled_jobs();
     }
 
     fn release_preemptive(&self, client: ClientToken) {
