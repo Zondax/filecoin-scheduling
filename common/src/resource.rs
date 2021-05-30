@@ -23,7 +23,7 @@ pub struct ResourceReq {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceAlloc {
     pub requirement: ResourceReq,
-    pub resource_id: Vec<u64>,
+    pub resource_id: Vec<rust_gpu_tools::opencl::DeviceUuid>,
 }
 
 impl Default for ResourceAlloc {

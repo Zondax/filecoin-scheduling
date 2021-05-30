@@ -6,8 +6,7 @@ edition = "2018"
 
 [dependencies]
 chrono = { version = "0.4.19", features = ["serde"] }
-fil-ocl-core = "0.11.4"
 num_cpus = "1.13.0"
-rust-gpu-tools = "0.3.0"
+rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id", features = ["serde_support"]}
 serde = { version = "1.0.120", features = ["serde_derive"] }
 tracing = "0.1.25"

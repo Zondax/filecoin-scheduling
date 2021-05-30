@@ -12,6 +12,10 @@ pub enum Error {
     RwError,
     #[error("Error creating solver")]
     NoSolver,
+    #[error("Error reading configuration file: `{0}`")]
+    InvalidConfig(String),
+    #[error("Unknown client")]
+    UnknownClient,
     #[error("Solver error: `{0}`")]
     SolverOther(String),
 }
