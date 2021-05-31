@@ -278,9 +278,10 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
         }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
+            let devices = common::list_devices();
             if mutex.try_lock().is_ok() {
                 let mut retries = START_SERVER_RETRIES;
-                while let Err(e) = run_scheduler(&address) {
+                while let Err(e) = run_scheduler(&address, devices.clone()) {
                     error!("Error starting scheduler service {}", e.to_string());
                     retries -= 1;
                     if retries == 0 {
@@ -435,7 +436,8 @@ mod tests {
         let client_id: u64 = rng.gen();
         let token = register::<Error>(pid, client_id).unwrap();
 
-        let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
+        let devices = common::list_devices();
+        let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();
 
         let res = schedule_one_of(
             token,
@@ -455,7 +457,8 @@ mod tests {
         // This test only check communication and well formed param parsing
         let address = "127.0.0.1:7000".to_string();
         let client = Client::new(&address, Default::default()).unwrap();
-        let handle = scheduler::spawn_scheduler_with_handler(&address).unwrap();
+        let devices = common::list_devices();
+        let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
         let mut rt = Runtime::new().unwrap();
         let _res_req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),

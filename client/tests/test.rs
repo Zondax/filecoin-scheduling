@@ -63,8 +63,9 @@ fn test_schedule() {
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
     tracing_subscriber::fmt().with_writer(io::stdout).init();
+    let devices = common::list_devices();
 
-    let handler = if let Ok(handle) = spawn_scheduler_with_handler("127.0.0.1:5000") {
+    let handler = if let Ok(handle) = spawn_scheduler_with_handler("127.0.0.1:5000", devices) {
         Some(handle)
     } else {
         None
