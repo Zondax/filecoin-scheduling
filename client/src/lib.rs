@@ -437,7 +437,7 @@ mod tests {
         let res = schedule_one_of(
             token,
             &mut TaskTest,
-            Some(task_requirements()),
+            task_requirements(),
             Default::default(),
         );
         // Accept just this type of error

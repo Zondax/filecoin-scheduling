@@ -93,12 +93,7 @@ fn test_schedule() {
                 task_req.deadline = None;
             }
             //if i == 3,4 => allocated on gpu 0 or 1 or 2
-            schedule_one_of(
-                client,
-                &mut test_func,
-                Some(task_req),
-                Duration::from_secs(20),
-            )
+            schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(20))
         }));
         std::thread::sleep(Duration::from_secs(2));
     }
