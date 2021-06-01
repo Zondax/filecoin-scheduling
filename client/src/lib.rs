@@ -90,16 +90,11 @@ pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
 pub fn schedule_one_of<T, E: From<Error>>(
     client: Client,
     task_func: &mut dyn TaskFunc<Output = T, Error = E>,
-    req: Option<TaskRequirements>,
+    mut req: TaskRequirements,
     timeout: Duration,
 ) -> Result<T, E> {
     let address = server_address();
 
-    if req.is_none() {
-        return execute_without_scheduler(task_func);
-    }
-
-    let mut req = req.unwrap();
     info!("scheduling task_type {:?}", req.task_type);
 
     let timeout = match req.task_type {
