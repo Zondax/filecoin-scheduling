@@ -43,7 +43,7 @@ const WINNING_POST_END_DEADLINE: u64 = 20;
 // 25 mins marging of 5 mins
 const WINDOW_POST_END_DEADLINE: u64 = 1500;
 
-// for winning post this imeout is use to fallback to CPU
+// for winning post this timeout(seconds) is used to fallback to CPU
 const WINNING_POST_TIMEOUT: u64 = 10;
 
 fn server_address() -> String {
@@ -102,13 +102,14 @@ pub fn schedule_one_of<T, E: From<Error>>(
             // modify the deadline only if it is empty
             req.deadline
                 .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
-            Duration::from_secs(WINNING_POST_TIMEOUT)
+            timeout
+            
         }
         Some(TaskType::WinningPost) => {
             // modify the deadline only if it is empty
             req.deadline
                 .get_or_insert(Deadline::from_secs(0, WINNING_POST_END_DEADLINE));
-            timeout
+            Duration::from_secs(WINNING_POST_TIMEOUT)
         }
         _ => timeout,
     };
