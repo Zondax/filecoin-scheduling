@@ -46,6 +46,8 @@ const WINDOW_POST_END_DEADLINE: u64 = 1500;
 // for winning post this timeout(seconds) is used to fallback to CPU
 const WINNING_POST_TIMEOUT: u64 = 10;
 
+// this function might be removed later as this
+// setting is part of the configuration file
 fn server_address() -> String {
     if !cfg!(test) {
         // This can change so the address might come from a configuration file along other settings
@@ -103,7 +105,6 @@ pub fn schedule_one_of<T, E: From<Error>>(
             req.deadline
                 .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
             timeout
-            
         }
         Some(TaskType::WinningPost) => {
             // modify the deadline only if it is empty
