@@ -63,8 +63,9 @@ fn test_schedule() {
     //let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     //tracing_subscriber::fmt().with_writer(non_blocking).init();
     tracing_subscriber::fmt().with_writer(io::stdout).init();
+    let devices = common::list_devices();
 
-    let handler = if let Ok(handle) = spawn_scheduler_with_handler("127.0.0.1:5000") {
+    let handler = if let Ok(handle) = spawn_scheduler_with_handler("127.0.0.1:5000", devices) {
         Some(handle)
     } else {
         None
@@ -92,12 +93,7 @@ fn test_schedule() {
                 task_req.deadline = None;
             }
             //if i == 3,4 => allocated on gpu 0 or 1 or 2
-            schedule_one_of(
-                client,
-                &mut test_func,
-                Some(task_req),
-                Duration::from_secs(20),
-            )
+            schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(20))
         }));
         std::thread::sleep(Duration::from_secs(2));
     }

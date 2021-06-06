@@ -43,9 +43,11 @@ const WINNING_POST_END_DEADLINE: u64 = 20;
 // 25 mins marging of 5 mins
 const WINDOW_POST_END_DEADLINE: u64 = 1500;
 
-// for winning post this imeout is use to fallback to CPU
+// for winning post this timeout(seconds) is used to fallback to CPU
 const WINNING_POST_TIMEOUT: u64 = 10;
 
+// this function might be removed later as this
+// setting is part of the configuration file
 fn server_address() -> String {
     if !cfg!(test) {
         // This can change so the address might come from a configuration file along other settings
@@ -90,16 +92,11 @@ pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
 pub fn schedule_one_of<T, E: From<Error>>(
     client: Client,
     task_func: &mut dyn TaskFunc<Output = T, Error = E>,
-    req: Option<TaskRequirements>,
+    mut req: TaskRequirements,
     timeout: Duration,
 ) -> Result<T, E> {
     let address = server_address();
 
-    if req.is_none() {
-        return execute_without_scheduler(task_func);
-    }
-
-    let mut req = req.unwrap();
     info!("scheduling task_type {:?}", req.task_type);
 
     let timeout = match req.task_type {
@@ -107,13 +104,13 @@ pub fn schedule_one_of<T, E: From<Error>>(
             // modify the deadline only if it is empty
             req.deadline
                 .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
-            Duration::from_secs(WINNING_POST_TIMEOUT)
+            timeout
         }
         Some(TaskType::WinningPost) => {
             // modify the deadline only if it is empty
             req.deadline
                 .get_or_insert(Deadline::from_secs(0, WINNING_POST_END_DEADLINE));
-            timeout
+            Duration::from_secs(WINNING_POST_TIMEOUT)
         }
         _ => timeout,
     };
@@ -278,9 +275,10 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
         }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
+            let devices = common::list_devices();
             if mutex.try_lock().is_ok() {
                 let mut retries = START_SERVER_RETRIES;
-                while let Err(e) = run_scheduler(&address) {
+                while let Err(e) = run_scheduler(&address, devices.clone()) {
                     error!("Error starting scheduler service {}", e.to_string());
                     retries -= 1;
                     if retries == 0 {
@@ -435,12 +433,13 @@ mod tests {
         let client_id: u64 = rng.gen();
         let token = register::<Error>(pid, client_id).unwrap();
 
-        let handle = scheduler::spawn_scheduler_with_handler(&server_address()).unwrap();
+        let devices = common::list_devices();
+        let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();
 
         let res = schedule_one_of(
             token,
             &mut TaskTest,
-            Some(task_requirements()),
+            task_requirements(),
             Default::default(),
         );
         // Accept just this type of error
@@ -455,7 +454,8 @@ mod tests {
         // This test only check communication and well formed param parsing
         let address = "127.0.0.1:7000".to_string();
         let client = Client::new(&address, Default::default()).unwrap();
-        let handle = scheduler::spawn_scheduler_with_handler(&address).unwrap();
+        let devices = common::list_devices();
+        let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
         let mut rt = Runtime::new().unwrap();
         let _res_req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),

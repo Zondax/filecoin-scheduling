@@ -73,8 +73,7 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(settings: Settings) -> Self {
-        let devices = common::list_devices();
+    pub fn new(settings: Settings, devices: common::Devices) -> Self {
         // Created a solver
         let state = devices
             .gpu_devices()
