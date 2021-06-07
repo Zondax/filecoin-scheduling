@@ -1,7 +1,7 @@
 use rust_gpu_tools::opencl::DeviceUuid;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub mod error;
 mod global_mutex;
@@ -29,6 +29,8 @@ const WAIT_PREEMPTIVE_DELAY: u64 = 500;
 
 // number of tries before returning an error when starting the scheduler service
 const START_SERVER_RETRIES: u64 = 3;
+// amount of time to wait between retries in milliseconds
+const START_SERVER_DELAY: u64 = 500;
 
 // The initial idea for testing addresses was using std::net::TcpListener::bind(x.x.x.x:0)
 // that returns a random port that is not being used, but considering that we may have multiple
@@ -152,16 +154,10 @@ async fn execute_task<'a, T, E: From<Error>>(
         match preemtive_state {
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
-                info!(
-                    "client {:?} Calling task function",
-                    client.token
-                );
+                trace!("client {:?} Calling task function", client.token.pid);
                 let cont = task.task(Some(alloc))?;
+                trace!("Client {} task iteration completed", client.token.pid);
                 release_preemptive(client).await?;
-                info!(
-                    "Client {} task iteration completed",
-                    client.token.pid
-                );
                 if cont == TaskResult::Done {
                     break;
                 }
@@ -190,7 +186,7 @@ async fn wait_allocation(
                 .await
                 .map_err(|e| Error::RpcError(e.to_string()))??;
             if let Some(alloc) = alloc_state {
-                info!(
+                debug!(
                     "Client: {} - got allocation {:?}",
                     client.token.pid, alloc.devices
                 );
@@ -254,7 +250,7 @@ async fn release(client: &RpcCaller) -> Result<(), Error> {
 }
 
 #[allow(dead_code)]
-#[tracing::instrument(level = "info", skip(address))]
+#[tracing::instrument(level = "debug", skip(address))]
 async fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
@@ -263,7 +259,7 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
         Ok(ForkResult::Parent { .. }) => {
             // number of retries to check scheduler-srvice before returning an error
             let mut retries = START_SERVER_RETRIES;
-            tokio::time::delay_for(Duration::from_millis(500)).await;
+            tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
             while check_scheduler_service(address.clone()).await.is_err() {
                 // make the parent process wait for the service to run
                 warn!("service has not been started yet, trying again in 500 ms");
@@ -271,7 +267,7 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
                 if retries == 0 {
                     return Err(Error::Other("Can not start scheduler service".to_string()));
                 }
-                tokio::time::delay_for(Duration::from_millis(500)).await;
+                tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
             }
             Ok(())
         }
@@ -281,14 +277,14 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
             if mutex.try_lock().is_ok() {
                 let mut retries = START_SERVER_RETRIES;
                 while let Err(e) = run_scheduler(&address, devices.clone()) {
-                    error!("Error starting scheduler service {}", e.to_string());
+                    error!(err = %e,"Got error trying to start the server");
                     retries -= 1;
                     if retries == 0 {
                         return Err(Error::Other("Can not start scheduler service".to_string()));
                     }
                 }
             } else {
-                info!("another process started the scheduler - exiting");
+                debug!("another process started the scheduler - exiting");
             }
             Ok(())
         }
@@ -343,7 +339,7 @@ pub fn list_allocations() -> Result<HashMap<DeviceUuid, u64>, Error> {
                 .await
                 .map_err(|e| Error::RpcError(e.to_string()))?;
             client.list_allocations().await.map_err(|e| {
-                error!("{}", e.to_string());
+                error!(err = %e, "Got error listing allocations: ");
                 Error::Other(e.to_string())
             })
         })
@@ -351,7 +347,7 @@ pub fn list_allocations() -> Result<HashMap<DeviceUuid, u64>, Error> {
     res.map(|vec| vec.into_iter().collect::<HashMap<DeviceUuid, u64>>())
 }
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "debug")]
 async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
     if check_scheduler_service(address.clone()).await.is_ok() {
         Ok(())
@@ -362,7 +358,7 @@ async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error>
 }
 
 #[allow(clippy::redundant_closure)]
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "debug")]
 async fn check_scheduler_service(address: String) -> Result<(), Error> {
     let client = Client::new(&address, Default::default())?;
     let client = client
@@ -376,7 +372,7 @@ async fn check_scheduler_service(address: String) -> Result<(), Error> {
         }
         Err(e) => {
             let err = e.to_string();
-            error!("Scheduler service not running  {}", err);
+            error!(err = %e, "Scheduler service not running");
             Err(Error::Other(err))
         }
     }

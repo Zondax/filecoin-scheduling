@@ -12,7 +12,7 @@ pub enum RequestMethod {
     Monitoring,
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub enum PreemptionResponse {
     Execute,
     Wait,

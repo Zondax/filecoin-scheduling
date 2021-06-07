@@ -184,6 +184,7 @@ mod tests {
                 assert_eq!(res.len(), 2);
                 // At least one thread should have owned the mutex
                 assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
+                std::fs::remove_file(IPC_PATH).unwrap();
             }
 
             Ok(ForkResult::Child) => {

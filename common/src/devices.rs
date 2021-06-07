@@ -1,33 +1,36 @@
 use rust_gpu_tools::opencl;
 #[cfg(dummy_devices)]
 use std::convert::TryFrom;
+use std::hash::{Hash, Hasher};
 
 #[cfg(not(dummy_devices))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct Device {
     dev: opencl::Device,
     memory: u64,
     // the device uuid
     id: Option<opencl::DeviceUuid>,
-    hash: u64,
+}
+
+#[cfg(not(dummy_devices))]
+impl Hash for Device {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.id.hash(hasher);
+        self.dev.name().hash(hasher);
+    }
 }
 
 #[cfg(dummy_devices)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct Device {
     memory: u64,
     id: Option<opencl::DeviceUuid>,
-    hash: u64,
 }
 
 #[cfg(not(dummy_devices))]
 impl Device {
-    pub fn hash(&self) -> u64 {
-        self.hash
-    }
-
     pub fn device_id(&self) -> Option<opencl::DeviceUuid> {
         self.id
     }
@@ -55,16 +58,12 @@ impl Device {
 
 #[cfg(dummy_devices)]
 impl Device {
-    pub fn hash(&self) -> u64 {
-        self.hash
-    }
-
     pub fn device_id(&self) -> Option<opencl::DeviceUuid> {
         self.id
     }
 
     pub fn name(&self) -> String {
-        format!("dummy_dev{}", self.hash)
+        format!("dummy_dev: {}", self.id.unwrap())
     }
 
     pub fn memory(&self) -> u64 {
@@ -89,15 +88,6 @@ impl Devices {
     }
 }
 
-fn hash(id: Option<String>, name: String) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut s = DefaultHasher::new();
-    id.hash(&mut s);
-    name.hash(&mut s);
-    s.finish()
-}
-
 /// Returns all the devices on the system
 ///
 /// It includes the GPUs and the number of logical CPUs
@@ -108,13 +98,10 @@ pub fn list_devices() -> Devices {
         devs.into_iter()
             .map(|dev| {
                 let memory = dev.memory();
-                let name = dev.name();
-                let hash = hash(dev.uuid().map(|u| u.to_string()), name);
                 Device {
                     dev: dev.clone(),
                     memory,
                     id: dev.uuid(),
-                    hash,
                 }
             })
             .collect::<Vec<Device>>()
@@ -129,7 +116,6 @@ pub fn list_devices() -> Devices {
             Device {
                 memory: 4,
                 id: Some(uuid),
-                hash: i as u64,
             }
         })
         .collect::<Vec<Device>>();

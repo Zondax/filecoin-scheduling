@@ -72,7 +72,7 @@ fn test_schedule() {
     };
 
     let mut joiner = vec![];
-    for i in 0..5 {
+    for i in 0..4 {
         joiner.push(std::thread::spawn(move || {
             let client = register::<Error>(i, i as u64).unwrap();
             let mut test_func = Test::new(i as _);
@@ -93,7 +93,7 @@ fn test_schedule() {
                 task_req.deadline = None;
             }
             //if i == 3,4 => allocated on gpu 0 or 1 or 2
-            schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(20))
+            schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(60))
         }));
         std::thread::sleep(Duration::from_secs(2));
     }

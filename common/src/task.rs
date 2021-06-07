@@ -31,6 +31,26 @@ pub enum TaskType {
     WindowPost,
 }
 
+//this is more appropriate here, unless this is VERY specific
+impl TaskType {
+    pub fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let mut s = String::deserialize(de)?;
+        s.make_ascii_lowercase();
+
+        match s.as_ref() {
+            "merkleproof" => Ok(TaskType::MerkleProof),
+            "winningpost" => Ok(TaskType::WinningPost),
+            "windowpost" => Ok(TaskType::WindowPost),
+            _ => Err(serde::de::Error::custom(
+                "error trying to deserialize rotation policy config",
+            )),
+        }
+    }
+}
+
 impl TaskResult {
     pub fn is_continue(&self) -> bool {
         matches!(self, Self::Continue)
@@ -39,11 +59,14 @@ impl TaskResult {
 
 /// Deadline struct to configure when the task should be started and finished
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Deadline(pub DateTime<Utc>, pub DateTime<Utc>);
+pub struct Deadline {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
 
 impl Deadline {
     pub fn new(start: DateTime<Utc>, finish: DateTime<Utc>) -> Self {
-        Self(start, finish)
+        Self { start, end: finish }
     }
 
     pub fn from_secs(start: u64, end: u64) -> Self {
@@ -58,11 +81,11 @@ impl Deadline {
     }
 
     pub fn start_timestamp_secs(&self) -> i64 {
-        self.0.timestamp()
+        self.start.timestamp()
     }
 
     pub fn end_timestamp_secs(&self) -> i64 {
-        self.1.timestamp()
+        self.end.timestamp()
     }
 }
 
@@ -73,7 +96,6 @@ impl Deadline {
 pub struct TaskEstimations {
     pub time_per_iter: Duration,
     pub num_of_iter: usize,
-    pub exec_time: Duration,
 }
 
 #[derive(Default)]
@@ -102,16 +124,10 @@ impl TaskReqBuilder {
         self
     }
 
-    pub fn with_time_estimations(
-        mut self,
-        time_per_iter: Duration,
-        num_of_iter: usize,
-        exec_time: Duration,
-    ) -> Self {
+    pub fn with_time_estimations(mut self, time_per_iter: Duration, num_of_iter: usize) -> Self {
         self.task_estimations.replace(TaskEstimations {
             time_per_iter,
             num_of_iter,
-            exec_time,
         });
         self
     }
@@ -145,21 +161,21 @@ pub struct TaskRequirements {
 impl TaskRequirements {
     /// Returns the minimal amount of memory required
     pub fn minimal_resource_usage(&self) -> u64 {
-        let mut mem_resource_list = self
-            .req
+        self.req
             .iter()
             .filter_map(|req| {
                 if let ResourceType::Gpu(ResourceMemory::Mem(value)) = req.resource {
-                    return Some(value * (req.quantity as u64));
+                    Some(value * (req.quantity as u64))
+                } else {
+                    None
                 }
-                None
             })
-            .collect::<Vec<u64>>();
-        if !mem_resource_list.is_empty() {
-            mem_resource_list.sort_unstable();
-            mem_resource_list[0]
-        } else {
-            0
-        }
+            //skip an allocation
+            // iterate over everything only once
+            // sort right away with at most N comparisons
+            // since you discard items > current
+            // if the iterator is empty this would do nothing
+            .min()
+            .unwrap_or_default()
     }
 }
