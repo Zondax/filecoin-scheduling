@@ -1,35 +1,9 @@
 use config::{Config, ConfigError, File};
 
-use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use common::TaskType;
-
-pub trait DeserializeWith: Sized {
-    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>;
-}
-
-impl DeserializeWith for TaskType {
-    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut s = String::deserialize(de)?;
-        s.make_ascii_lowercase();
-
-        match s.as_ref() {
-            "merkleproof" => Ok(TaskType::MerkleProof),
-            "winningpost" => Ok(TaskType::WinningPost),
-            "windowpost" => Ok(TaskType::WindowPost),
-            _ => Err(serde::de::Error::custom(
-                "error trying to deserialize rotation policy config",
-            )),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
@@ -124,7 +98,7 @@ impl Settings {
             )?))?;
             s.try_into()
         } else {
-            let s = Settings::default();
+            let s = Self::default();
             let toml = toml::to_string(&s).map_err(|e| {
                 ConfigError::Message(format!("Error generating toml date {}", e.to_string()))
             })?;

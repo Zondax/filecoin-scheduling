@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
 #[cfg(not(dummy_devices))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct Device {
     dev: opencl::Device,
