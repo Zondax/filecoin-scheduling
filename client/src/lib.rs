@@ -62,10 +62,9 @@ pub fn abort(_client: ClientToken) -> Result<(), Error> {
     Ok(())
 }
 
-#[tracing::instrument(level = "info", skip(pid, client_id))]
+#[tracing::instrument(level = "info", skip(client_id))]
 pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
-    info!("new client: {} - with process_id: {}", client_id, pid);
-    let token = ClientToken::new(pid, client_id);
+    let token = ClientToken { pid, client_id };
     // TODO: Here we look for the config file and get the address from there as other params as
     // well
     Client::new(&server_address(), token).map_err(E::from)
@@ -88,7 +87,7 @@ pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
 /// * `timeout` - Indicates how much the client is able to wait for the task to be scheduled. It is
 /// possible that the client have to wait for resources to be freed when other task are done. If it expires and Error would be returned indicating it was
 /// the case.
-#[tracing::instrument(level = "info", skip(timeout, task_func, req, client))]
+#[tracing::instrument(level = "info", skip(timeout, task_func, req, client), fields(pid = client.token.pid))]
 pub fn schedule_one_of<T, E: From<Error>>(
     client: Client,
     task_func: &mut dyn TaskFunc<Output = T, Error = E>,
@@ -96,8 +95,6 @@ pub fn schedule_one_of<T, E: From<Error>>(
     timeout: Duration,
 ) -> Result<T, E> {
     let address = server_address();
-
-    info!("scheduling task_type {:?}", req.task_type);
 
     let timeout = match req.task_type {
         Some(TaskType::WindowPost) => {
@@ -150,28 +147,27 @@ async fn execute_task<'a, T, E: From<Error>>(
 ) -> Result<T, E> {
     task.init(Some(alloc))?;
     loop {
-        let preemtive_state = tokio::time::timeout(timeout, wait_preemptive(client, timeout))
-            .await
-            .map_err(|_| Error::Timeout)??;
+        let preemtive_state = wait_preemptive(client, timeout).await?;
 
         match preemtive_state {
-            PreemptionResponse::Wait => {
-                tokio::time::delay_for(Duration::from_millis(WAIT_PREEMPTIVE_DELAY)).await;
-                continue;
-            }
+            PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
+                info!(
+                    "client {:?} Calling task function",
+                    client.token
+                );
                 let cont = task.task(Some(alloc))?;
                 release_preemptive(client).await?;
                 info!(
                     "Client {} task iteration completed",
-                    client.token.process_id()
+                    client.token.pid
                 );
                 if cont == TaskResult::Done {
                     break;
                 }
             }
             PreemptionResponse::Abort => {
-                warn!("Client {} aborted", client.token.process_id());
+                warn!("Client {} aborted", client.token.pid);
                 release_preemptive(client).await?;
                 return Err(E::from(Error::Aborted));
             }
@@ -192,24 +188,20 @@ async fn wait_allocation(
             let alloc_state = client
                 .wait_allocation(requirements.clone())
                 .await
-                .map_err(|e| {
-                    error!("rpc error: {}", e.to_string());
-                    Error::RpcError(e.to_string())
-                })??;
+                .map_err(|e| Error::RpcError(e.to_string()))??;
             if let Some(alloc) = alloc_state {
                 info!(
                     "Client: {} - got allocation {:?}",
-                    client.token.process_id(),
-                    alloc.resource_id
+                    client.token.pid, alloc.devices
                 );
                 return Ok(alloc);
             }
+            tokio::time::delay_for(Duration::from_millis(WAIT_ALLOCATION_DELAY)).await;
             // There are not available resources at this point so we have to try
             // again.
-            tokio::time::delay_for(Duration::from_millis(WAIT_ALLOCATION_DELAY)).await;
             warn!(
                 "No available resources for client: {} - waiting",
-                client.token.process_id()
+                client.token.pid
             );
         }
     };
@@ -219,21 +211,32 @@ async fn wait_allocation(
         .map_err(|_| Error::Timeout)?
 }
 
-#[tracing::instrument(level = "info", skip(client, _timeout), fields(pid = client.token.pid))]
+#[tracing::instrument(level = "info", skip(client, timeout), fields(pid = client.token.pid))]
 async fn wait_preemptive(
     client: &RpcCaller,
-    _timeout: Duration,
+    timeout: Duration,
 ) -> Result<PreemptionResponse, Error> {
-    client
-        .wait_preemptive()
+    let call_res = async {
+        loop {
+            let response = client
+                .wait_preemptive()
+                .await
+                .map_err(|e| Error::RpcError(e.to_string()))?
+                .map_err(Error::Scheduler);
+            if let Ok(PreemptionResponse::Wait) = response {
+                tokio::time::delay_for(Duration::from_millis(WAIT_PREEMPTIVE_DELAY)).await;
+            } else {
+                return response;
+            }
+        }
+    };
+    tokio::time::timeout(timeout, call_res)
         .await
-        .map_err(|e| Error::RpcError(e.to_string()))?
-        .map_err(Error::Scheduler)
+        .map_err(|_| Error::Timeout)?
 }
 
 #[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
 async fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
-    info!("Release preemptive - client {}", client.token.process_id());
     client
         .release_preemptive()
         .await
@@ -241,9 +244,8 @@ async fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
         .map_err(Error::Scheduler)
 }
 
-#[tracing::instrument(level = "info", skip(client))]
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
 async fn release(client: &RpcCaller) -> Result<(), Error> {
-    info!("Client: {} releasing resources", client.token.process_id());
     client
         .release()
         .await
@@ -305,7 +307,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
     resources.retain(|_, memory| *memory > 0);
 
     // Push the devices that has no been allocated
-    // or in case there are not available. Just get the current devices inthe system and propose
+    // or in case there are not available. Just get the current devices in the system and propose
     // them as a requirement
     common::list_devices().gpu_devices().iter().for_each(|dev| {
         if let Some(uuid) = dev.device_id() {
@@ -380,16 +382,6 @@ async fn check_scheduler_service(address: String) -> Result<(), Error> {
     }
 }
 
-pub fn get_device_by_hash(hash: u64) -> Option<common::Device> {
-    let devices = common::list_devices();
-    for dev in devices.gpu_devices() {
-        if dev.hash() == hash {
-            return Some(dev.clone());
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,7 +411,7 @@ mod tests {
                 quantity: 1,
                 preemptible: true,
             })
-            .with_time_estimations(Duration::from_millis(500), 1, Duration::from_millis(3000))
+            .with_time_estimations(Duration::from_millis(500), 1)
             .with_deadline(Some(deadline))
             .build()
     }

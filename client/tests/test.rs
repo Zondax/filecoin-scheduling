@@ -47,11 +47,11 @@ fn task_requirements() -> TaskRequirements {
     let deadline = Deadline::new(start, end);
     TaskReqBuilder::new()
         .resource_req(ResourceReq {
-            resource: ResourceType::Gpu(ResourceMemory::Mem(2)),
+            resource: ResourceType::Gpu(ResourceMemory::All),
             quantity: 1,
             preemptible: true,
         })
-        .with_time_estimations(Duration::from_millis(500), 1, Duration::from_millis(3000))
+        .with_time_estimations(Duration::from_millis(500), 1)
         .with_deadline(Some(deadline))
         .build()
 }
