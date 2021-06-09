@@ -260,12 +260,15 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
             // number of retries to check scheduler-srvice before returning an error
             let mut retries = START_SERVER_RETRIES;
             tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
-            while check_scheduler_service(address.clone()).await.is_err() {
+            while let Err(e) = check_scheduler_service(address.clone()).await {
                 // make the parent process wait for the service to run
                 warn!("service has not been started yet, trying again in 500 ms");
                 retries -= 1;
                 if retries == 0 {
-                    return Err(Error::Other("Can not start scheduler service".to_string()));
+                    return Err(Error::Other(format!(
+                        "Can not start scheduler service: {}",
+                        e.to_string()
+                    )));
                 }
                 tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
             }
@@ -280,7 +283,10 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
                     error!(err = %e,"Got error trying to start the server");
                     retries -= 1;
                     if retries == 0 {
-                        return Err(Error::Other("Can not start scheduler service".to_string()));
+                        return Err(Error::Other(format!(
+                            "Can not start scheduler service: {}",
+                            e.to_string()
+                        )));
                     }
                 }
             } else {
