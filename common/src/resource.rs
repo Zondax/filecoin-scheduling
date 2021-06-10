@@ -1,11 +1,13 @@
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceType {
     Cpu,
     // Use a Gpu and Define how much memory we want.
     Gpu(ResourceMemory),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceMemory {
     // Wants to use all the resource's memory
     All,
@@ -13,17 +15,19 @@ pub enum ResourceMemory {
     Mem(u64),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceReq {
     pub resource: ResourceType,
+    // quantity of resources of this type needed
     pub quantity: usize,
     pub preemptible: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceAlloc {
     pub requirement: ResourceReq,
-    pub resource_id: Vec<rust_gpu_tools::opencl::DeviceUuid>,
+    // the devices allowed to use
+    pub devices: Vec<rust_gpu_tools::opencl::DeviceUuid>,
 }
 
 impl Default for ResourceAlloc {
@@ -34,7 +38,7 @@ impl Default for ResourceAlloc {
                 quantity: 0,
                 preemptible: false,
             },
-            resource_id: vec![],
+            devices: vec![],
         }
     }
 }

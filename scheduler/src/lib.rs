@@ -1,3 +1,5 @@
+use tracing::error;
+
 mod config;
 mod error;
 mod handler;
@@ -28,11 +30,11 @@ const SETTINGS_PATH: &str = "/tmp/scheduler.toml";
 #[tracing::instrument(level = "info")]
 pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Error> {
     let settings = Settings::new(SETTINGS_PATH).map_err(|e| {
-        tracing::error!("Error reading config file: {}", e.to_string());
+        error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
     let handler = scheduler::Scheduler::new(settings, devices);
-    let server = server::Server::new(handler);
+    let server = Server::new(handler);
     let mut io = IoHandler::new();
 
     let address: SocketAddr = address.parse().map_err(|_| Error::InvalidAddress)?;
@@ -53,11 +55,11 @@ pub fn spawn_scheduler_with_handler(
     devices: common::Devices,
 ) -> Result<CloseHandle, Error> {
     let settings = Settings::new(SETTINGS_PATH).map_err(|e| {
-        tracing::error!("Error reading config file: {}", e.to_string());
+        error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
     let handler = scheduler::Scheduler::new(settings, devices);
-    let server = server::Server::new(handler);
+    let server = Server::new(handler);
     let mut io = IoHandler::new();
 
     let address: SocketAddr = address.parse().map_err(|_| Error::InvalidAddress)?;

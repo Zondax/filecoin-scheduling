@@ -1,70 +1,8 @@
-#[cfg(feature = "greedy_solver")]
 mod greedy;
-#[cfg(feature = "mip_solver")]
-mod linearsolver;
-#[cfg(feature = "greedy_solver")]
-pub use greedy::GreedySolver;
-#[cfg(feature = "mip_solver")]
-pub use linearsolver::{
-    JobAllocation, JobConstraint, JobDescription, JobPlan, JobRequirements, LinearSolverModel,
-};
-
 use crate::config::Settings;
 use crate::solver::Solver;
-#[cfg(feature = "mip_solver")]
-use common::TaskRequirements;
+pub use greedy::GreedySolver;
 
-/// Wrapper struct for converting from TaskRequirements to
-/// JobRequirements
-#[cfg(feature = "mip_solver")]
-pub struct RequirementsMap {
-    pub reqs: TaskRequirements,
-    // the available resources to use
-    pub resources: Vec<u32>,
-    pub job_id: usize,
-    pub preemptive: Option<usize>,
-    pub has_started: Option<(usize, usize)>,
-}
-
-#[cfg(feature = "mip_solver")]
-impl From<RequirementsMap> for JobRequirements {
-    fn from(map: RequirementsMap) -> Self {
-        let options = map
-            .resources
-            .iter()
-            .map(|id| JobConstraint {
-                machine: *id as usize,
-                duration: map.reqs.exec_time.as_secs() as usize,
-            })
-            .collect::<_>();
-        let description = JobDescription {
-            options,
-            // We have a deadline wich contains the start/end times but need to
-            // check corner cases or how they are going to be interpreted by the solver
-            starttime: None,
-            deadline: None,
-            preemptive: None,
-            has_started: None,
-            is_support: false,
-            job_id: map.job_id,
-        };
-
-        JobRequirements {
-            jobs: vec![description],
-            sequences: vec![],
-            supports: vec![],
-        }
-    }
-}
-
-// Remove later this option, Config will have a default value, use it
-#[cfg(feature = "mip_solver")]
-pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
-    Box::new(LinearSolverModel::new())
-}
-
-// TODO: Not sure about the optional settings here which is more like a scheduler-wise info
-#[cfg(feature = "greedy_solver")]
 pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
     Box::new(GreedySolver)
 }
@@ -115,13 +53,14 @@ mod tests {
         let state_t2 = devices
             .gpu_devices()
             .iter()
-            .map(|dev| {
+            .enumerate()
+            .map(|(i, dev)| {
                 (
                     dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.hash() == 0,
+                        is_busy: i == 0,
                     },
                 )
             })
@@ -130,7 +69,7 @@ mod tests {
 
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver.allocate_task(&devices_t2, &task1, &None).unwrap();
-        assert!(alloc.resource_id[0] != devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id().unwrap());
 
         let state_t3 = devices
             .gpu_devices()
@@ -172,13 +111,14 @@ mod tests {
         let state_t4 = devices
             .gpu_devices()
             .iter()
-            .map(|dev| {
+            .enumerate()
+            .map(|(i, dev)| {
                 (
                     dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.hash() == 0,
+                        is_busy: i == 0,
                     },
                 )
             })
@@ -186,7 +126,7 @@ mod tests {
         let devices_t4 = Resources(state_t4);
         let (alloc, _) = solver.allocate_task(&devices_t4, &task2, &None).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
-        assert!(alloc.resource_id[0] != devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id().unwrap());
 
         let task3 = TaskRequirements {
             req: vec![ResourceReq {
@@ -202,13 +142,14 @@ mod tests {
         let state_t5 = devices
             .gpu_devices()
             .iter()
-            .map(|dev| {
+            .enumerate()
+            .map(|(i, dev)| {
                 (
                     dev.device_id().unwrap(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: dev.hash() == 0,
+                        is_busy: i == 0,
                     },
                 )
             })
@@ -222,6 +163,6 @@ mod tests {
             )
             .unwrap();
         //allocate to 0 anyway since the task really needs to, even if it is busy..
-        assert!(alloc.resource_id[0] == devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] == devices.gpu_devices()[0].device_id().unwrap());
     }
 }

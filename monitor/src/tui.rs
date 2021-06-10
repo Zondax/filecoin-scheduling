@@ -67,9 +67,7 @@ pub fn run_app(
                 address = addr;
                 service_down = true;
             }
-            Err(_) => {
-                //service_down = false;
-            } // channel empty
+            Err(_) => {} // channel empty
         }
 
         terminal.draw(|f| {
@@ -240,24 +238,35 @@ where
         .style(normal_style)
         .height(1)
         .bottom_margin(1);
-    let rows = table.items.iter().map(|item| {
-        let height = item
-            .iter()
-            .map(|content| content.chars().filter(|c| *c == '*').count())
-            .max()
-            .unwrap_or(0);
+    let rows = table
+        .items
+        .iter()
+        .map(|item| {
+            let stalled = item.job_id.chars().any(|c| c == '*');
 
-        let cells = item.iter().map(|c| Cell::from(c.clone()));
-        // red for stalled jobs
-        if height > 0 {
-            Row::new(cells)
-                .height(1u16)
-                .bottom_margin(1)
-                .style(Style::default().fg(Color::Red))
-        } else {
-            Row::new(cells).height(1u16).bottom_margin(1)
-        }
-    });
+            // job_id cell
+            let id_cell = if stalled {
+                Cell::from(item.job_id.clone()).style(Style::default().fg(Color::Red))
+            } else {
+                Cell::from(item.job_id.clone())
+            };
+
+            let row_hight = item.devices.len() + 1;
+
+            let devices_cell = {
+                let mut ids = String::new();
+                for id in item.devices.iter() {
+                    ids.push_str(format!("{}\n", id).as_str());
+                }
+                Cell::from(ids)
+            };
+
+            let end_cell = Cell::from(item.end.clone());
+            let last_seen = Cell::from(item.last_seen.clone());
+            Row::new(vec![id_cell, devices_cell, end_cell, last_seen]).height(row_hight as u16)
+        })
+        .collect::<Vec<_>>();
+
     let t = Table::new(rows)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title("Tasks"))

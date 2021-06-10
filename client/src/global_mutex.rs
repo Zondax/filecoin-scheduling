@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::path::PathBuf;
 
 use tracing::debug;
@@ -8,7 +8,7 @@ use fs2::FileExt;
 use crate::Error;
 
 // The path to were the shared_mem file-link would be stored
-const SHARED_MEM_PATH: &str = "scheduler_shm";
+const SHARED_MEM_PATH: &str = "scheduler.lock";
 #[cfg(test)]
 const IPC_PATH: &str = "ipc_buffer";
 
@@ -20,7 +20,7 @@ impl GlobalMutex {
     }
 
     #[allow(dead_code)]
-    pub fn new_with_name(name: &str) -> Result<Self, Error> {
+    pub fn with_name(name: &str) -> Result<Self, Error> {
         Self::_new(Some(name))
     }
 
@@ -32,15 +32,11 @@ impl GlobalMutex {
 
     fn _new(name: Option<&str>) -> Result<Self, Error> {
         let path = if let Some(suffix) = name {
-            Self::tmp_path(&format!("{}_{}", SHARED_MEM_PATH, suffix))
+            Self::tmp_path(&format!("{}.{}", SHARED_MEM_PATH, suffix))
         } else {
             Self::tmp_path(SHARED_MEM_PATH)
         };
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&path)?;
+        let file = File::create(path)?;
         Ok(Self(file))
     }
 
@@ -57,6 +53,7 @@ impl GlobalMutex {
 
     pub fn release(&self) -> Result<(), Error> {
         self.0.unlock()?;
+        debug!("Mutex released");
         Ok(())
     }
 }
@@ -105,7 +102,7 @@ mod tests {
                 .name(i.to_string())
                 .spawn(move || {
                     // Pass a name to the mutex because so that it is exclusive to this test
-                    let mutex = GlobalMutex::new_with_name("threads").unwrap();
+                    let mutex = GlobalMutex::with_name("threads").unwrap();
                     let guard = mutex.try_lock();
                     if let Ok(_) = guard {
                         sender.send(MutexState::Owned).unwrap();
@@ -153,7 +150,7 @@ mod tests {
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = if let Ok(mutex) = GlobalMutex::new_with_name("process") {
+                let mutex = if let Ok(mutex) = GlobalMutex::with_name("process") {
                     mutex
                 } else {
                     sender.send(&MutexState::Error).unwrap();
@@ -184,6 +181,7 @@ mod tests {
                 assert_eq!(res.len(), 2);
                 // At least one thread should have owned the mutex
                 assert_eq!(1, res.iter().filter(|s| **s == MutexState::Owned).count());
+                std::fs::remove_file(IPC_PATH).unwrap();
             }
 
             Ok(ForkResult::Child) => {
@@ -193,7 +191,7 @@ mod tests {
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = if let Ok(mutex) = GlobalMutex::new_with_name("process") {
+                let mutex = if let Ok(mutex) = GlobalMutex::with_name("process") {
                     mutex
                 } else {
                     sender.send(&MutexState::Error).unwrap();

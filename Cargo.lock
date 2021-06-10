@@ -1987,6 +1987,7 @@ dependencies = [
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "more-asserts",
+ "parking_lot",
  "priority-queue",
  "rust-gpu-tools",
  "serde 1.0.126",

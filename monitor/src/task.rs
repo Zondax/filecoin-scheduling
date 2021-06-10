@@ -5,16 +5,35 @@ use crate::MonitorInfo;
 
 pub const TASK_NUM_COLUMNS: usize = 4;
 
+#[derive(Clone)]
+pub struct TableItems {
+    pub job_id: String,
+    pub devices: Vec<String>,
+    pub end: String,
+    pub last_seen: String,
+}
+
+impl Default for TableItems {
+    fn default() -> Self {
+        TableItems {
+            job_id: "".to_string(),
+            devices: vec!["".to_string()],
+            end: "".to_string(),
+            last_seen: "".to_string(),
+        }
+    }
+}
+
 pub struct TaskTable {
     pub state: TableState,
-    pub items: Vec<Vec<String>>,
+    pub items: Vec<TableItems>,
 }
 
 impl TaskTable {
     pub fn new() -> TaskTable {
         TaskTable {
             state: TableState::default(),
-            items: vec![vec!["".to_string(); TASK_NUM_COLUMNS]; TASK_NUM_COLUMNS],
+            items: vec![],
         }
     }
 
@@ -23,37 +42,43 @@ impl TaskTable {
         let mut root = vec![];
 
         for job_id in info.job_plan.iter() {
-            let mut row = vec![];
-
             info.task_states
                 .iter()
                 .filter(|job| job.id == *job_id)
                 .for_each(|job| {
-                    if job.stalled {
-                        row.push(format!("{} **", job.id));
+                    let job_id = if job.stalled {
+                        format!("{} **", job.id)
                     } else {
-                        row.push(format!("{}", job.id));
-                    }
-                    row.push(format!("{:?}", job.alloc.resource_id.as_slice()));
-                    if let Some(d) = job.deadline {
-                        row.push(d.1.format("%H:%M:%S").to_string());
+                        format!("{}", job.id)
+                    };
+                    let end = if let Some(d) = job.deadline {
+                        d.end.format("%H:%M:%S").to_string()
                     } else {
-                        row.push("".to_string());
-                    }
-                    let dt = DateTime::<Utc>::from_utc(
+                        "".to_string()
+                    };
+
+                    let last_seen = DateTime::<Utc>::from_utc(
                         NaiveDateTime::from_timestamp(job.last_seen as _, 0),
                         Utc,
                     )
-                    .time();
-                    row.push(dt.to_string());
+                    .time()
+                    .to_string();
+                    let mut ids = vec![];
+                    for id in job.alloc.devices.as_slice() {
+                        ids.push(format!("{}", id));
+                    }
+                    root.push(TableItems {
+                        job_id,
+                        devices: ids,
+                        end,
+                        last_seen,
+                    });
                 });
-
-            root.push(row);
         }
         if !root.is_empty() {
             self.items = root;
         } else {
-            self.items = vec![vec!["".to_string(); TASK_NUM_COLUMNS]; TASK_NUM_COLUMNS];
+            self.items = vec![Default::default(); TASK_NUM_COLUMNS];
         }
     }
 

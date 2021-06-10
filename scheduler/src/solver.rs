@@ -68,18 +68,20 @@ impl Resources {
         self.0.iter().map(|(_, dev)| dev.available_memory()).sum()
     }
 
-    pub fn has_min_available_memory(&self, requirements: &TaskRequirements) -> bool {
-        for req in &requirements.req {
-            let selected_resources = self.0.iter().filter_map(|(_, device)| {
-                if let ResourceType::Gpu(ref mem) = req.resource {
+    pub fn get_devices_with_requirements<'r>(
+        &'r self,
+        requirements: &'r ResourceReq,
+    ) -> impl Iterator<Item = DeviceUuid> + 'r {
+        self.0
+            .iter()
+            .filter_map(move |(uuid, dev)| {
+                if let ResourceType::Gpu(mem) = &requirements.resource {
                     match mem {
-                        // The caller takes care of memory management on devices.
-                        // the scheduler will indicate when the caller should flush
-                        // memory on preemption
-                        ResourceMemory::All => Some(1),
-                        ResourceMemory::Mem(value) => {
-                            if device.available_memory() >= *value {
-                                Some(1)
+                        //The caller will handle all remaining memory
+                        ResourceMemory::All => Some(uuid),
+                        ResourceMemory::Mem(val) => {
+                            if dev.available_memory() >= *val {
+                                Some(uuid)
                             } else {
                                 None
                             }
@@ -88,8 +90,17 @@ impl Resources {
                 } else {
                     None
                 }
-            });
-            if selected_resources.count() >= req.quantity {
+            })
+            .cloned()
+    }
+
+    ///Indicates if these resources can accomodate at least 1 of the resource requests
+    /// for the given task
+    pub fn has_min_available_memory(&self, requirements: &TaskRequirements) -> bool {
+        for req in &requirements.req {
+            let n_res_with_memory = self.get_devices_with_requirements(req).count();
+
+            if n_res_with_memory >= req.quantity {
                 return true;
             }
         }
@@ -121,67 +132,45 @@ impl Resources {
     }
 }
 
-pub trait SerializeWith
+fn serialize_atomic_u64<S>(v: &AtomicU64, s: S) -> Result<S::Ok, S::Error>
 where
-    Self: Sized,
+    S: Serializer,
 {
-    fn serialize_with<S>(x: &Self, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer;
+    s.serialize_u64(v.load(Ordering::Relaxed))
 }
 
-pub trait DeserializeWith: Sized {
-    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>;
-}
+fn deserialize_atomic_u64<'de, D>(de: D) -> Result<AtomicU64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(de)?;
 
-impl SerializeWith for AtomicU64 {
-    fn serialize_with<S>(v: &AtomicU64, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize_u64(v.load(Ordering::Relaxed))
+    match s.parse::<u64>() {
+        Ok(value) => Ok(AtomicU64::new(value)),
+        Err(_) => Err(serde::de::Error::custom(
+            "error trying to deserialize u64 for task last_seen timestamp",
+        )),
     }
 }
 
-impl DeserializeWith for AtomicU64 {
-    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(de)?;
-
-        match s.parse::<u64>() {
-            Ok(value) => Ok(AtomicU64::new(value)),
-            Err(_) => Err(serde::de::Error::custom(
-                "error trying to deserialize u64 for task last_seen timestamp",
-            )),
-        }
-    }
-}
-impl SerializeWith for AtomicBool {
-    fn serialize_with<S>(v: &AtomicBool, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize_bool(v.load(Ordering::Relaxed))
-    }
+fn serialize_atomic_bool<S>(v: &AtomicBool, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_bool(v.load(Ordering::Relaxed))
 }
 
-impl DeserializeWith for AtomicBool {
-    fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(de)?;
+fn deserialize_atomic_bool<'de, D>(de: D) -> Result<AtomicBool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(de)?;
 
-        match s.parse::<bool>() {
-            Ok(value) => Ok(AtomicBool::new(value)),
-            Err(_) => Err(serde::de::Error::custom(
-                "error trying to deserialize boolean for task abort flag",
-            )),
-        }
+    match s.parse::<bool>() {
+        Ok(value) => Ok(AtomicBool::new(value)),
+        Err(_) => Err(serde::de::Error::custom(
+            "error trying to deserialize boolean for task abort flag",
+        )),
     }
 }
 
@@ -189,21 +178,22 @@ impl DeserializeWith for AtomicBool {
 pub struct TaskState {
     pub requirements: TaskRequirements,
     pub current_iteration: u16,
-    // The list of jobs associates with this task, each job is a requirement plus the resource
-    // assigned to it accordingly.
+    // the list of resources this task is using
     pub allocation: ResourceAlloc,
 
     #[serde(
-        deserialize_with = "AtomicU64::deserialize_with",
-        serialize_with = "AtomicU64::serialize_with"
+        deserialize_with = "deserialize_atomic_u64",
+        serialize_with = "serialize_atomic_u64"
     )]
     pub last_seen: AtomicU64,
 
     #[serde(
-        deserialize_with = "AtomicBool::deserialize_with",
-        serialize_with = "AtomicBool::serialize_with"
+        deserialize_with = "deserialize_atomic_bool",
+        serialize_with = "serialize_atomic_bool"
     )]
     pub aborted: AtomicBool,
+    // a timestamp indicating when this task was created
+    pub creation_time: u64,
 }
 
 impl Clone for TaskState {
@@ -214,6 +204,7 @@ impl Clone for TaskState {
             allocation: self.allocation.clone(),
             last_seen: AtomicU64::new(self.last_seen.load(Ordering::Relaxed)),
             aborted: AtomicBool::new(self.aborted.load(Ordering::Relaxed)),
+            creation_time: self.creation_time,
         }
     }
 }
