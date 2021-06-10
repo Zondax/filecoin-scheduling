@@ -15,6 +15,8 @@ pub enum Error {
     InvalidAddress,
     #[error("Job was aborted by an external client")]
     Aborted,
+    #[error("No GPU resources on the system")]
+    NoGpuResources,
     #[error("Unknown error: `{0}`")]
     Other(String),
 }

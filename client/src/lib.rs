@@ -255,6 +255,12 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
 
+    // check if there are resources to manage before trying to start the scheduler service
+    let devices = common::list_devices();
+    if devices.gpu_devices().is_empty() {
+        return Err(Error::NoGpuResources);
+    }
+
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
             // number of retries to check scheduler-srvice before returning an error
@@ -276,7 +282,6 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
         }
         Ok(ForkResult::Child) => {
             let mutex = GlobalMutex::new()?;
-            let devices = common::list_devices();
             if mutex.try_lock().is_ok() {
                 let mut retries = START_SERVER_RETRIES;
                 while let Err(e) = run_scheduler(&address, devices.clone()) {
@@ -299,7 +304,7 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
 }
 
 /// Helper function for creating a ResourceReq list
-/// - Get the current allocations in the scheduler, push any resource thas has not been allocated and use it as requirements
+/// - Get the current allocations in the scheduler, push any resource that has not been allocated and use it as requirements
 /// - If there are not available resources, which means all memory is used
 /// it would list the raw devices information and use that as requirements.
 pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
