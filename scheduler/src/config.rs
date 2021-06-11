@@ -1,7 +1,9 @@
 use config::{Config, ConfigError, File};
+use serde::{Deserialize, Serialize, Serializer};
 
-use serde::{Deserialize, Serialize};
+use rust_gpu_tools::opencl::{DeviceUuid, GPUSelector};
 use std::path::Path;
+use tracing::error;
 
 use common::TaskType;
 
@@ -9,23 +11,65 @@ use common::TaskType;
 pub struct Task {
     exec_time: u64,
     memory: u64,
-    devices: Vec<String>,
+    #[serde(
+        deserialize_with = "deserialize_devices",
+        serialize_with = "serialize_devices"
+    )]
+    devices: Vec<GPUSelector>,
     #[serde(deserialize_with = "TaskType::deserialize_with")]
     task_type: TaskType,
 }
 
 impl Task {
-    pub fn get_task_type(&self) -> TaskType {
+    pub fn task_type(&self) -> TaskType {
         self.task_type
     }
 
-    pub fn get_task_exec_time(&self) -> u64 {
+    pub fn exec_time(&self) -> u64 {
         self.exec_time
     }
 
-    pub fn get_devices(&self) -> Vec<String> {
+    pub fn devices(&self) -> Vec<GPUSelector> {
         self.devices.clone()
     }
+}
+pub fn deserialize_devices<'de, D>(de: D) -> Result<Vec<GPUSelector>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    use std::convert::TryFrom;
+    use std::str::FromStr;
+    let s: Vec<String> = Vec::deserialize(de)?;
+    let mut selectors = vec![];
+    for id in s.iter() {
+        match (
+            DeviceUuid::try_from(id.as_str()),
+            u32::from_str(id.as_str()),
+        ) {
+            (Ok(uuid), Err(_)) => selectors.push(GPUSelector::Uuid(uuid)),
+            (Err(_), Ok(pci)) => selectors.push(GPUSelector::PciId(pci)),
+            _ => {
+                error!("unrecognize device id format: {}", id);
+                return Err(serde::de::Error::custom("Unrecognize device id format"));
+            }
+        }
+    }
+    Ok(selectors)
+}
+
+fn serialize_devices<S>(v: &[GPUSelector], s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let devices = v
+        .iter()
+        .map(|sel| match sel {
+            GPUSelector::Uuid(uuid) => uuid.to_string(),
+            GPUSelector::PciId(pci) => pci.to_string(),
+            _ => Default::default(),
+        })
+        .collect::<Vec<String>>();
+    s.collect_seq(devices)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -51,13 +95,13 @@ impl Default for Settings {
             address: "127.0.0.1:5000".to_string(),
         };
 
-        let time_settings = TimeSettings { min_wait_time: 60 };
+        let time_settings = TimeSettings { min_wait_time: 120 };
         let exec_time = 60;
         let memory = 1024 * 32; // 32 kib
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
-            .map(|dev| dev.device_id().map(|d| d.to_string()).unwrap_or_default())
+            .map(|d| d.device_id())
             .collect::<Vec<_>>();
         let task = Task {
             exec_time,
@@ -75,7 +119,7 @@ impl Default for Settings {
                     _ => TaskType::MerkleProof,
                 };
                 if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
-                    task_i.devices = [all_devices[2].clone()].to_vec();
+                    task_i.devices = [all_devices[2]].to_vec();
                 }
                 task_i
             })
@@ -100,7 +144,7 @@ impl Settings {
         } else {
             let s = Self::default();
             let toml = toml::to_string(&s).map_err(|e| {
-                ConfigError::Message(format!("Error generating toml date {}", e.to_string()))
+                ConfigError::Message(format!("Error generating toml file: {}", e.to_string()))
             })?;
             std::fs::write(&path, &toml).map_err(|e| {
                 ConfigError::Message(format!(

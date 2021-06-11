@@ -23,7 +23,7 @@ mod tests {
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id().unwrap(),
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -56,7 +56,7 @@ mod tests {
             .enumerate()
             .map(|(i, dev)| {
                 (
-                    dev.device_id().unwrap(),
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -69,14 +69,14 @@ mod tests {
 
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver.allocate_task(&devices_t2, &task1, &None).unwrap();
-        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
 
         let state_t3 = devices
             .gpu_devices()
             .iter()
             .map(|dev| {
                 (
-                    dev.device_id().unwrap(),
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -114,7 +114,7 @@ mod tests {
             .enumerate()
             .map(|(i, dev)| {
                 (
-                    dev.device_id().unwrap(),
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -126,7 +126,7 @@ mod tests {
         let devices_t4 = Resources(state_t4);
         let (alloc, _) = solver.allocate_task(&devices_t4, &task2, &None).unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
-        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
 
         let task3 = TaskRequirements {
             req: vec![ResourceReq {
@@ -145,7 +145,7 @@ mod tests {
             .enumerate()
             .map(|(i, dev)| {
                 (
-                    dev.device_id().unwrap(),
+                    dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
@@ -159,10 +159,10 @@ mod tests {
             .allocate_task(
                 &devices_t5,
                 &task3,
-                &Some(vec![devices.gpu_devices()[0].device_id().unwrap()]),
+                &Some(vec![devices.gpu_devices()[0].device_id()]),
             )
             .unwrap();
         //allocate to 0 anyway since the task really needs to, even if it is busy..
-        assert!(alloc.devices[0] == devices.gpu_devices()[0].device_id().unwrap());
+        assert!(alloc.devices[0] == devices.gpu_devices()[0].device_id());
     }
 }
