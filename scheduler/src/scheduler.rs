@@ -15,25 +15,20 @@ use common::{
     ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
     TaskType,
 };
-use rust_gpu_tools::opencl::DeviceUuid;
-use std::convert::TryFrom;
+use rust_gpu_tools::opencl::GPUSelector;
 use tracing::{debug, error, info, instrument, trace, warn};
 
-//find all the devices from the first task that matches the given filter `tasktype
-// this will return none in case there are not devices assigned to this type of task
+// match all the devices that were assigned to task with type tasktype
+// returning None if there are not.
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
     scheduler_settings: &[Task],
-) -> Option<Vec<DeviceUuid>> {
+) -> Option<Vec<GPUSelector>> {
     let this_task = tasktype?;
     for task in scheduler_settings {
-        if task.get_task_type() == this_task {
-            let restrictions = task
-                .get_devices()
-                .iter()
-                .map(|id| DeviceUuid::try_from(id.as_ref()).ok())
-                .collect::<Option<Vec<_>>>();
-            return restrictions;
+        let devices = task.devices();
+        if task.task_type() == this_task && !devices.is_empty() {
+            return Some(devices);
         }
     }
     None
@@ -59,8 +54,8 @@ pub fn task_is_stalled(
     let time_of_task = scheduler_settings
         .tasks_settings
         .iter()
-        .find(|task| task.get_task_type() == this_task)
-        .map(|task| task.get_task_exec_time());
+        .find(|task| task.task_type() == this_task)
+        .map(|task| task.exec_time());
     if time_of_task.is_none() {
         //should not happen though....
         return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
@@ -87,20 +82,18 @@ impl Scheduler {
         let state = devices
             .gpu_devices()
             .iter()
-            .filter_map(|dev| {
+            .map(|dev| {
                 // ignore for now devices that does not support uuid
-                dev.device_id().map(|id| {
-                    (
-                        id,
-                        ResourceState {
-                            dev: dev.clone(),
-                            mem_usage: Default::default(),
-                            is_busy: Default::default(),
-                        },
-                    )
-                })
+                (
+                    dev.device_id(),
+                    ResourceState {
+                        dev: dev.clone(),
+                        mem_usage: Default::default(),
+                        is_busy: Default::default(),
+                    },
+                )
             })
-            .collect::<HashMap<DeviceUuid, ResourceState>>();
+            .collect::<HashMap<GPUSelector, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         Self {
             tasks_state: RwLock::new(HashMap::new()),
@@ -196,7 +189,7 @@ impl Scheduler {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         let resources = self.devices.read();
-        Ok(resources.has_busy_resources(&current_task.allocation.devices))
+        Ok(resources.has_busy_resources(current_task.allocation.devices.as_slice()))
     }
 
     // update the last_seen counter
@@ -299,7 +292,7 @@ impl Scheduler {
                     None
                 }
             })
-            .collect::<Vec<(DeviceUuid, u64)>>();
+            .collect::<Vec<(GPUSelector, u64)>>();
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
@@ -310,7 +303,7 @@ impl Scheduler {
             if let ResourceType::Gpu(ref m) = state.allocation.requirement.resource {
                 self.devices
                     .write()
-                    .free_memory(m, &state.allocation.devices);
+                    .free_memory(m, state.allocation.devices.as_slice());
             }
             let mut solver = create_solver(None);
             // Update our plan
@@ -373,12 +366,19 @@ impl Scheduler {
         let resources = resources
             .0
             .iter()
-            .map(|(id, state)| GpuResource {
-                device_id: id.to_string(),
-                name: state.dev.name(),
-                memory: state.dev.memory(),
-                mem_usage: state.mem_usage,
-                is_busy: state.is_busy,
+            .map(|(id, state)| {
+                let device_id = match id {
+                    GPUSelector::Uuid(uuid) => uuid.to_string(),
+                    GPUSelector::PciId(pci) => pci.to_string(),
+                    _ => unreachable!(),
+                };
+                GpuResource {
+                    device_id,
+                    name: state.dev.name(),
+                    memory: state.dev.memory(),
+                    mem_usage: state.mem_usage,
+                    is_busy: state.is_busy,
+                }
             })
             .collect::<Vec<_>>();
         Ok(MonitorInfo {

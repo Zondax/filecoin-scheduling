@@ -12,9 +12,9 @@ use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
 use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
-use rust_gpu_tools::opencl::DeviceUuid;
+use rust_gpu_tools::opencl::GPUSelector;
 
-type AllocationResult = Result<Vec<(DeviceUuid, u64)>, Error>;
+type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
 
 #[rpc(server)]
