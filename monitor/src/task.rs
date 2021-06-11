@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use tui::widgets::TableState;
 
 use crate::MonitorInfo;
+use rust_gpu_tools::opencl::GPUSelector;
 
 pub const TASK_NUM_COLUMNS: usize = 4;
 
@@ -65,7 +66,11 @@ impl TaskTable {
                     .to_string();
                     let mut ids = vec![];
                     for id in job.alloc.devices.as_slice() {
-                        ids.push(format!("{}", id));
+                        match id {
+                            GPUSelector::Uuid(uuid) => ids.push(uuid.to_string()),
+                            GPUSelector::PciId(id) => ids.push(id.to_string()),
+                            GPUSelector::Index(idx) => ids.push(idx.to_string()),
+                        }
                     }
                     root.push(TableItems {
                         job_id,

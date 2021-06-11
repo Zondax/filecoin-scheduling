@@ -1,4 +1,4 @@
-use rust_gpu_tools::opencl::DeviceUuid;
+use rust_gpu_tools::opencl::GPUSelector;
 
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use jsonrpc_core_client::transports::http::connect;
@@ -65,12 +65,12 @@ impl RpcCaller {
             .await
     }
 
-    pub async fn list_allocations(&self) -> RpcResult<Result<Vec<(DeviceUuid, u64)>, Error>> {
+    pub async fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
         self.handler
             .0
             .call_method(
                 "list_allocations",
-                "Result<Vec<(DeviceUuid, u64)>, Error>",
+                "Result<Vec<(GPUSelector, u64)>, Error>",
                 (),
             )
             .await

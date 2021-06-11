@@ -1,4 +1,3 @@
-//Rename the other result with an alias so there's not as much repetition
 use std::result::Result;
 
 use jsonrpc_derive::rpc;
@@ -12,9 +11,9 @@ use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
 use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
-use rust_gpu_tools::opencl::DeviceUuid;
+use rust_gpu_tools::opencl::GPUSelector;
 
-type AllocationResult = Result<Vec<(DeviceUuid, u64)>, Error>;
+type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
 
 #[rpc(server)]
@@ -115,8 +114,6 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    // For some reason we can not return () here, the is a bug on the client library that
-    // expects a Result, Option or a Sized type.
     fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::Release(client);
         let (sender, receiver) = oneshot::channel();
@@ -147,8 +144,6 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    // For some reason we can not return () here, the is a bug on the client library that
-    // expects a Result, Option or a Sized type.
     fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), String>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
@@ -180,9 +175,6 @@ impl<H: Handler> RpcMethods for Server<H> {
     }
 
     // Endpoint for clients to check if the server instance is running
-
-    // For some reason we can not return () here, there is a bug on the client library that
-    // expects a Result, Option or a Sized type.
     fn health_check(&self) -> BoxFuture<RpcResult<Result<(), Error>>> {
         Box::pin(async { Ok(Ok(())) })
     }

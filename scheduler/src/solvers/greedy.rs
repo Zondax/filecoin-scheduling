@@ -7,13 +7,13 @@ use crate::Error;
 use common::{ResourceAlloc, TaskRequirements};
 
 use priority_queue::PriorityQueue;
-use rust_gpu_tools::opencl::DeviceUuid;
+use rust_gpu_tools::opencl::GPUSelector;
 use std::cmp::Reverse;
 
 pub struct GreedySolver;
 use std::sync::atomic::Ordering;
 
-pub fn find_idle_gpus(resources: &'_ Resources) -> impl Iterator<Item = DeviceUuid> + Clone + '_ {
+pub fn find_idle_gpus(resources: &'_ Resources) -> impl Iterator<Item = GPUSelector> + Clone + '_ {
     resources
         .0
         .iter()
@@ -26,15 +26,15 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<DeviceUuid>>,
-    ) -> Option<(ResourceAlloc, HashMap<DeviceUuid, ResourceState>)> {
+        restrictions: &Option<Vec<GPUSelector>>,
+    ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)> {
         // Use heuristic criteria for picking up a resource depending on task requirements
         // basing on the current resource load or even a greedy approach. For now we just take the
         // first that match and return
 
         let device_restrictions = restrictions
             .clone()
-            .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<DeviceUuid>>());
+            .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<GPUSelector>>());
 
         let idle_gpus_iter = find_idle_gpus(resources);
         let mut options = vec![];
@@ -44,12 +44,12 @@ impl Solver for GreedySolver {
             let optional_resources = resources
                 .get_devices_with_requirements(req)
                 .filter(|b| device_restrictions.iter().any(|x| x == b))
-                .collect::<Vec<DeviceUuid>>();
+                .collect::<Vec<GPUSelector>>();
             let idle_gpus_available = optional_resources
                 .iter()
                 .cloned()
                 .filter(|b| idle_gpus_iter.clone().any(|x| x == *b))
-                .collect::<Vec<DeviceUuid>>();
+                .collect::<Vec<GPUSelector>>();
 
             //if there's enough idle gpus just offer those directly
             if idle_gpus_available.len() >= quantity {

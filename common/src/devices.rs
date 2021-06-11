@@ -1,42 +1,50 @@
-use rust_gpu_tools::opencl;
-#[cfg(dummy_devices)]
-use std::convert::TryFrom;
+use rust_gpu_tools::opencl::{Device as ClDevice, DeviceUuid, GPUSelector};
 use std::hash::{Hash, Hasher};
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone)]
-#[repr(C)]
 pub struct Device {
-    dev: opencl::Device,
-    memory: u64,
-    // the device uuid
-    id: Option<opencl::DeviceUuid>,
+    dev: ClDevice,
+    pub selector: GPUSelector,
 }
 
 #[cfg(not(dummy_devices))]
 impl Hash for Device {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.id.hash(hasher);
-        self.dev.name().hash(hasher);
+        if let Some(uuid) = self.dev.uuid() {
+            uuid.hash(hasher);
+        } else if let Some(pci_id) = self.dev.pci_id() {
+            pci_id.hash(hasher);
+        } else {
+            self.dev.name().hash(hasher);
+        }
     }
 }
 
 #[cfg(dummy_devices)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
 pub struct Device {
     memory: u64,
-    id: Option<opencl::DeviceUuid>,
+    selector: GPUSelector,
 }
 
 #[cfg(not(dummy_devices))]
 impl Device {
-    pub fn device_id(&self) -> Option<opencl::DeviceUuid> {
-        self.id
+    pub fn device_id(&self) -> GPUSelector {
+        self.selector
+    }
+    pub fn device_uuid(&self) -> Option<DeviceUuid> {
+        match self.selector {
+            GPUSelector::Uuid(uuid) => Some(uuid),
+            _ => None,
+        }
     }
 
     pub fn device_pci_id(&self) -> Option<u32> {
-        self.dev.pci_id()
+        match self.selector {
+            GPUSelector::PciId(pci) => Some(pci),
+            _ => None,
+        }
     }
 
     pub fn name(&self) -> String {
@@ -44,34 +52,26 @@ impl Device {
     }
 
     pub fn memory(&self) -> u64 {
-        self.memory
+        self.dev.memory()
     }
 
-    pub fn brand(&self) -> opencl::Brand {
-        self.dev.brand()
-    }
-
-    pub fn get_inner(&self) -> opencl::Device {
+    pub fn get_inner(&self) -> ClDevice {
         self.dev.clone()
     }
 }
 
 #[cfg(dummy_devices)]
 impl Device {
-    pub fn device_id(&self) -> Option<opencl::DeviceUuid> {
-        self.id
+    pub fn device_id(&self) -> GPUSelector {
+        self.selector
     }
 
     pub fn name(&self) -> String {
-        format!("dummy_dev: {}", self.id.unwrap())
+        format!("dummy_dev: {:?}", self.selector)
     }
 
     pub fn memory(&self) -> u64 {
         self.memory
-    }
-
-    pub fn brand(&self) -> opencl::Brand {
-        unimplemented!()
     }
 }
 
@@ -91,32 +91,45 @@ impl Devices {
 /// Returns all the devices on the system
 ///
 /// It includes the GPUs and the number of logical CPUs
+#[cfg(not(dummy_devices))]
 pub fn list_devices() -> Devices {
-    #[cfg(not(dummy_devices))]
     let gpu_devices = {
-        let devs = opencl::Device::all();
-        devs.into_iter()
-            .map(|dev| {
-                let memory = dev.memory();
-                Device {
-                    dev: dev.clone(),
-                    memory,
-                    id: dev.uuid(),
+        ClDevice::all()
+            .into_iter()
+            .filter_map(|dev| {
+                if let Some(uuid) = dev.uuid() {
+                    Some((GPUSelector::Uuid(uuid), dev))
+                } else {
+                    dev.pci_id()
+                        .map(|pci| (GPUSelector::PciId(pci), dev))
+                        .or_else(|| {
+                            tracing::error!(
+                                "Device does not support the UUId nor PciId extensions"
+                            );
+                            None
+                        })
                 }
+            })
+            .map(|(selector, dev)| Device {
+                dev: dev.clone(),
+                selector,
             })
             .collect::<Vec<Device>>()
     };
+    let num_cpus = num_cpus::get();
 
-    #[cfg(dummy_devices)]
+    Devices {
+        gpu_devices,
+        num_cpus,
+    }
+}
+
+#[cfg(dummy_devices)]
+pub fn list_devices() -> Devices {
     let gpu_devices = (0..3)
-        .map(|i| {
-            let uuid =
-                opencl::DeviceUuid::try_from(format!("00000000-0000-0000-0000-00000000000{:x}", i))
-                    .unwrap();
-            Device {
-                memory: 4,
-                id: Some(uuid),
-            }
+        .map(|i| Device {
+            memory: 4,
+            selector: GPUSelector::PciId(i as _),
         })
         .collect::<Vec<Device>>();
 
@@ -130,7 +143,6 @@ pub fn list_devices() -> Devices {
 #[cfg(test)]
 mod tests {
 
-    #[cfg(dummy_devices)]
     #[test]
     fn check_devices() {
         use crate::{list_devices, Devices};

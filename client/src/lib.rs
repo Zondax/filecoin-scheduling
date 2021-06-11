@@ -1,4 +1,4 @@
-use rust_gpu_tools::opencl::DeviceUuid;
+use rust_gpu_tools::opencl::GPUSelector;
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
@@ -281,23 +281,34 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
             Ok(())
         }
         Ok(ForkResult::Child) => {
-            let mutex = GlobalMutex::new()?;
-            if mutex.try_lock().is_ok() {
-                let mut retries = START_SERVER_RETRIES;
-                while let Err(e) = run_scheduler(&address, devices.clone()) {
-                    error!(err = %e,"Got error trying to start the server");
-                    retries -= 1;
-                    if retries == 0 {
-                        return Err(Error::Other(format!(
-                            "Can not start scheduler service: {}",
-                            e.to_string()
-                        )));
-                    }
+            let mutex = GlobalMutex::new().map_err(|e| {
+                error!(err = %e,"Failed creating scheduler lock file");
+                e
+            })?;
+            match mutex.try_lock() {
+                Ok(_) => {
+                    let handler = std::thread::spawn(move || {
+                        let mut retries = START_SERVER_RETRIES;
+                        while let Err(e) = run_scheduler(&address, devices.clone()) {
+                            error!(err = %e,"Got error trying to start the server");
+                            retries -= 1;
+                            if retries == 0 {
+                                return Err(Error::Other(format!(
+                                    "Can not start scheduler service: {}",
+                                    e.to_string()
+                                )));
+                            }
+                        }
+                        Ok(())
+                    });
+                    handler.join().unwrap()
                 }
-            } else {
-                debug!("another process started the scheduler - exiting");
+                Err(e) => {
+                    error!(err = %e,"Error acquiring lock");
+                    debug!("another process started the scheduler - exiting");
+                    Err(e)
+                }
             }
-            Ok(())
         }
         Err(e) => Err(Error::Other(e.to_string())),
     }
@@ -317,9 +328,8 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
     // or in case there are not available. Just get the current devices in the system and propose
     // them as a requirement
     common::list_devices().gpu_devices().iter().for_each(|dev| {
-        if let Some(uuid) = dev.device_id() {
-            resources.entry(uuid).or_insert_with(|| dev.memory());
-        }
+        let selector = dev.device_id();
+        resources.entry(selector).or_insert_with(|| dev.memory());
     });
 
     // map to memory => quantity
@@ -339,7 +349,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
 }
 
 /// Returns a tuple with the ID and available memory of devices being used
-pub fn list_allocations() -> Result<HashMap<DeviceUuid, u64>, Error> {
+pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
     let mut rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
     let res = rt
         .block_on(async {
@@ -355,7 +365,7 @@ pub fn list_allocations() -> Result<HashMap<DeviceUuid, u64>, Error> {
             })
         })
         .map(|res| res.unwrap());
-    res.map(|vec| vec.into_iter().collect::<HashMap<DeviceUuid, u64>>())
+    res.map(|vec| vec.into_iter().collect::<HashMap<GPUSelector, u64>>())
 }
 
 #[tracing::instrument(level = "debug")]

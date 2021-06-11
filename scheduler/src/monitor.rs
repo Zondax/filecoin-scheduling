@@ -1,3 +1,4 @@
+use rust_gpu_tools::opencl::GPUSelector;
 use serde::{Deserialize, Serialize};
 
 use common::{Deadline, ResourceAlloc, TaskType};
@@ -19,10 +20,10 @@ pub struct Task {
     pub stalled: bool,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GpuResource {
     pub name: String,
-    pub device_id: String,
+    pub device_id: GPUSelector,
     pub memory: u64,
     pub mem_usage: u64,
     pub is_busy: bool,

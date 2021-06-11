@@ -211,16 +211,16 @@ where
         .header(header)
         .block(Block::default().borders(Borders::ALL).title("GPUs"))
         .highlight_style(selected_style)
-        .column_spacing(1)
+        .column_spacing(2)
         .highlight_symbol(">> ")
         .widths(&[
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
-            Constraint::Percentage(13),
+            Constraint::Percentage(30), //id
+            Constraint::Percentage(20), //name
+            Constraint::Percentage(10), //memory
+            Constraint::Percentage(10), //memusage
+            Constraint::Percentage(4),  //busy
+            Constraint::Percentage(8),  //num-jobs
+            Constraint::Percentage(13), //current
         ]);
     f.render_stateful_widget(t, area, &mut table.state);
 }

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceAlloc, ResourceMemory, ResourceReq, ResourceType};
+use super::{ResourceAlloc, ResourceReq};
 
 pub trait TaskFunc {
     type Output;
@@ -45,7 +45,7 @@ impl TaskType {
             "winningpost" => Ok(TaskType::WinningPost),
             "windowpost" => Ok(TaskType::WindowPost),
             _ => Err(serde::de::Error::custom(
-                "error trying to deserialize rotation policy config",
+                "Trying to deserialize an unsupported task type",
             )),
         }
     }
@@ -137,6 +137,8 @@ impl TaskReqBuilder {
         self
     }
 
+    // TODO: evaluate if this method should return an error
+    // in case the resource_req list is empty
     pub fn build(self) -> TaskRequirements {
         TaskRequirements {
             req: self.req,
@@ -156,26 +158,4 @@ pub struct TaskRequirements {
     pub deadline: Option<Deadline>,
     pub estimations: Option<TaskEstimations>,
     pub task_type: Option<TaskType>,
-}
-
-impl TaskRequirements {
-    /// Returns the minimal amount of memory required
-    pub fn minimal_resource_usage(&self) -> u64 {
-        self.req
-            .iter()
-            .filter_map(|req| {
-                if let ResourceType::Gpu(ResourceMemory::Mem(value)) = req.resource {
-                    Some(value * (req.quantity as u64))
-                } else {
-                    None
-                }
-            })
-            //skip an allocation
-            // iterate over everything only once
-            // sort right away with at most N comparisons
-            // since you discard items > current
-            // if the iterator is empty this would do nothing
-            .min()
-            .unwrap_or_default()
-    }
 }
