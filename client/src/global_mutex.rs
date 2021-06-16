@@ -1,14 +1,13 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use tracing::debug;
-
 use fs2::FileExt;
 
 use crate::Error;
+use tracing::debug;
 
 // The path to were the shared_mem file-link would be stored
-const SHARED_MEM_PATH: &str = "scheduler.lock";
+const SCHEDULER_LOCK: &str = "scheduler.lock";
 #[cfg(test)]
 const IPC_PATH: &str = "ipc_buffer";
 
@@ -32,21 +31,18 @@ impl GlobalMutex {
 
     fn _new(name: Option<&str>) -> Result<Self, Error> {
         let path = if let Some(suffix) = name {
-            Self::tmp_path(&format!("{}.{}", SHARED_MEM_PATH, suffix))
+            Self::tmp_path(&format!("{}.{}", SCHEDULER_LOCK, suffix))
         } else {
-            Self::tmp_path(SHARED_MEM_PATH)
+            Self::tmp_path(SCHEDULER_LOCK)
         };
+        debug!("Opening lock file at: {:?}", path.to_str());
         let file = File::create(path)?;
         Ok(Self(file))
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn try_lock(&self) -> Result<(), Error> {
-        debug!(
-            "Trying to acquire the mutex - process id: {}",
-            std::process::id()
-        );
-
+        debug!("Trying to acquire the mutex");
         self.0.try_lock_exclusive()?;
         Ok(())
     }
@@ -104,7 +100,7 @@ mod tests {
                     // Pass a name to the mutex because so that it is exclusive to this test
                     let mutex = GlobalMutex::with_name("threads").unwrap();
                     let guard = mutex.try_lock();
-                    if let Ok(_) = guard {
+                    if guard.is_ok() {
                         sender.send(MutexState::Owned).unwrap();
                         // Ensures that this threads owns the mutex along the test
                         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -157,7 +153,7 @@ mod tests {
                     return;
                 };
                 let guard = mutex.try_lock();
-                if let Ok(_) = guard {
+                if guard.is_ok() {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
                     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -198,7 +194,7 @@ mod tests {
                     return;
                 };
                 let guard = mutex.try_lock();
-                if let Ok(_) = guard {
+                if guard.is_ok() {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
                     std::thread::sleep(std::time::Duration::from_millis(300));

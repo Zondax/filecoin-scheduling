@@ -1,3 +1,4 @@
+use rust_gpu_tools::opencl::GPUSelector;
 use tui::widgets::TableState;
 
 use crate::MonitorInfo;
@@ -24,17 +25,14 @@ impl GpuTable {
         let mut num_jobs = HashMap::new();
         for job in info.task_states.iter() {
             job.alloc.devices.iter().for_each(|id| {
-                let counter = num_jobs.entry(id.to_string()).or_insert(0);
+                let counter = num_jobs.entry(id).or_insert(0);
                 *counter += 1;
             })
         }
 
         for resource in info.resources.iter() {
             let mut row = vec![];
-            let njobs = format!(
-                "{}",
-                num_jobs.get(&resource.device_id.to_string()).unwrap_or(&0)
-            );
+            let njobs = format!("{}", num_jobs.get(&resource.device_id).unwrap_or(&0));
             let mut current_job = "".to_string();
             for id in info.job_plan.iter() {
                 if info
@@ -45,15 +43,16 @@ impl GpuTable {
                         job.alloc
                             .devices
                             .iter()
-                            .any(|dev_id| *dev_id.to_string() == resource.device_id)
+                            .any(|dev_id| *dev_id == resource.device_id)
                     })
                 {
                     current_job = format!("{}", id);
                     break;
                 }
             }
-            row.push(format!("{}", resource.device_id));
+            row.push(format!("{:?}", resource.device_id));
             row.push(resource.name.clone());
+            // memory in GB
             row.push(format!("{}", resource.memory));
             row.push(format!("{}", resource.mem_usage));
             row.push(format!("{}", resource.is_busy));

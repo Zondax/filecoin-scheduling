@@ -100,7 +100,14 @@ pub fn list_devices() -> Devices {
                 if let Some(uuid) = dev.uuid() {
                     Some((GPUSelector::Uuid(uuid), dev))
                 } else {
-                    dev.pci_id().map(|pci| (GPUSelector::PciId(pci), dev))
+                    dev.pci_id()
+                        .map(|pci| (GPUSelector::PciId(pci), dev))
+                        .or_else(|| {
+                            tracing::error!(
+                                "Device does not support the UUId nor PciId extensions"
+                            );
+                            None
+                        })
                 }
             })
             .map(|(selector, dev)| Device {

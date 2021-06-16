@@ -16,7 +16,7 @@ use common::{
     TaskType,
 };
 use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 // match all the devices that were assigned to task with type tasktype
 // returning None if there are not.
@@ -83,7 +83,6 @@ impl Scheduler {
             .gpu_devices()
             .iter()
             .map(|dev| {
-                // ignore for now devices that does not support uuid
                 (
                     dev.device_id(),
                     ResourceState {
@@ -173,7 +172,7 @@ impl Scheduler {
         let queue = self.jobs_queue.read();
         let state = self.tasks_state.read();
         for job_id in queue.iter() {
-            let task = state.get(&job_id).unwrap();
+            let task = state.get(job_id).unwrap();
             if task_is_stalled(
                 task.last_seen.load(Ordering::Relaxed),
                 task.requirements.task_type,
@@ -193,6 +192,7 @@ impl Scheduler {
     }
 
     // update the last_seen counter
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn update_last_seen(&self, client: ClientToken) -> Result<(), Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
@@ -203,7 +203,7 @@ impl Scheduler {
         Ok(())
     }
 
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn set_resource_as_busy(&self, client: ClientToken) {
         let state = self.tasks_state.read();
         if let Some(current_task) = state.get(&client.pid) {
@@ -215,18 +215,19 @@ impl Scheduler {
 
     // returns a boolean indicationg if the task has to wait or not according
     // to the priority queue and the task resources
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn check_priority_queue(&self, client: ClientToken) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
         debug!("current job_plan {:?}", *queue);
-        let state = self.tasks_state.read();
-        let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         // check the job plan to see if the task is up-front the queue or not
         if let Some(job) = queue.front() {
             // return immediately if the task is at the front of the queue
             if *job == client.pid {
                 Ok(false)
             } else {
+                let state = self.tasks_state.read();
+                let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
+
                 // in this case we get an ordered queue based on the priority(highest to lowest) of the tasks that were assigned to the same
                 // resource as client.
                 let sub_queue = queue
@@ -256,7 +257,7 @@ impl Scheduler {
         Ok(current_task.aborted.load(Ordering::Relaxed))
     }
 
-    #[instrument(level = "info", skip(self), fields(pid = client.pid))]
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
         if self.abort_client(client)? {
             return Ok(PreemptionResponse::Abort);
@@ -296,7 +297,7 @@ impl Scheduler {
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
-    #[instrument(level = "info", skip(self), fields(pid = client.pid))]
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn release(&self, client: ClientToken) {
         let task_state = { self.tasks_state.write().remove(&client.pid) };
         if let Some(state) = task_state {
@@ -305,10 +306,11 @@ impl Scheduler {
                     .write()
                     .free_memory(m, state.allocation.devices.as_slice());
             }
-            let mut solver = create_solver(None);
             // Update our plan
+            let mut solver = create_solver(None);
             let state = self.tasks_state.read();
             if let Ok(plan) = solver.solve_job_schedule(&*state, &self.settings) {
+                drop(state); // release the reader so writers can take it
                 debug!("new job_plan {:?} on release", plan);
                 *self.jobs_queue.write() = plan
             }
@@ -317,14 +319,14 @@ impl Scheduler {
         }
     }
 
-    #[instrument(level = "info", skip(self), fields(pid = client.pid))]
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn release_preemptive(&self, client: ClientToken) {
         let state = self.tasks_state.read();
         if let Some(current_task) = state.get(&client.pid) {
             self.devices
                 .write()
                 .unset_busy_resources(&current_task.allocation.devices);
-            info!(
+            debug!(
                 "marking resource as free {:?}",
                 current_task.allocation.devices
             );
@@ -366,19 +368,12 @@ impl Scheduler {
         let resources = resources
             .0
             .iter()
-            .map(|(id, state)| {
-                let device_id = match id {
-                    GPUSelector::Uuid(uuid) => uuid.to_string(),
-                    GPUSelector::PciId(pci) => pci.to_string(),
-                    _ => unreachable!(),
-                };
-                GpuResource {
-                    device_id,
-                    name: state.dev.name(),
-                    memory: state.dev.memory(),
-                    mem_usage: state.mem_usage,
-                    is_busy: state.is_busy,
-                }
+            .map(|(id, state)| GpuResource {
+                device_id: *id,
+                name: state.dev.name(),
+                memory: state.dev.memory(),
+                mem_usage: state.mem_usage,
+                is_busy: state.is_busy,
             })
             .collect::<Vec<_>>();
         Ok(MonitorInfo {
@@ -391,7 +386,7 @@ impl Scheduler {
 
 impl Handler for Scheduler {
     fn process_request(&self, request: SchedulerRequest) {
-        // TODO: Analize if spawning a thread is worth considering that doing so the handler
+        // TODO: Analize if spawning a thread is worth considering that doing so the handler's
         // executer doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {

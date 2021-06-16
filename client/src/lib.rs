@@ -287,18 +287,21 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
             })?;
             match mutex.try_lock() {
                 Ok(_) => {
-                    let mut retries = START_SERVER_RETRIES;
-                    while let Err(e) = run_scheduler(&address, devices.clone()) {
-                        error!(err = %e,"Got error trying to start the server");
-                        retries -= 1;
-                        if retries == 0 {
-                            return Err(Error::Other(format!(
-                                "Can not start scheduler service: {}",
-                                e.to_string()
-                            )));
+                    let handler = std::thread::spawn(move || {
+                        let mut retries = START_SERVER_RETRIES;
+                        while let Err(e) = run_scheduler(&address, devices.clone()) {
+                            error!(err = %e,"Got error trying to start the server");
+                            retries -= 1;
+                            if retries == 0 {
+                                return Err(Error::Other(format!(
+                                    "Can not start scheduler service: {}",
+                                    e.to_string()
+                                )));
+                            }
                         }
-                    }
-                    Ok(())
+                        Ok(())
+                    });
+                    handler.join().unwrap()
                 }
                 Err(e) => {
                     error!(err = %e,"Error acquiring lock");
