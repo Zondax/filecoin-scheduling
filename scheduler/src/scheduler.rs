@@ -108,6 +108,16 @@ impl Scheduler {
             error!("Schedule request with empty parameters");
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
         }
+        // before continuing we need to check if this client.pid is already in the
+        // jobs queue meaning there is a collision that we need to avoid
+        // by ignoring the request until the previous job is done.
+        if self.tasks_state.read().contains_key(&client.pid) {
+            warn!(
+                "Ignoring request - A client with the same id: {} is already in the queue ",
+                client.pid
+            );
+            return SchedulerResponse::Schedule(Ok(None));
+        }
 
         let restrictions =
             match_task_devices(requirements.task_type, &self.settings.tasks_settings);
@@ -346,6 +356,7 @@ impl Scheduler {
     fn monitor(&self) -> Result<MonitorInfo, String> {
         trace!("External service is monitoring the scheduler service");
         let task_states = self.tasks_state.read();
+        let resources = self.devices.read();
         let task_states = task_states
             .iter()
             .map(|(id, state)| {
@@ -364,7 +375,6 @@ impl Scheduler {
                 }
             })
             .collect::<Vec<_>>();
-        let resources = self.devices.read();
         let resources = resources
             .0
             .iter()
