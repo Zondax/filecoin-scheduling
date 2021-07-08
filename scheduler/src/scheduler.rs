@@ -316,14 +316,8 @@ impl Scheduler {
                     .write()
                     .free_memory(m, state.allocation.devices.as_slice());
             }
-            // Update our plan
-            let mut solver = create_solver(None);
-            let state = self.tasks_state.read();
-            if let Ok(plan) = solver.solve_job_schedule(&*state, &self.settings) {
-                drop(state); // release the reader so writers can take it
-                debug!("new job_plan {:?} on release", plan);
-                *self.jobs_queue.write() = plan
-            }
+
+            (*self.jobs_queue.write()).retain(|pid| *pid != client.pid);
         } else {
             warn!("Task resources already released");
         }
