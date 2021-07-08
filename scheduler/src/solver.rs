@@ -7,6 +7,7 @@ use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
 use rust_gpu_tools::opencl::GPUSelector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use tracing::error;
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -48,10 +49,21 @@ impl ResourceState {
     }
 
     pub fn set_as_busy(&mut self) {
+        // It is an error trying to set as busy a resource that is being used by
+        // another process. It means that the scheduler is allowing multiple task
+        // to use a resource at the same time.
+        debug_assert!(
+            !self.is_busy,
+            "Resource already in used -> multiple process trying to use it at the same time"
+        );
         self.is_busy = true;
     }
 
     pub fn set_as_free(&mut self) {
+        debug_assert!(
+            self.is_busy,
+            "Resource already freed -> multiple process trying to use it at the same time"
+        );
         self.is_busy = false;
     }
 
