@@ -7,7 +7,6 @@ use crate::Error;
 use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
 use rust_gpu_tools::opencl::GPUSelector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use tracing::error;
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
