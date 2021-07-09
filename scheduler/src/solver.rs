@@ -61,7 +61,7 @@ impl ResourceState {
     pub fn set_as_free(&mut self) {
         debug_assert!(
             self.is_busy,
-            "Resource already freed -> multiple process trying to use it at the same time"
+            "Resource already in used -> multiple process trying to use it at the same time"
         );
         self.is_busy = false;
     }
@@ -188,7 +188,6 @@ where
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TaskState {
     pub requirements: TaskRequirements,
-    pub current_iteration: u16,
     // the list of resources this task is using
     pub allocation: ResourceAlloc,
 
@@ -211,7 +210,6 @@ impl Clone for TaskState {
     fn clone(&self) -> Self {
         Self {
             requirements: self.requirements.clone(),
-            current_iteration: self.current_iteration,
             allocation: self.allocation.clone(),
             last_seen: AtomicU64::new(self.last_seen.load(Ordering::Relaxed)),
             aborted: AtomicBool::new(self.aborted.load(Ordering::Relaxed)),
@@ -227,14 +225,6 @@ impl TaskState {
             .map_or(i64::MAX, |d| d.end_timestamp_secs())
     }
 }
-
-//#[derive(Clone, Debug)]
-//pub struct Job {
-//pub starting_time: usize,
-//pub end_time: usize,
-//pub req: ResourceReq,
-//pub resources: Vec<u32>,
-//}
 
 // Trait that is implemented by any object that can be used as a solver
 pub trait Solver {
