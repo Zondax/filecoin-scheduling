@@ -149,7 +149,6 @@ impl Scheduler {
         // prepare the task
         let task_state = TaskState {
             requirements,
-            current_iteration: 0,
             allocation: alloc.clone(),
             last_seen: AtomicU64::new(time),
             aborted: AtomicBool::new(false),
@@ -223,8 +222,7 @@ impl Scheduler {
         }
     }
 
-    // returns a boolean indicationg if the task has to wait or not according
-    // to the priority queue and the task resources
+    // checks wether the job can continue or not depending on its position in the priority queue
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn check_priority_queue(&self, client: ClientToken) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
@@ -316,14 +314,7 @@ impl Scheduler {
                     .write()
                     .free_memory(m, state.allocation.devices.as_slice());
             }
-            // Update our plan
-            let mut solver = create_solver(None);
-            let state = self.tasks_state.read();
-            if let Ok(plan) = solver.solve_job_schedule(&*state, &self.settings) {
-                drop(state); // release the reader so writers can take it
-                debug!("new job_plan {:?} on release", plan);
-                *self.jobs_queue.write() = plan
-            }
+            (*self.jobs_queue.write()).retain(|pid| *pid != client.pid);
         } else {
             warn!("Task resources already released");
         }
@@ -337,10 +328,11 @@ impl Scheduler {
                 .write()
                 .unset_busy_resources(&current_task.allocation.devices);
             debug!(
-                "marking resource as free {:?}",
+                "marking resource(s) as free {:?}",
                 current_task.allocation.devices
             );
-            return;
+        } else {
+            warn!("Task: {} is not in the queue - ignoring", client.pid);
         }
     }
 

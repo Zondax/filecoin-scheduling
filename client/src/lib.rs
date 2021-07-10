@@ -154,7 +154,7 @@ async fn execute_task<'a, T, E: From<Error>>(
         match preemtive_state {
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
-                trace!("client {:?} Calling task function", client.token.pid);
+                trace!("client {} Calling task function", client.token.pid);
                 let cont = task.task(Some(alloc))?;
                 trace!("Client {} task iteration completed", client.token.pid);
                 release_preemptive(client).await?;
@@ -164,7 +164,6 @@ async fn execute_task<'a, T, E: From<Error>>(
             }
             PreemptionResponse::Abort => {
                 warn!("Client {} aborted", client.token.pid);
-                release_preemptive(client).await?;
                 return Err(E::from(Error::Aborted));
             }
         }
