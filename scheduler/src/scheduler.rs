@@ -358,7 +358,6 @@ impl Scheduler {
             task.requirements.task_type,
             &self.settings,
         ) {
-            drop(task);
             trace!("task is stalled, removing");
             let task = state.remove(&client).unwrap();
             (*self.jobs_queue.write()).retain(|pid| *pid != client);
