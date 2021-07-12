@@ -18,4 +18,6 @@ pub enum Error {
     UnknownClient,
     #[error("Solver error: `{0}`")]
     SolverOther(String),
+    #[error("Job:`{0}` is not stalling")]
+    JobNotStalling(u32),
 }

@@ -13,6 +13,7 @@ pub enum SchedulerResponse {
     Release,
     ReleasePreemptive,
     Abort(Result<(), Error>),
+    RemoveStalled(Result<(), Error>),
     Monitoring(Result<MonitorInfo, String>),
 }
 

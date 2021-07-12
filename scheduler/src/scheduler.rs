@@ -222,7 +222,9 @@ impl Scheduler {
         }
     }
 
-    // checks wether the job can continue or not depending on its position in the priority queue
+    // checks whether the job can continue or not depending on its position in the priority queue.
+    // returns true if the job is at the top of the queue or among other jobs that share the same
+    // resource. false if it has to wait
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn check_priority_queue(&self, client: ClientToken) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
@@ -231,7 +233,7 @@ impl Scheduler {
         if let Some(job) = queue.front() {
             // return immediately if the task is at the front of the queue
             if *job == client.pid {
-                Ok(false)
+                Ok(true)
             } else {
                 let state = self.tasks_state.read();
                 let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
@@ -250,7 +252,7 @@ impl Scheduler {
                     .collect::<Vec<_>>();
                 // this sub_queue will always contain at least one element
                 // if current task is at the top means it does not have to wait.
-                Ok(!(client.pid == *sub_queue[0]))
+                Ok(client.pid == *sub_queue[0])
             }
         } else {
             warn!("Queue empty!");
@@ -261,7 +263,7 @@ impl Scheduler {
     //is_task_from_client_aborted
     fn abort_client(&self, client: ClientToken) -> Result<bool, Error> {
         let state = self.tasks_state.read();
-        let current_task = state.get(&client.pid).ok_or(Error::RwError)?;
+        let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         Ok(current_task.aborted.load(Ordering::Relaxed))
     }
 
@@ -279,7 +281,7 @@ impl Scheduler {
             return Ok(PreemptionResponse::Wait);
         }
 
-        if !self.check_priority_queue(client)? {
+        if self.check_priority_queue(client)? {
             self.set_resource_as_busy(client);
             Ok(PreemptionResponse::Execute)
         } else {
@@ -344,6 +346,36 @@ impl Scheduler {
         Ok(())
     }
 
+    // this function is experimental and might be removed in later versions of the
+    // scheduler.
+    fn remove_stalled(&self, client: u32) -> Result<(), Error> {
+        warn!("removing stalled job {}", client);
+        let mut state = self.tasks_state.write();
+
+        let task = state.get(&client).ok_or(Error::UnknownClient)?;
+        if task_is_stalled(
+            task.last_seen.load(Ordering::Relaxed),
+            task.requirements.task_type,
+            &self.settings,
+        ) {
+            drop(task);
+            trace!("task is stalled, removing");
+            let task = state.remove(&client).unwrap();
+            (*self.jobs_queue.write()).retain(|pid| *pid != client);
+            self.devices
+                .write()
+                .unset_busy_resources(&task.allocation.devices);
+            if let ResourceType::Gpu(ref m) = task.allocation.requirement.resource {
+                self.devices
+                    .write()
+                    .free_memory(m, task.allocation.devices.as_slice());
+            }
+            Ok(())
+        } else {
+            Err(Error::JobNotStalling(client))
+        }
+    }
+
     #[instrument(level = "trace", skip(self))]
     fn monitor(&self) -> Result<MonitorInfo, String> {
         trace!("External service is monitoring the scheduler service");
@@ -406,6 +438,9 @@ impl Handler for Scheduler {
                 SchedulerResponse::ReleasePreemptive
             }
             RequestMethod::Abort(client_id) => SchedulerResponse::Abort(self.abort(client_id)),
+            RequestMethod::RemoveStalled(client_id) => {
+                SchedulerResponse::RemoveStalled(self.remove_stalled(client_id))
+            }
             RequestMethod::Monitoring => SchedulerResponse::Monitoring(self.monitor()),
         };
         let _ = sender.send(response);
