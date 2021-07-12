@@ -44,7 +44,10 @@ pub trait RpcMethods {
     fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "abort")]
-    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), String>>>;
+    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>>;
+
+    #[rpc(name = "remove_stalled")]
+    fn remove_stalled(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "monitoring")]
     fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
@@ -144,7 +147,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), String>>> {
+    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -152,7 +155,22 @@ impl<H: Handler> RpcMethods for Server<H> {
         Box::pin(
             receiver
                 .map(|e| match e {
-                    Ok(SchedulerResponse::Abort(_)) => Ok(Ok(())),
+                    Ok(SchedulerResponse::Abort(res)) => Ok(res),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
+    }
+
+    fn remove_stalled(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>> {
+        let method = RequestMethod::RemoveStalled(client);
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::RemoveStalled(res)) => Ok(res),
                     _ => unreachable!(),
                 })
                 .boxed(),

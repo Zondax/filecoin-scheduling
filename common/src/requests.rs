@@ -9,6 +9,7 @@ pub enum RequestMethod {
     Release(ClientToken),
     ReleasePreemptive(ClientToken),
     Abort(u32),
+    RemoveStalled(u32),
     Monitoring,
 }
 
