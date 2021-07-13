@@ -17,6 +17,8 @@ pub enum Error {
     Aborted,
     #[error("No GPU resources on the system")]
     NoGpuResources,
+    #[error("Unexpected panic in task function")]
+    TaskFunctionPanics,
     #[error("Unknown error: `{0}`")]
     Other(String),
 }

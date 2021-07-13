@@ -147,6 +147,8 @@ async fn execute_task<'a, T, E: From<Error>>(
     task: &mut dyn TaskFunc<Output = T, Error = E>,
     alloc: &ResourceAlloc,
 ) -> Result<T, E> {
+    use std::panic::{catch_unwind, /*resume_unwind,*/ AssertUnwindSafe};
+
     task.init(Some(alloc))?;
     loop {
         let preemtive_state = wait_preemptive(client, timeout).await?;
@@ -155,7 +157,18 @@ async fn execute_task<'a, T, E: From<Error>>(
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
                 trace!("client {} Calling task function", client.token.pid);
-                let cont = task.task(Some(alloc))?;
+                // try to handle possible panics
+                let result = catch_unwind(AssertUnwindSafe(|| task.task(Some(alloc))));
+                if let Err(_error) = result {
+                    let _ = release_preemptive(client).await;
+                    let _ = release(client).await;
+                    error!("Client {} task function panics", client.token.pid);
+                    // TODO: Invastigate if  omitting the call to resume_unwind is UD
+                    //resume_unwind(_error);
+                    // TODO: Look for ways to show the panic message. without propagating the panic
+                    return Err(E::from(Error::TaskFunctionPanics));
+                }
+                let cont = result.unwrap()?;
                 trace!("Client {} task iteration completed", client.token.pid);
                 release_preemptive(client).await?;
                 if cont == TaskResult::Done {
@@ -403,6 +416,7 @@ mod tests {
     use super::*;
 
     struct TaskTest;
+    struct TaskTestPanic;
 
     impl TaskFunc for TaskTest {
         type Output = String;
@@ -414,6 +428,19 @@ mod tests {
 
         fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Self::Error> {
             Ok(TaskResult::Done)
+        }
+    }
+
+    impl TaskFunc for TaskTestPanic {
+        type Output = String;
+        type Error = Error;
+
+        fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::Output, Self::Error> {
+            Ok("HelloWorld".to_string())
+        }
+
+        fn task(&mut self, _alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Self::Error> {
+            panic!();
         }
     }
 
@@ -481,5 +508,29 @@ mod tests {
         assert!(res.is_ok());
 
         handle.close();
+    }
+
+    #[test]
+    fn test_panic_handler() {
+        let address = "127.0.0.1:7000".to_string();
+        let client = Client::new(&address, Default::default()).unwrap();
+        let devices = common::list_devices();
+        let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
+        let _res_req = ResourceReq {
+            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
+            quantity: 1,
+            preemptible: true,
+        };
+
+        let res = schedule_one_of(
+            client,
+            &mut TaskTestPanic,
+            task_requirements(),
+            Duration::from_secs(60),
+        );
+        handle.close();
+
+        println!("{:?}", res);
+        assert!(matches!(res.unwrap_err(), Error::TaskFunctionPanics));
     }
 }
