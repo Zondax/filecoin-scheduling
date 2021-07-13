@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn release_test() {
         // This test only check communication and well formed param parsing
-        let address = "127.0.0.1:7000".to_string();
+        let address = server_address();
         let client = Client::new(&address, Default::default()).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
@@ -504,15 +504,14 @@ mod tests {
                 client.release().await
             })
             .unwrap();
+        handle.close();
 
         assert!(res.is_ok());
-
-        handle.close();
     }
 
     #[test]
     fn test_panic_handler() {
-        let address = "127.0.0.1:7000".to_string();
+        let address = server_address();
         let client = Client::new(&address, Default::default()).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
@@ -530,7 +529,6 @@ mod tests {
         );
         handle.close();
 
-        println!("{:?}", res);
         assert!(matches!(res.unwrap_err(), Error::TaskFunctionPanics));
     }
 }
