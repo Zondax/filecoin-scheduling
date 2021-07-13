@@ -27,7 +27,7 @@ mod tests {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        current_task: Some(1),
+                        current_task: None,
                     },
                 )
             })
@@ -113,13 +113,14 @@ mod tests {
             .gpu_devices()
             .iter()
             .enumerate()
-            .map(|(_, dev)| {
+            .map(|(i, dev)| {
+                let current_task = if i == 0 { Some(i as u32) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        current_task: Some(0),
+                        current_task,
                     },
                 )
             })
@@ -144,13 +145,14 @@ mod tests {
             .gpu_devices()
             .iter()
             .enumerate()
-            .map(|(_, dev)| {
+            .map(|(i, dev)| {
+                let current_task = if i == 0 { Some(i as u32) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        current_task: Some(0),
+                        current_task,
                     },
                 )
             })
