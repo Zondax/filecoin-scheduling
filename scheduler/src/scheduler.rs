@@ -181,13 +181,14 @@ impl Scheduler {
         let queue = self.jobs_queue.read();
         let state = self.tasks_state.read();
         for job_id in queue.iter() {
-            let task = state.get(job_id).unwrap();
-            if task_is_stalled(
-                task.last_seen.load(Ordering::Relaxed),
-                task.requirements.task_type,
-                &self.settings,
-            ) {
-                warn!("Process {} is stalling!!", job_id);
+            if let Some(task) = state.get(job_id) {
+                if task_is_stalled(
+                    task.last_seen.load(Ordering::Relaxed),
+                    task.requirements.task_type,
+                    &self.settings,
+                ) {
+                    warn!("Process {} is stalling!!", job_id);
+                }
             }
         }
     }
@@ -360,7 +361,9 @@ impl Scheduler {
                 &self.settings,
             ) {
                 trace!("task {} is stalling, removing", client);
-                let task = state.remove(&client).unwrap();
+                let task = state.remove(&client).expect("Job in the state yet");
+                // remove job from the priority queue
+                (*self.jobs_queue.write()).retain(|pid| *pid != client);
                 drop(state);
                 // only the process with higher priority can mark the resource as free
                 self.devices
