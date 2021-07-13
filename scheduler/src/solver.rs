@@ -16,8 +16,9 @@ pub struct ResourceState {
     pub dev: Device,
     /// Current memory in use
     pub mem_usage: u64,
-    /// Using resource?
-    pub is_busy: bool,
+    /// The task that is using this resource
+    /// None means the resource is free
+    pub current_task: Option<u32>,
 }
 
 impl ResourceState {
@@ -47,27 +48,30 @@ impl ResourceState {
         }
     }
 
-    pub fn set_as_busy(&mut self) {
+    pub fn set_as_busy(&mut self, task: u32) {
         // It is an error trying to set as busy a resource that is being used by
         // another process. It means that the scheduler is allowing multiple task
         // to use a resource at the same time.
         debug_assert!(
-            !self.is_busy,
+            self.current_task.is_none(),
             "Resource already in used -> multiple process trying to use it at the same time"
         );
-        self.is_busy = true;
+        self.current_task.replace(task);
     }
 
-    pub fn set_as_free(&mut self) {
-        debug_assert!(
-            self.is_busy,
-            "Resource already in used -> multiple process trying to use it at the same time"
-        );
-        self.is_busy = false;
+    pub fn set_as_free(&mut self, task: u32) {
+        // only the task that set the resource as busy can freed it
+        if Some(task) == self.current_task {
+            self.current_task.take();
+        }
+    }
+
+    pub fn current_task(&self) -> Option<u32> {
+        self.current_task
     }
 
     pub fn is_busy(&self) -> bool {
-        self.is_busy
+        self.current_task.is_some()
     }
 }
 
@@ -130,15 +134,15 @@ impl Resources {
             .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[GPUSelector]) {
+    pub fn set_busy_resources(&mut self, devices: &[GPUSelector], task: u32) {
         devices.iter().for_each(|id| {
-            let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy());
+            let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy(task));
         });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[GPUSelector]) {
+    pub fn unset_busy_resources(&mut self, devices: &[GPUSelector], task: u32) {
         devices.iter().for_each(|id| {
-            let _ = self.0.get_mut(id).map(|dev| dev.set_as_free());
+            let _ = self.0.get_mut(id).map(|dev| dev.set_as_free(task));
         });
     }
 }
@@ -260,7 +264,7 @@ mod tests {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: false,
+                        current_task: None,
                     },
                 )
             })
@@ -288,7 +292,7 @@ mod tests {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 3,
-                        is_busy: false,
+                        current_task: None,
                     },
                 )
             })

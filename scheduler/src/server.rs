@@ -44,10 +44,10 @@ pub trait RpcMethods {
     fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "abort")]
-    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn abort(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "remove_stalled")]
-    fn remove_stalled(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn remove_stalled(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "monitoring")]
     fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
@@ -147,7 +147,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn abort(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn abort(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -162,7 +162,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn remove_stalled(&self, client: u32) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn remove_stalled(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::RemoveStalled(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };

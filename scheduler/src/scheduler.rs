@@ -88,7 +88,7 @@ impl Scheduler {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: Default::default(),
-                        is_busy: Default::default(),
+                        current_task: None,
                     },
                 )
             })
@@ -218,25 +218,25 @@ impl Scheduler {
         if let Some(current_task) = state.get(&client.pid) {
             self.devices
                 .write()
-                .set_busy_resources(&current_task.allocation.devices);
+                .set_busy_resources(&current_task.allocation.devices, client.pid);
         }
     }
 
     // checks whether the job can continue or not depending on its position in the priority queue.
     // returns true if the job is at the top of the queue or among other jobs that share the same
     // resource. false if it has to wait
-    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn check_priority_queue(&self, client: ClientToken) -> Result<bool, Error> {
+    #[instrument(level = "trace", skip(self), fields(pid = client))]
+    fn check_priority_queue(&self, client: u32) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
         debug!("current job_plan {:?}", *queue);
         // check the job plan to see if the task is up-front the queue or not
         if let Some(job) = queue.front() {
             // return immediately if the task is at the front of the queue
-            if *job == client.pid {
+            if *job == client {
                 Ok(true)
             } else {
                 let state = self.tasks_state.read();
-                let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
+                let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
 
                 // in this case we get an ordered queue based on the priority(highest to lowest) of the tasks that were assigned to the same
                 // resource as client.
@@ -252,7 +252,7 @@ impl Scheduler {
                     .collect::<Vec<_>>();
                 // this sub_queue will always contain at least one element
                 // if current task is at the top means it does not have to wait.
-                Ok(client.pid == *sub_queue[0])
+                Ok(client == *sub_queue[0])
             }
         } else {
             warn!("Queue empty!");
@@ -281,7 +281,7 @@ impl Scheduler {
             return Ok(PreemptionResponse::Wait);
         }
 
-        if self.check_priority_queue(client)? {
+        if self.check_priority_queue(client.pid)? {
             self.set_resource_as_busy(client);
             Ok(PreemptionResponse::Execute)
         } else {
@@ -328,7 +328,7 @@ impl Scheduler {
         if let Some(current_task) = state.get(&client.pid) {
             self.devices
                 .write()
-                .unset_busy_resources(&current_task.allocation.devices);
+                .unset_busy_resources(&current_task.allocation.devices, client.pid);
             debug!(
                 "marking resource(s) as free {:?}",
                 current_task.allocation.devices
@@ -338,41 +338,44 @@ impl Scheduler {
         }
     }
 
-    fn abort(&self, client: u32) -> Result<(), Error> {
-        warn!("aborting client {}", client);
-        let state = self.tasks_state.read();
-        let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
-        current_task.aborted.store(true, Ordering::Relaxed);
+    fn abort(&self, clients: Vec<u32>) -> Result<(), Error> {
+        for client in clients.iter() {
+            let state = self.tasks_state.read();
+            warn!("aborting client {}", client);
+            let current_task = state.get(client).ok_or(Error::UnknownClient)?;
+            current_task.aborted.store(true, Ordering::Relaxed);
+        }
         Ok(())
     }
 
     // this function is experimental and might be removed in later versions of the
     // scheduler.
-    fn remove_stalled(&self, client: u32) -> Result<(), Error> {
-        warn!("removing stalled job {}", client);
-        let mut state = self.tasks_state.write();
-
-        let task = state.get(&client).ok_or(Error::UnknownClient)?;
-        if task_is_stalled(
-            task.last_seen.load(Ordering::Relaxed),
-            task.requirements.task_type,
-            &self.settings,
-        ) {
-            trace!("task is stalled, removing");
-            let task = state.remove(&client).unwrap();
-            (*self.jobs_queue.write()).retain(|pid| *pid != client);
-            self.devices
-                .write()
-                .unset_busy_resources(&task.allocation.devices);
-            if let ResourceType::Gpu(ref m) = task.allocation.requirement.resource {
+    fn remove_stalled(&self, clients: Vec<u32>) -> Result<(), Error> {
+        for client in clients {
+            let mut state = self.tasks_state.write();
+            let task = state.get(&client).ok_or(Error::UnknownClient)?;
+            if task_is_stalled(
+                task.last_seen.load(Ordering::Relaxed),
+                task.requirements.task_type,
+                &self.settings,
+            ) {
+                trace!("task {} is stalling, removing", client);
+                let task = state.remove(&client).unwrap();
+                drop(state);
+                // only the process with higher priority can mark the resource as free
                 self.devices
                     .write()
-                    .free_memory(m, task.allocation.devices.as_slice());
+                    .unset_busy_resources(&task.allocation.devices, client);
+                if let ResourceType::Gpu(ref m) = task.allocation.requirement.resource {
+                    self.devices
+                        .write()
+                        .free_memory(m, task.allocation.devices.as_slice());
+                }
+            } else {
+                return Err(Error::JobNotStalling(client));
             }
-            Ok(())
-        } else {
-            Err(Error::JobNotStalling(client))
         }
+        Ok(())
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -406,7 +409,7 @@ impl Scheduler {
                 name: state.dev.name(),
                 memory: state.dev.memory(),
                 mem_usage: state.mem_usage,
-                is_busy: state.is_busy,
+                is_busy: state.is_busy(),
             })
             .collect::<Vec<_>>();
         Ok(MonitorInfo {
