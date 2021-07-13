@@ -103,7 +103,12 @@ impl Scheduler {
     }
 
     #[instrument(level = "info", skip(requirements, self))]
-    fn schedule(&self, client: ClientToken, requirements: TaskRequirements) -> SchedulerResponse {
+    fn schedule(
+        &self,
+        client: ClientToken,
+        requirements: TaskRequirements,
+        job_context: Option<String>,
+    ) -> SchedulerResponse {
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
@@ -153,6 +158,7 @@ impl Scheduler {
             last_seen: AtomicU64::new(time),
             aborted: AtomicBool::new(false),
             creation_time: time,
+            context: job_context,
         };
 
         // Add the task to our list of jobs
@@ -187,7 +193,11 @@ impl Scheduler {
                     task.requirements.task_type,
                     &self.settings,
                 ) {
-                    warn!("Process {} is stalling!!", job_id);
+                    warn!(
+                        "Process {}:{} is stalling!!",
+                        job_id,
+                        task.context.as_ref().unwrap_or(&"".to_string())
+                    );
                 }
             }
         }
@@ -342,8 +352,12 @@ impl Scheduler {
     fn abort(&self, clients: Vec<u32>) -> Result<(), Error> {
         for client in clients.iter() {
             let state = self.tasks_state.read();
-            warn!("aborting client {}", client);
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
+            warn!(
+                "aborting client: {} from: {}",
+                client,
+                current_task.context.as_ref().unwrap_or(&"".to_string())
+            );
             current_task.aborted.store(true, Ordering::Relaxed);
         }
         Ok(())
@@ -360,7 +374,12 @@ impl Scheduler {
                 task.requirements.task_type,
                 &self.settings,
             ) {
-                trace!("task {} is stalling, removing", client);
+                trace!(
+                    "task: {} from: {} is stalling, removing",
+                    client,
+                    task.context.as_ref().unwrap_or(&"".to_string())
+                );
+
                 let task = state.remove(&client).expect("Job in the state yet");
                 // remove job from the priority queue
                 (*self.jobs_queue.write()).retain(|pid| *pid != client);
@@ -383,7 +402,6 @@ impl Scheduler {
 
     #[instrument(level = "trace", skip(self))]
     fn monitor(&self) -> Result<MonitorInfo, String> {
-        trace!("External service is monitoring the scheduler service");
         let task_states = self.tasks_state.read();
         let resources = self.devices.read();
         let task_states = task_states
@@ -429,7 +447,7 @@ impl Handler for Scheduler {
         // executer doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
-            RequestMethod::Schedule(client, req) => self.schedule(client, req),
+            RequestMethod::Schedule(client, req, context) => self.schedule(client, req, context),
             RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(client) => {
                 SchedulerResponse::SchedulerWaitPreemptive(self.wait_preemptive(client))

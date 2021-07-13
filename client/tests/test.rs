@@ -92,7 +92,9 @@ fn task_requirements() -> TaskRequirements {
 
 #[test]
 fn test_schedule() {
-    tracing_subscriber::fmt().with_writer(io::stdout).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     let devices = common::list_devices();
     let mut hash_map = HashMap::new();
     devices.gpu_devices().iter().for_each(|dev| {
@@ -106,7 +108,8 @@ fn test_schedule() {
     for i in 0..4 {
         let state = devices_state.clone();
         joiner.push(std::thread::spawn(move || {
-            let client = register::<Error>(i, i as u64).unwrap();
+            let client =
+                register::<Error>(i, i as u64, Some(format!("{}:{}", file!(), line!()))).unwrap();
             let mut test_func = Test::new(i as _, state);
             let mut task_req = task_requirements();
             if i == 0 {
