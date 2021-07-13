@@ -27,7 +27,7 @@ mod tests {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: false,
+                        current_task: Some(1),
                     },
                 )
             })
@@ -55,12 +55,13 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
+                let current_task = if i == 0 { Some(i as u32) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: i == 0,
+                        current_task,
                     },
                 )
             })
@@ -80,7 +81,7 @@ mod tests {
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: true,
+                        current_task: Some(0),
                     },
                 )
             })
@@ -112,13 +113,13 @@ mod tests {
             .gpu_devices()
             .iter()
             .enumerate()
-            .map(|(i, dev)| {
+            .map(|(_, dev)| {
                 (
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: i == 0,
+                        current_task: Some(0),
                     },
                 )
             })
@@ -143,13 +144,13 @@ mod tests {
             .gpu_devices()
             .iter()
             .enumerate()
-            .map(|(i, dev)| {
+            .map(|(_, dev)| {
                 (
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
                         mem_usage: 0,
-                        is_busy: i == 0,
+                        current_task: Some(0),
                     },
                 )
             })
