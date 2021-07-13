@@ -8,8 +8,8 @@ pub enum RequestMethod {
     WaitPreemptive(ClientToken),
     Release(ClientToken),
     ReleasePreemptive(ClientToken),
-    Abort(u32),
-    RemoveStalled(u32),
+    Abort(Vec<u32>),
+    RemoveStalled(Vec<u32>),
     Monitoring,
 }
 
