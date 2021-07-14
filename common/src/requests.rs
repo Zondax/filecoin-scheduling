@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub enum RequestMethod {
-    Schedule(ClientToken, TaskRequirements),
+    Schedule(ClientToken, TaskRequirements, Option<String>),
     ListAllocations,
     WaitPreemptive(ClientToken),
     Release(ClientToken),

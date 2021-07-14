@@ -23,6 +23,7 @@ pub trait RpcMethods {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
+        job_context: Option<String>,
     ) -> AsyncRpcResult<Option<ResourceAlloc>>;
 
     #[rpc(name = "wait_preemptive")]
@@ -69,8 +70,9 @@ impl<H: Handler> RpcMethods for Server<H> {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
+        job_context: Option<String>,
     ) -> AsyncRpcResult<Option<ResourceAlloc>> {
-        let method = RequestMethod::Schedule(client, requirements);
+        let method = RequestMethod::Schedule(client, requirements, job_context);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
         self.0.process_request(request);

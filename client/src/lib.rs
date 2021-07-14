@@ -64,12 +64,16 @@ pub fn abort(_client: ClientToken) -> Result<(), Error> {
     Ok(())
 }
 
-#[tracing::instrument(level = "info", skip(client_id))]
-pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
+#[tracing::instrument(level = "info", skip(client_id, context))]
+pub fn register<E: From<Error>>(
+    pid: u32,
+    client_id: u64,
+    context: Option<String>,
+) -> Result<Client, E> {
     let token = ClientToken { pid, client_id };
     // TODO: Here we look for the config file and get the address from there as other params as
     // well
-    Client::new(&server_address(), token).map_err(E::from)
+    Client::new(&server_address(), token, context).map_err(E::from)
 }
 
 /// Schedules a task
@@ -147,7 +151,7 @@ async fn execute_task<'a, T, E: From<Error>>(
     task: &mut dyn TaskFunc<Output = T, Error = E>,
     alloc: &ResourceAlloc,
 ) -> Result<T, E> {
-    use std::panic::{catch_unwind, /*resume_unwind,*/ AssertUnwindSafe};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     task.init(Some(alloc))?;
     loop {
@@ -156,27 +160,37 @@ async fn execute_task<'a, T, E: From<Error>>(
         match preemtive_state {
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
-                trace!("client {} Calling task function", client.token.pid);
+                if let Some(c) = client.inner.context.as_ref() {
+                    trace!(
+                        "client: {} from: {} - Calling task function",
+                        client.inner.token.pid,
+                        c
+                    );
+                } else {
+                    trace!("client: {} Calling task function", client.inner.token.pid);
+                }
                 // try to handle possible panics
                 let result = catch_unwind(AssertUnwindSafe(|| task.task(Some(alloc))));
                 if let Err(_error) = result {
                     let _ = release_preemptive(client).await;
                     let _ = release(client).await;
-                    error!("Client {} task function panics", client.token.pid);
-                    // TODO: Invastigate if  omitting the call to resume_unwind is UD
-                    //resume_unwind(_error);
+                    error!("Client: {} panics", client.inner.token.pid);
                     // TODO: Look for ways to show the panic message. without propagating the panic
                     return Err(E::from(Error::TaskFunctionPanics));
                 }
                 let cont = result.unwrap()?;
-                trace!("Client {} task iteration completed", client.token.pid);
+                trace!("Client {} task iteration completed", client.inner.token.pid);
                 release_preemptive(client).await?;
                 if cont == TaskResult::Done {
                     break;
                 }
             }
             PreemptionResponse::Abort => {
-                warn!("Client {} aborted", client.token.pid);
+                warn!(
+                    "Client: {} from: {} - aborted",
+                    client.inner.token.pid,
+                    client.inner.context.as_ref().unwrap_or(&"None".to_string())
+                );
                 return Err(E::from(Error::Aborted));
             }
         }
@@ -185,7 +199,7 @@ async fn execute_task<'a, T, E: From<Error>>(
     task.end(Some(alloc))
 }
 
-#[tracing::instrument(level = "info", skip(client, requirements, timeout), fields(pid = client.token.pid))]
+#[tracing::instrument(level = "info", skip(client, requirements, timeout), fields(pid = client.inner.token.pid))]
 async fn wait_allocation(
     client: &RpcCaller,
     requirements: TaskRequirements,
@@ -194,13 +208,15 @@ async fn wait_allocation(
     let call_res = async {
         loop {
             let alloc_state = client
-                .wait_allocation(requirements.clone())
+                .wait_allocation(requirements.clone(), client.inner.context.clone())
                 .await
                 .map_err(|e| Error::RpcError(e.to_string()))??;
             if let Some(alloc) = alloc_state {
                 debug!(
-                    "Client: {} - got allocation {:?}",
-                    client.token.pid, alloc.devices
+                    "Client: {} from: {} - got allocation {:?}",
+                    client.inner.token.pid,
+                    client.inner.context.as_ref().unwrap_or(&"".to_string()),
+                    alloc.devices,
                 );
                 return Ok(alloc);
             }
@@ -209,7 +225,7 @@ async fn wait_allocation(
             // again.
             warn!(
                 "No available resources for client: {} - waiting",
-                client.token.pid
+                client.inner.token.pid
             );
         }
     };
@@ -219,7 +235,7 @@ async fn wait_allocation(
         .map_err(|_| Error::Timeout)?
 }
 
-#[tracing::instrument(level = "info", skip(client, timeout), fields(pid = client.token.pid))]
+#[tracing::instrument(level = "info", skip(client, timeout), fields(pid = client.inner.token.pid))]
 async fn wait_preemptive(
     client: &RpcCaller,
     timeout: Duration,
@@ -243,7 +259,7 @@ async fn wait_preemptive(
         .map_err(|_| Error::Timeout)?
 }
 
-#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
 async fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
     client
         .release_preemptive()
@@ -252,7 +268,7 @@ async fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
         .map_err(Error::Scheduler)
 }
 
-#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
 async fn release(client: &RpcCaller) -> Result<(), Error> {
     client
         .release()
@@ -366,7 +382,7 @@ pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
     let res = rt
         .block_on(async {
             check_scheduler_service_or_launch(server_address()).await?;
-            let client = Client::new(&server_address(), Default::default())?;
+            let client = Client::new(&server_address(), Default::default(), None)?;
             let client = client
                 .connect()
                 .await
@@ -393,7 +409,7 @@ async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error>
 #[allow(clippy::redundant_closure)]
 #[tracing::instrument(level = "debug")]
 async fn check_scheduler_service(address: String) -> Result<(), Error> {
-    let client = Client::new(&address, Default::default())?;
+    let client = Client::new(&address, Default::default(), None)?;
     let client = client
         .connect()
         .await
@@ -466,7 +482,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pid: u32 = rng.gen();
         let client_id: u64 = rng.gen();
-        let token = register::<Error>(pid, client_id).unwrap();
+        let token = register::<Error>(pid, client_id, None).unwrap();
 
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();
@@ -488,7 +504,7 @@ mod tests {
     fn release_test() {
         // This test only check communication and well formed param parsing
         let address = server_address();
-        let client = Client::new(&address, Default::default()).unwrap();
+        let client = Client::new(&address, Default::default(), None).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
         let mut rt = Runtime::new().unwrap();
@@ -512,7 +528,7 @@ mod tests {
     #[test]
     fn test_panic_handler() {
         let address = server_address();
-        let client = Client::new(&address, Default::default()).unwrap();
+        let client = Client::new(&address, Default::default(), None).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
         let _res_req = ResourceReq {

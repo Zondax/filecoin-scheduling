@@ -208,6 +208,7 @@ pub struct TaskState {
     pub aborted: AtomicBool,
     // a timestamp indicating when this task was created
     pub creation_time: u64,
+    pub context: Option<String>,
 }
 
 impl Clone for TaskState {
@@ -218,6 +219,7 @@ impl Clone for TaskState {
             last_seen: AtomicU64::new(self.last_seen.load(Ordering::Relaxed)),
             aborted: AtomicBool::new(self.aborted.load(Ordering::Relaxed)),
             creation_time: self.creation_time,
+            context: self.context.clone(),
         }
     }
 }

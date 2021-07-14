@@ -5,17 +5,19 @@ use jsonrpc_core_client::transports::http::connect;
 use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use scheduler::Error;
 
+#[derive(Debug)]
 pub struct Client {
-    base_url: String,
+    pub base_url: String,
     pub token: ClientToken,
+    /// Helper string that gives more context in logs messages
+    pub context: Option<String>,
 }
 
 struct RpcHandler(TypedClient);
 
 pub struct RpcCaller {
     handler: RpcHandler,
-    _base_url: String,
-    pub token: ClientToken,
+    pub inner: Client,
 }
 
 impl From<RpcChannel> for RpcHandler {
@@ -27,11 +29,16 @@ impl From<RpcChannel> for RpcHandler {
 impl Client {
     /// Creates a client
     /// `base_url` must be an address like: ip:port
-    pub fn new(base_url: &str, token: ClientToken) -> Result<Self, crate::Error> {
+    pub fn new(
+        base_url: &str,
+        token: ClientToken,
+        context: Option<String>,
+    ) -> Result<Self, crate::Error> {
         let address = format!("http://{}", base_url);
         Ok(Self {
             base_url: address,
             token,
+            context,
         })
     }
 
@@ -40,8 +47,7 @@ impl Client {
         let handler = RpcHandler(inner);
         Ok(RpcCaller {
             handler,
-            _base_url: self.base_url,
-            token: self.token,
+            inner: self,
         })
     }
 }
@@ -53,7 +59,7 @@ impl RpcCaller {
             .call_method(
                 "wait_preemptive",
                 "Result<PreemptionResponse, Error>",
-                (self.token,),
+                (self.inner.token,),
             )
             .await
     }
@@ -79,13 +85,14 @@ impl RpcCaller {
     pub async fn wait_allocation(
         &self,
         task: TaskRequirements,
+        job_context: Option<String>,
     ) -> RpcResult<Result<Option<ResourceAlloc>, Error>> {
         self.handler
             .0
             .call_method(
                 "wait_allocation",
                 "Result<Option<ResourceAlloc>, Error>>",
-                (self.token, task),
+                (self.inner.token, task, job_context),
             )
             .await
     }
@@ -93,14 +100,18 @@ impl RpcCaller {
     pub async fn release(&self) -> RpcResult<Result<(), Error>> {
         self.handler
             .0
-            .call_method("release", "Result<(), Error>>", (self.token,))
+            .call_method("release", "Result<(), Error>>", (self.inner.token,))
             .await
     }
 
     pub async fn release_preemptive(&self) -> RpcResult<Result<(), Error>> {
         self.handler
             .0
-            .call_method("release_preemptive", "Result<(), Error>>", (self.token,))
+            .call_method(
+                "release_preemptive",
+                "Result<(), Error>>",
+                (self.inner.token,),
+            )
             .await
     }
 }
