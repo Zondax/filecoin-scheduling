@@ -40,9 +40,9 @@ const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
 // deadline values for winning and window post tasks.
 // for simplicity it is defined here but later it can move to
 // other place where it makes more sense to be.
-// 20 secs giving a marging of 5 secs
+// 20 secs giving a margin of 5 secs
 const WINNING_POST_END_DEADLINE: u64 = 20;
-// 25 mins marging of 5 mins
+// 25min margin of 5min
 const WINDOW_POST_END_DEADLINE: u64 = 1500;
 
 // for winning post this timeout(seconds) is used to fallback to CPU
@@ -87,7 +87,7 @@ pub fn register<E: From<Error>>(
 /// * `task_func` - The task functions object that implements [TaskFunc] trait
 /// * `req` - The task requirements, what is needed for executing this task. It also gives some
 /// information about execution times, deadlines and resource requirements. If __None__ the task
-/// would be executed inmediately without the intervention of the scheduler service. Otherwise the
+/// would be executed immediately without the intervention of the scheduler service. Otherwise the
 /// task is scheduled on the resource that best fit the requirements. The task execution
 /// will be controlled by the scheduler service.
 /// * `timeout` - Indicates how much the client is able to wait for the task to be scheduled. It is
@@ -155,9 +155,9 @@ async fn execute_task<'a, T, E: From<Error>>(
 
     task.init(Some(alloc))?;
     loop {
-        let preemtive_state = wait_preemptive(client, timeout).await?;
+        let preemptive_state = wait_preemptive(client, timeout).await?;
 
-        match preemtive_state {
+        match preemptive_state {
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
                 if let Some(c) = client.inner.context.as_ref() {
@@ -176,6 +176,7 @@ async fn execute_task<'a, T, E: From<Error>>(
                     let _ = release(client).await;
                     error!("Client: {} panics", client.inner.token.pid);
                     // TODO: Look for ways to show the panic message. without propagating the panic
+
                     return Err(E::from(Error::TaskFunctionPanics));
                 }
                 let cont = result.unwrap()?;
@@ -224,7 +225,7 @@ async fn wait_allocation(
             // There are not available resources at this point so we have to try
             // again.
             warn!(
-                "No available resources for client: {} - waiting",
+                "Client: {} - Resources not available - waiting",
                 client.inner.token.pid
             );
         }
@@ -291,7 +292,7 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
-            // number of retries to check scheduler-srvice before returning an error
+            // number of retries to check scheduler-service before returning an error
             let mut retries = START_SERVER_RETRIES;
             tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
             while let Err(e) = check_scheduler_service(address.clone()).await {
@@ -432,6 +433,7 @@ mod tests {
     use super::*;
 
     struct TaskTest;
+
     struct TaskTestPanic;
 
     impl TaskFunc for TaskTest {

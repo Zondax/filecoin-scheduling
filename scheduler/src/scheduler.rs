@@ -18,8 +18,8 @@ use common::{
 use rust_gpu_tools::opencl::GPUSelector;
 use tracing::{debug, error, instrument, trace, warn};
 
-// match all the devices that were assigned to task with type tasktype
-// returning None if there are not.
+// match all the devices that were assigned to task with type taskType
+// returns None if there are not.
 pub fn match_task_devices(
     tasktype: Option<TaskType>,
     scheduler_settings: &[Task],
@@ -34,12 +34,12 @@ pub fn match_task_devices(
     None
 }
 
-//compute wheter a task is considered stalled
+// compute whether a task is considered stalled
 //
-// if no tasktype is provided then the task is valid if its `last_seen` is at least
+// if no taskType is provided then the task is valid if its `last_seen` is at least
 // settings.min_wait_time seconds before now
 //
-// if a tasktype is provided then the task exec time is fetched and used instead of
+// if a taskType is provided then the task exec time is fetched and used instead of
 // settings.min_wait_time
 pub fn task_is_stalled(
     last_seen: u64,
@@ -203,7 +203,7 @@ impl Scheduler {
         }
     }
 
-    // this client has to wait if another is curently using the resource it shares
+    // this client has to wait if another is currently using the resource it shares
     fn wait_for_busy_resources(&self, client: ClientToken) -> Result<bool, Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
@@ -443,8 +443,8 @@ impl Scheduler {
 
 impl Handler for Scheduler {
     fn process_request(&self, request: SchedulerRequest) {
-        // TODO: Analize if spawning a thread is worth considering that doing so the handler's
-        // executer doesnt get blocked by this intensive operation
+        // TODO: Analyze if spawning a thread is worth considering that doing so the handler's
+        // Executor doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
             RequestMethod::Schedule(client, req, context) => self.schedule(client, req, context),

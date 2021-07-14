@@ -97,20 +97,24 @@ fn test_schedule() {
         .init();
     let devices = common::list_devices();
     let mut hash_map = HashMap::new();
+
     devices.gpu_devices().iter().for_each(|dev| {
         hash_map.insert(dev.device_id(), AtomicBool::new(false));
+        tracing::info!("Device {}", dev.name());
     });
     let devices_state = Arc::new(DevicesState(hash_map));
 
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000", devices).ok();
 
     let mut joiner = vec![];
+
     for i in 0..4 {
         let state = devices_state.clone();
         joiner.push(std::thread::spawn(move || {
             let client =
                 register::<Error>(i, i as u64, Some(format!("{}:{}", file!(), line!()))).unwrap();
             let mut test_func = Test::new(i as _, state);
+
             let mut task_req = task_requirements();
             if i == 0 {
                 task_req.task_type = Some(TaskType::MerkleProof);
@@ -128,6 +132,7 @@ fn test_schedule() {
         }));
         std::thread::sleep(Duration::from_secs(2));
     }
+
     for j in joiner.into_iter() {
         let res = j.join().unwrap();
         assert!(res.is_ok());
