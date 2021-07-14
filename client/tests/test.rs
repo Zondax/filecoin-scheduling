@@ -1,8 +1,9 @@
-use rust_gpu_tools::opencl::GPUSelector;
 use std::collections::HashMap;
-use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
+
+use rust_gpu_tools::opencl::GPUSelector;
 
 use client::{
     register, schedule_one_of, spawn_scheduler_with_handler, Deadline, Error, ResourceAlloc,
@@ -10,7 +11,6 @@ use client::{
     TaskResult,
 };
 use common::TaskType;
-use std::time::Duration;
 
 const NUM_ITERATIONS: usize = 20;
 
@@ -24,6 +24,7 @@ struct DevicesState(HashMap<GPUSelector, AtomicBool>);
 unsafe impl Sync for DevicesState {}
 
 impl DevicesState {
+    //noinspection RsSelfConvention
     fn set_state(&self, id: &GPUSelector, state: bool) {
         if self.0.get(id).unwrap().swap(state, Ordering::SeqCst) == state {
             panic!("Error: Multiple tasks using the same resource at the same time");
@@ -56,6 +57,7 @@ impl TaskFunc for Test {
         for id in allocations.devices.iter() {
             self.devices_state.set_state(id, true)
         }
+
         let result = if self.index < NUM_ITERATIONS {
             self.index += 1;
             tracing::info!("Task {} Running!!! ", self.id);
@@ -66,6 +68,7 @@ impl TaskFunc for Test {
             tracing::info!("Task {} Done!!! ", self.id);
             TaskResult::Done
         };
+
         // mark the resource as free
         for id in allocations.devices.iter() {
             self.devices_state.set_state(id, false)

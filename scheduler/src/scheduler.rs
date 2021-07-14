@@ -1,30 +1,32 @@
-use chrono::Utc;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::config::{Settings, Task};
-use crate::handler::Handler;
-use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
-use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{ResourceState, Resources, TaskState};
-use crate::solvers::create_solver;
-use crate::Error;
+use chrono::Utc;
+use parking_lot::RwLock;
+use rust_gpu_tools::opencl::GPUSelector;
+use tracing::{debug, error, instrument, trace, warn};
+
 use common::{
     ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
     TaskType,
 };
-use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, instrument, trace, warn};
+
+use crate::config::{Settings, Task};
+use crate::Error;
+use crate::handler::Handler;
+use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
+use crate::requests::{SchedulerRequest, SchedulerResponse};
+use crate::solver::{Resources, ResourceState, TaskState};
+use crate::solvers::create_solver;
 
 // match all the devices that were assigned to task with type taskType
 // returns None if there are not.
 pub fn match_task_devices(
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &[Task],
 ) -> Option<Vec<GPUSelector>> {
-    let this_task = tasktype?;
+    let this_task = task_type?;
     for task in scheduler_settings {
         let devices = task.devices();
         if task.task_type() == this_task && !devices.is_empty() {
@@ -43,14 +45,14 @@ pub fn match_task_devices(
 // settings.min_wait_time
 pub fn task_is_stalled(
     last_seen: u64,
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &Settings,
 ) -> bool {
     let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    if tasktype.is_none() {
+    if task_type.is_none() {
         return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
     }
-    let this_task = tasktype.unwrap();
+    let this_task = task_type.unwrap();
     let time_of_task = scheduler_settings
         .tasks_settings
         .iter()
@@ -223,6 +225,7 @@ impl Scheduler {
         Ok(())
     }
 
+    //noinspection RsSelfConvention
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn set_resource_as_busy(&self, client: ClientToken) {
         let state = self.tasks_state.read();
