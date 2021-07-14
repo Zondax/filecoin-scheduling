@@ -60,12 +60,12 @@ impl TaskFunc for Test {
 
         let result = if self.index < NUM_ITERATIONS {
             self.index += 1;
-            tracing::info!("Task {} Running!!! ", self.id);
+            tracing::info!("Task {} >>> {} ", self.id, self.index);
             std::thread::sleep(Duration::from_millis(500));
-            tracing::info!("Task {} returning!!! ", self.id);
+            tracing::info!("Task {} <<<  ", self.id);
             TaskResult::Continue
         } else {
-            tracing::info!("Task {} Done!!! ", self.id);
+            tracing::info!("Task {} !!!  ", self.id);
             TaskResult::Done
         };
 
@@ -82,6 +82,7 @@ fn task_requirements() -> TaskRequirements {
     let start = chrono::Utc::now();
     let end = start + chrono::Duration::seconds(30);
     let deadline = Deadline::new(start, end);
+
     TaskReqBuilder::new()
         .resource_req(ResourceReq {
             resource: ResourceType::Gpu(ResourceMemory::All),
@@ -131,6 +132,8 @@ fn test_schedule() {
                 task_req.task_type = Some(TaskType::WinningPost);
                 task_req.deadline = None;
             }
+
+            tracing::info!("Task {} <<<<<<<< {:?}", i, task_req.req);
             schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(60))
         }));
         std::thread::sleep(Duration::from_secs(2));
