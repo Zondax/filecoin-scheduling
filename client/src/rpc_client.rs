@@ -1,5 +1,5 @@
-use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use jsonrpc_core_client::transports::http::connect;
+use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use rust_gpu_tools::opencl::GPUSelector;
 
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};

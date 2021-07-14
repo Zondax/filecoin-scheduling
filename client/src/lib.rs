@@ -6,14 +6,14 @@ use tokio::runtime::Runtime;
 use tracing::{debug, error, info, trace, warn};
 
 pub use common::{
-    ClientToken, Deadline, Devices, list_devices, PreemptionResponse, ResourceAlloc,
+    list_devices, ClientToken, Deadline, Devices, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult, TaskType,
 };
 pub use error::Error;
 pub use rpc_client::{Client, RpcCaller};
-pub use scheduler::{Error as SchedulerError, spawn_scheduler_with_handler};
 use scheduler::run_scheduler;
+pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError};
 
 pub mod error;
 mod global_mutex;
@@ -94,7 +94,7 @@ pub fn register<E: From<Error>>(
 #[tracing::instrument(level = "info", skip(timeout, task_func, req, client), fields(pid = client.token.pid))]
 pub fn schedule_one_of<T, E: From<Error>>(
     client: Client,
-    task_func: &mut dyn TaskFunc<Output=T, Error=E>,
+    task_func: &mut dyn TaskFunc<Output = T, Error = E>,
     mut req: TaskRequirements,
     timeout: Duration,
 ) -> Result<T, E> {
@@ -132,7 +132,7 @@ pub fn schedule_one_of<T, E: From<Error>>(
 }
 
 pub fn execute_without_scheduler<T, E>(
-    task_func: &mut dyn TaskFunc<Output=T, Error=E>,
+    task_func: &mut dyn TaskFunc<Output = T, Error = E>,
 ) -> Result<T, E> {
     task_func.init(None)?;
     let mut cont = TaskResult::Continue;
@@ -146,7 +146,7 @@ pub fn execute_without_scheduler<T, E>(
 async fn execute_task<'a, T, E: From<Error>>(
     client: &RpcCaller,
     timeout: Duration,
-    task: &mut dyn TaskFunc<Output=T, Error=E>,
+    task: &mut dyn TaskFunc<Output = T, Error = E>,
     alloc: &ResourceAlloc,
 ) -> Result<T, E> {
     use std::panic::{catch_unwind, AssertUnwindSafe};
