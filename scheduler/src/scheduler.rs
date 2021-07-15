@@ -1,30 +1,32 @@
-use chrono::Utc;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::config::{Settings, Task};
-use crate::handler::Handler;
-use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
-use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{ResourceState, Resources, TaskState};
-use crate::solvers::create_solver;
-use crate::Error;
+use chrono::Utc;
+use parking_lot::RwLock;
+use rust_gpu_tools::opencl::GPUSelector;
+use tracing::{debug, error, instrument, trace, warn};
+
 use common::{
     ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
     TaskType,
 };
-use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, instrument, trace, warn};
 
-// match all the devices that were assigned to task with type tasktype
-// returning None if there are not.
+use crate::config::{Settings, Task};
+use crate::Error;
+use crate::handler::Handler;
+use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
+use crate::requests::{SchedulerRequest, SchedulerResponse};
+use crate::solver::{Resources, ResourceState, TaskState};
+use crate::solvers::create_solver;
+
+// match all the devices that were assigned to task with type taskType
+// returns None if there are not.
 pub fn match_task_devices(
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &[Task],
 ) -> Option<Vec<GPUSelector>> {
-    let this_task = tasktype?;
+    let this_task = task_type?;
     for task in scheduler_settings {
         let devices = task.devices();
         if task.task_type() == this_task && !devices.is_empty() {
@@ -34,23 +36,23 @@ pub fn match_task_devices(
     None
 }
 
-//compute wheter a task is considered stalled
+// compute whether a task is considered stalled
 //
-// if no tasktype is provided then the task is valid if its `last_seen` is at least
+// if no taskType is provided then the task is valid if its `last_seen` is at least
 // settings.min_wait_time seconds before now
 //
-// if a tasktype is provided then the task exec time is fetched and used instead of
+// if a taskType is provided then the task exec time is fetched and used instead of
 // settings.min_wait_time
 pub fn task_is_stalled(
     last_seen: u64,
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &Settings,
 ) -> bool {
     let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    if tasktype.is_none() {
+    if task_type.is_none() {
         return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
     }
-    let this_task = tasktype.unwrap();
+    let this_task = task_type.unwrap();
     let time_of_task = scheduler_settings
         .tasks_settings
         .iter()
@@ -203,7 +205,7 @@ impl Scheduler {
         }
     }
 
-    // this client has to wait if another is curently using the resource it shares
+    // this client has to wait if another is currently using the resource it shares
     fn wait_for_busy_resources(&self, client: ClientToken) -> Result<bool, Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
@@ -223,6 +225,7 @@ impl Scheduler {
         Ok(())
     }
 
+    //noinspection RsSelfConvention
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn set_resource_as_busy(&self, client: ClientToken) {
         let state = self.tasks_state.read();
@@ -443,8 +446,8 @@ impl Scheduler {
 
 impl Handler for Scheduler {
     fn process_request(&self, request: SchedulerRequest) {
-        // TODO: Analize if spawning a thread is worth considering that doing so the handler's
-        // executer doesnt get blocked by this intensive operation
+        // TODO: Analyze if spawning a thread is worth considering that doing so the handler's
+        // Executor doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
             RequestMethod::Schedule(client, req, context) => self.schedule(client, req, context),

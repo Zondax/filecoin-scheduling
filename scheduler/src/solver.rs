@@ -1,12 +1,14 @@
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use rust_gpu_tools::opencl::GPUSelector;
 use serde::{de::Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+
+use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
 
 use crate::config::Settings;
 use crate::Error;
-use common::{Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
-use rust_gpu_tools::opencl::GPUSelector;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
 /// memory and usage.
@@ -86,7 +88,7 @@ impl Resources {
     pub fn get_devices_with_requirements<'r>(
         &'r self,
         requirements: &'r ResourceReq,
-    ) -> impl Iterator<Item = GPUSelector> + 'r {
+    ) -> impl Iterator<Item=GPUSelector> + 'r {
         self.0
             .iter()
             .filter_map(move |(sel, dev)| {
@@ -148,15 +150,15 @@ impl Resources {
 }
 
 fn serialize_atomic_u64<S>(v: &AtomicU64, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
+    where
+        S: Serializer,
 {
     s.serialize_u64(v.load(Ordering::Relaxed))
 }
 
 fn deserialize_atomic_u64<'de, D>(de: D) -> Result<AtomicU64, D::Error>
-where
-    D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
 {
     let s = String::deserialize(de)?;
 
@@ -169,15 +171,15 @@ where
 }
 
 fn serialize_atomic_bool<S>(v: &AtomicBool, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
+    where
+        S: Serializer,
 {
     s.serialize_bool(v.load(Ordering::Relaxed))
 }
 
 fn deserialize_atomic_bool<'de, D>(de: D) -> Result<AtomicBool, D::Error>
-where
-    D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
 {
     let s = String::deserialize(de)?;
 
@@ -196,14 +198,14 @@ pub struct TaskState {
     pub allocation: ResourceAlloc,
 
     #[serde(
-        deserialize_with = "deserialize_atomic_u64",
-        serialize_with = "serialize_atomic_u64"
+    deserialize_with = "deserialize_atomic_u64",
+    serialize_with = "serialize_atomic_u64"
     )]
     pub last_seen: AtomicU64,
 
     #[serde(
-        deserialize_with = "deserialize_atomic_bool",
-        serialize_with = "serialize_atomic_bool"
+    deserialize_with = "deserialize_atomic_bool",
+    serialize_with = "serialize_atomic_bool"
     )]
     pub aborted: AtomicBool,
     // a timestamp indicating when this task was created

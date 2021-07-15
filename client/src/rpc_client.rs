@@ -1,8 +1,8 @@
+use jsonrpc_core_client::transports::http::connect;
+use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use rust_gpu_tools::opencl::GPUSelector;
 
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
-use jsonrpc_core_client::transports::http::connect;
-use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use scheduler::Error;
 
 #[derive(Debug)]
@@ -27,6 +27,7 @@ impl From<RpcChannel> for RpcHandler {
 }
 
 impl Client {
+    //noinspection HttpUrlsUsage
     /// Creates a client
     /// `base_url` must be an address like: ip:port
     pub fn new(

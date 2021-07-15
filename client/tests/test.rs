@@ -1,8 +1,9 @@
-use rust_gpu_tools::opencl::GPUSelector;
 use std::collections::HashMap;
-use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
+
+use rust_gpu_tools::opencl::GPUSelector;
 
 use client::{
     register, schedule_one_of, spawn_scheduler_with_handler, Deadline, Error, ResourceAlloc,
@@ -10,7 +11,6 @@ use client::{
     TaskResult,
 };
 use common::TaskType;
-use std::time::Duration;
 
 const NUM_ITERATIONS: usize = 20;
 
@@ -24,6 +24,7 @@ struct DevicesState(HashMap<GPUSelector, AtomicBool>);
 unsafe impl Sync for DevicesState {}
 
 impl DevicesState {
+    //noinspection RsSelfConvention
     fn set_state(&self, id: &GPUSelector, state: bool) {
         if self.0.get(id).unwrap().swap(state, Ordering::SeqCst) == state {
             panic!("Error: Multiple tasks using the same resource at the same time");
@@ -56,16 +57,18 @@ impl TaskFunc for Test {
         for id in allocations.devices.iter() {
             self.devices_state.set_state(id, true)
         }
+
         let result = if self.index < NUM_ITERATIONS {
             self.index += 1;
-            tracing::info!("Task {} Running!!! ", self.id);
+            tracing::info!("Task {} >>> {} ", self.id, self.index);
             std::thread::sleep(Duration::from_millis(500));
-            tracing::info!("Task {} returning!!! ", self.id);
+            tracing::info!("Task {} <<<  ", self.id);
             TaskResult::Continue
         } else {
-            tracing::info!("Task {} Done!!! ", self.id);
+            tracing::info!("Task {} !!!  ", self.id);
             TaskResult::Done
         };
+
         // mark the resource as free
         for id in allocations.devices.iter() {
             self.devices_state.set_state(id, false)
@@ -79,6 +82,7 @@ fn task_requirements() -> TaskRequirements {
     let start = chrono::Utc::now();
     let end = start + chrono::Duration::seconds(30);
     let deadline = Deadline::new(start, end);
+
     TaskReqBuilder::new()
         .resource_req(ResourceReq {
             resource: ResourceType::Gpu(ResourceMemory::All),
@@ -97,20 +101,24 @@ fn test_schedule() {
         .init();
     let devices = common::list_devices();
     let mut hash_map = HashMap::new();
+
     devices.gpu_devices().iter().for_each(|dev| {
         hash_map.insert(dev.device_id(), AtomicBool::new(false));
+        tracing::info!("Device {}", dev.name());
     });
     let devices_state = Arc::new(DevicesState(hash_map));
 
     let handler = spawn_scheduler_with_handler("127.0.0.1:5000", devices).ok();
 
     let mut joiner = vec![];
+
     for i in 0..4 {
         let state = devices_state.clone();
         joiner.push(std::thread::spawn(move || {
             let client =
                 register::<Error>(i, i as u64, Some(format!("{}:{}", file!(), line!()))).unwrap();
             let mut test_func = Test::new(i as _, state);
+
             let mut task_req = task_requirements();
             if i == 0 {
                 task_req.task_type = Some(TaskType::MerkleProof);
@@ -124,10 +132,13 @@ fn test_schedule() {
                 task_req.task_type = Some(TaskType::WinningPost);
                 task_req.deadline = None;
             }
+
+            tracing::info!("Task {} <<<<<<<< {:?}", i, task_req.req);
             schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(60))
         }));
         std::thread::sleep(Duration::from_secs(2));
     }
+
     for j in joiner.into_iter() {
         let res = j.join().unwrap();
         assert!(res.is_ok());

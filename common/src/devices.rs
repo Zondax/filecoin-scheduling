@@ -1,5 +1,9 @@
-use rust_gpu_tools::opencl::{Device as ClDevice, DeviceUuid, GPUSelector};
+#[cfg(not(dummy_devices))]
 use std::hash::{Hash, Hasher};
+
+#[cfg(not(dummy_devices))]
+use rust_gpu_tools::opencl::{Device as ClDevice, DeviceUuid};
+use rust_gpu_tools::opencl::GPUSelector;
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone)]
@@ -142,7 +146,6 @@ pub fn list_devices() -> Devices {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn check_devices() {
         use crate::{list_devices, Devices};

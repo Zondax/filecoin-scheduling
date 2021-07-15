@@ -1,5 +1,6 @@
-use crate::{ClientToken, TaskRequirements};
 use serde::{Deserialize, Serialize};
+
+use crate::{ClientToken, TaskRequirements};
 
 #[derive(Serialize, Deserialize)]
 pub enum RequestMethod {

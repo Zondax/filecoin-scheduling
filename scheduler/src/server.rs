@@ -1,17 +1,17 @@
 use std::result::Result;
 
-use jsonrpc_derive::rpc;
-use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
-
 use futures::channel::oneshot;
 use futures::FutureExt;
+use jsonrpc_derive::rpc;
+use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
+use rust_gpu_tools::opencl::GPUSelector;
 
+use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
+
+use crate::Error;
 use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::Error;
-use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
-use rust_gpu_tools::opencl::GPUSelector;
 
 type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
@@ -57,8 +57,8 @@ pub trait RpcMethods {
 pub struct Server<H: Handler>(H);
 
 impl<H> Server<H>
-where
-    H: Handler,
+    where
+        H: Handler,
 {
     pub fn new(handler: H) -> Self {
         Self(handler)
