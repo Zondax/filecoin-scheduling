@@ -115,8 +115,7 @@ fn test_schedule() {
     for i in 0..4 {
         let state = devices_state.clone();
         joiner.push(std::thread::spawn(move || {
-            let client =
-                register::<Error>(i, i as u64, Some(format!("{}:{}", file!(), line!()))).unwrap();
+            let client = register::<Error>(None, Some(format!("{}:{}", file!(), line!()))).unwrap();
             let mut test_func = Test::new(i as _, state);
 
             let mut task_req = task_requirements();

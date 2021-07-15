@@ -62,13 +62,16 @@ pub fn abort(_client: ClientToken) -> Result<(), Error> {
     Ok(())
 }
 
-#[tracing::instrument(level = "info", skip(client_id, context))]
+#[tracing::instrument(level = "info", skip(context))]
 pub fn register<E: From<Error>>(
-    pid: u32,
-    client_id: u64,
+    client_name: Option<String>,
     context: Option<String>,
 ) -> Result<Client, E> {
-    let token = ClientToken { pid, client_id };
+    let pid = palaver::thread::gettid();
+    let token = ClientToken {
+        pid,
+        name: client_name.unwrap_or_else(|| "".to_string()),
+    };
     // TODO: Here we look for the config file and get the address from there as other params as
     // well
     Client::new(&server_address(), token, context).map_err(E::from)
@@ -160,19 +163,32 @@ async fn execute_task<'a, T, E: From<Error>>(
             PreemptionResponse::Execute => {
                 if let Some(c) = client.inner.context.as_ref() {
                     trace!(
-                        "client: {} from: {} - Calling task function",
+                        "client: {}:{} from: {} - Calling task function",
                         client.inner.token.pid,
+                        client.inner.token.name,
                         c
                     );
                 } else {
-                    trace!("client: {} Calling task function", client.inner.token.pid);
+                    trace!(
+                        "client: {}:{} Calling task function",
+                        client.inner.token.pid,
+                        client.inner.token.name
+                    );
                 }
                 // try to handle possible panics
                 let result = catch_unwind(AssertUnwindSafe(|| task.task(Some(alloc))));
                 if let Err(_error) = result {
                     let _ = release_preemptive(client).await;
                     let _ = release(client).await;
-                    error!("Client: {} panics", client.inner.token.pid);
+                    let c = if let Some(s) = client.inner.context.as_ref() {
+                        s.to_owned()
+                    } else {
+                        "None".to_string()
+                    };
+                    error!(
+                        "Client: {}:{} in {} panics",
+                        client.inner.token.pid, client.inner.token.name, c,
+                    );
                     // TODO: Look for ways to show the panic message. without propagating the panic
 
                     return Err(E::from(Error::TaskFunctionPanics));
@@ -186,8 +202,9 @@ async fn execute_task<'a, T, E: From<Error>>(
             }
             PreemptionResponse::Abort => {
                 warn!(
-                    "Client: {} from: {} - aborted",
+                    "Client: {}:{} from: {} - aborted",
                     client.inner.token.pid,
+                    client.inner.token.name,
                     client.inner.context.as_ref().unwrap_or(&"None".to_string())
                 );
                 return Err(E::from(Error::Aborted));
@@ -212,8 +229,9 @@ async fn wait_allocation(
                 .map_err(|e| Error::RpcError(e.to_string()))??;
             if let Some(alloc) = alloc_state {
                 debug!(
-                    "Client: {} from: {} - got allocation {:?}",
+                    "Client: {}:{} from: {} - got allocation {:?}",
                     client.inner.token.pid,
+                    client.inner.token.name,
                     client.inner.context.as_ref().unwrap_or(&"".to_string()),
                     alloc.devices,
                 );
@@ -482,7 +500,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pid: u32 = rng.gen();
         let client_id: u64 = rng.gen();
-        let token = register::<Error>(pid, client_id, None).unwrap();
+        let token = register::<Error>(None, None).unwrap();
 
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();

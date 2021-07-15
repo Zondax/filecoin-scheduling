@@ -60,7 +60,7 @@ impl RpcCaller {
             .call_method(
                 "wait_preemptive",
                 "Result<PreemptionResponse, Error>",
-                (self.inner.token,),
+                (self.inner.token.clone(),),
             )
             .await
     }
@@ -93,7 +93,7 @@ impl RpcCaller {
             .call_method(
                 "wait_allocation",
                 "Result<Option<ResourceAlloc>, Error>>",
-                (self.inner.token, task, job_context),
+                (self.inner.token.clone(), task, job_context),
             )
             .await
     }
@@ -101,7 +101,7 @@ impl RpcCaller {
     pub async fn release(&self) -> RpcResult<Result<(), Error>> {
         self.handler
             .0
-            .call_method("release", "Result<(), Error>>", (self.inner.token,))
+            .call_method("release", "Result<(), Error>>", (self.inner.token.clone(),))
             .await
     }
 
@@ -111,7 +111,7 @@ impl RpcCaller {
             .call_method(
                 "release_preemptive",
                 "Result<(), Error>>",
-                (self.inner.token,),
+                (self.inner.token.clone(),),
             )
             .await
     }
