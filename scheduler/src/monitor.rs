@@ -1,18 +1,18 @@
 use rust_gpu_tools::opencl::GPUSelector;
 use serde::{Deserialize, Serialize};
 
-use common::{Deadline, ResourceAlloc, TaskType};
+use common::{Deadline, ResourceAlloc, TaskId, TaskType};
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MonitorInfo {
     pub task_states: Vec<Task>,
     pub resources: Vec<GpuResource>,
-    pub job_plan: Vec<u32>,
+    pub job_plan: Vec<TaskId>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Task {
-    pub id: u32,
+    pub id: TaskId,
     pub alloc: ResourceAlloc,
     pub task_type: Option<TaskType>,
     pub deadline: Option<Deadline>,

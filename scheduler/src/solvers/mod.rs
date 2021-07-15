@@ -12,7 +12,7 @@ pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
 mod tests {
     use super::*;
     use crate::solver::{ResourceState, Resources};
-    use common::{ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
+    use common::{ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements};
     use std::collections::HashMap;
 
     #[test]
@@ -55,7 +55,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as u32) } else { None };
+                let current_task = if i == 0 { Some(i as TaskId) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
@@ -114,7 +114,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as u32) } else { None };
+                let current_task = if i == 0 { Some(i as TaskId) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
@@ -146,7 +146,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as u32) } else { None };
+                let current_task = if i == 0 { Some(i as TaskId) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {

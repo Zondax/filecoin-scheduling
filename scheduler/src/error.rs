@@ -1,3 +1,5 @@
+use common::TaskId;
+
 #[derive(thiserror::Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Error {
     #[error("Invalid address format")]
@@ -19,5 +21,5 @@ pub enum Error {
     #[error("Solver error: `{0}`")]
     SolverOther(String),
     #[error("Job:`{0}` is not stalling")]
-    JobNotStalling(u32),
+    JobNotStalling(TaskId),
 }

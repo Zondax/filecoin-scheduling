@@ -4,7 +4,7 @@ use crate::config::Settings;
 use crate::scheduler::task_is_stalled;
 use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use crate::Error;
-use common::{ResourceAlloc, TaskRequirements};
+use common::{ResourceAlloc, TaskId, TaskRequirements};
 
 use priority_queue::PriorityQueue;
 use rust_gpu_tools::opencl::GPUSelector;
@@ -92,9 +92,9 @@ impl Solver for GreedySolver {
 
     fn solve_job_schedule(
         &mut self,
-        input: &HashMap<u32, TaskState>,
+        input: &HashMap<TaskId, TaskState>,
         scheduler_settings: &Settings,
-    ) -> Result<VecDeque<u32>, Error> {
+    ) -> Result<VecDeque<TaskId>, Error> {
         // Criterion A; If the job is marked as stalled, it will be moved at the end of the queue.
         //
         // Criterion B: Use task deadline as a priority indicator. The sooner the deadline the higher
@@ -129,7 +129,7 @@ impl Solver for GreedySolver {
         Ok(priority_queue
             .into_sorted_iter()
             .map(|(i, _)| *i)
-            .collect::<VecDeque<u32>>())
+            .collect::<VecDeque<TaskId>>())
     }
 }
 

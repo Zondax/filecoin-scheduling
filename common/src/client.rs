@@ -1,5 +1,7 @@
-#[derive(Copy, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub type TaskId = u64;
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ClientToken {
-    pub pid: u32,
-    pub client_id: u64,
+    pub pid: TaskId,
+    pub name: String,
 }

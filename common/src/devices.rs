@@ -1,9 +1,9 @@
 #[cfg(not(dummy_devices))]
 use std::hash::{Hash, Hasher};
 
+use rust_gpu_tools::opencl::GPUSelector;
 #[cfg(not(dummy_devices))]
 use rust_gpu_tools::opencl::{Device as ClDevice, DeviceUuid};
-use rust_gpu_tools::opencl::GPUSelector;
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone)]

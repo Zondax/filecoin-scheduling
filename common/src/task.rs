@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use chrono::{DateTime, offset::Utc};
+use chrono::{offset::Utc, DateTime};
 use serde::{Deserialize, Serialize};
 
 use super::{ResourceAlloc, ResourceReq};
@@ -34,8 +34,8 @@ pub enum TaskType {
 //this is more appropriate here, unless this is VERY specific
 impl TaskType {
     pub fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-        where
-            D: serde::de::Deserializer<'de>,
+    where
+        D: serde::de::Deserializer<'de>,
     {
         let mut s = String::deserialize(de)?;
         s.make_ascii_lowercase();

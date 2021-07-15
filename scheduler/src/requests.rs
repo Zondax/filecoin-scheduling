@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use common::{PreemptionResponse, RequestMethod, ResourceAlloc};
 
-use crate::Error;
 use crate::monitor::MonitorInfo;
+use crate::Error;
 
 #[derive(Serialize, Deserialize)]
 pub enum SchedulerResponse {
