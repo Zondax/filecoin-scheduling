@@ -224,6 +224,7 @@ dependencies = [
  "jsonrpc-core-client",
  "jsonrpc-http-server",
  "nix 0.22.0",
+ "once_cell",
  "palaver",
  "rand 0.8.4",
  "reqwest",

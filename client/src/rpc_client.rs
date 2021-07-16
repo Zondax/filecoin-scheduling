@@ -1,9 +1,15 @@
 use jsonrpc_core_client::transports::http::connect;
-use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
+use jsonrpc_core_client::{RpcChannel, RpcError, RpcResult, TypedClient};
 use rust_gpu_tools::opencl::GPUSelector;
+use tokio::runtime::Runtime;
 
+use super::Error as ClientError;
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
+
+use once_cell::sync::OnceCell;
+use std::sync::Mutex;
+static CELL: OnceCell<Mutex<Runtime>> = OnceCell::new();
 
 #[derive(Debug)]
 pub struct Client {
@@ -43,8 +49,14 @@ impl Client {
         })
     }
 
-    pub async fn connect(self) -> RpcResult<RpcCaller> {
-        let inner = connect(self.base_url.as_str()).await?;
+    pub fn connect(self) -> Result<RpcCaller, ClientError> {
+        let runtime = Mutex::new(Runtime::new().map_err(|e| ClientError::Other(e.to_string()))?);
+
+        let _ = CELL.set(runtime);
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        let inner = runtime
+            .block_on(async { connect(self.base_url.as_str()).await })
+            .map_err(|e| ClientError::RpcError(e.to_string()))?;
         let handler = RpcHandler(inner);
         Ok(RpcCaller {
             handler,
@@ -52,67 +64,84 @@ impl Client {
         })
     }
 }
-
 impl RpcCaller {
-    pub async fn wait_preemptive(&self) -> RpcResult<Result<PreemptionResponse, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "wait_preemptive",
-                "Result<PreemptionResponse, Error>",
-                (self.inner.token.clone(),),
-            )
-            .await
+    pub fn wait_preemptive(&self) -> RpcResult<Result<PreemptionResponse, Error>> {
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "wait_preemptive",
+                    "Result<PreemptionResponse, Error>",
+                    (self.inner.token.clone(),),
+                )
+                .await
+        })
     }
 
-    pub async fn check_server(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method("check_server", "Result<(), Error>", ())
-            .await
+    pub fn check_server(&self) -> RpcResult<Result<(), Error>> {
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method("check_server", "Result<(), Error>", ())
+                .await
+        })
     }
 
-    pub async fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "list_allocations",
-                "Result<Vec<(GPUSelector, u64)>, Error>",
-                (),
-            )
-            .await
+    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "list_allocations",
+                    "Result<Vec<(GPUSelector, u64)>, Error>",
+                    (),
+                )
+                .await
+        })
     }
 
-    pub async fn wait_allocation(
+    pub fn wait_allocation(
         &self,
         task: TaskRequirements,
         job_context: Option<String>,
     ) -> RpcResult<Result<Option<ResourceAlloc>, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "wait_allocation",
-                "Result<Option<ResourceAlloc>, Error>>",
-                (self.inner.token.clone(), task, job_context),
-            )
-            .await
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "wait_allocation",
+                    "Result<Option<ResourceAlloc>, Error>>",
+                    (self.inner.token.clone(), task, job_context),
+                )
+                .await
+        })
     }
 
-    pub async fn release(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method("release", "Result<(), Error>>", (self.inner.token.clone(),))
-            .await
+    pub fn release(&self) -> RpcResult<Result<(), Error>> {
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method("release", "Result<(), Error>>", (self.inner.token.clone(),))
+                .await
+        })
     }
 
-    pub async fn release_preemptive(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method(
-                "release_preemptive",
-                "Result<(), Error>>",
-                (self.inner.token.clone(),),
-            )
-            .await
+    pub fn release_preemptive(&self) -> RpcResult<Result<(), Error>> {
+        let mut runtime = CELL.get().unwrap().lock().unwrap();
+        runtime.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "release_preemptive",
+                    "Result<(), Error>>",
+                    (self.inner.token.clone(),),
+                )
+                .await
+        })
     }
 }
