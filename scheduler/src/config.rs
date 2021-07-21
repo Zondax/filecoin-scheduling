@@ -49,8 +49,8 @@ where
             (Ok(uuid), Err(_)) => selectors.push(GPUSelector::Uuid(uuid)),
             (Err(_), Ok(pci)) => selectors.push(GPUSelector::PciId(pci)),
             _ => {
-                error!("unrecognize device id format: {}", id);
-                return Err(serde::de::Error::custom("Unrecognize device id format"));
+                error!("unrecognized device id format: {}", id);
+                return Err(serde::de::Error::custom("Unrecognized device id format"));
             }
         }
     }

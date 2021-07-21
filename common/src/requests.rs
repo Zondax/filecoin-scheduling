@@ -1,15 +1,17 @@
-use crate::{ClientToken, TaskRequirements};
+use crate::client::TaskId;
 use serde::{Deserialize, Serialize};
+
+use crate::{ClientToken, TaskRequirements};
 
 #[derive(Serialize, Deserialize)]
 pub enum RequestMethod {
-    Schedule(ClientToken, TaskRequirements),
+    Schedule(ClientToken, TaskRequirements, String),
     ListAllocations,
     WaitPreemptive(ClientToken),
     Release(ClientToken),
     ReleasePreemptive(ClientToken),
-    Abort(Vec<u32>),
-    RemoveStalled(Vec<u32>),
+    Abort(Vec<TaskId>),
+    RemoveStalled(Vec<TaskId>),
     Monitoring,
 }
 

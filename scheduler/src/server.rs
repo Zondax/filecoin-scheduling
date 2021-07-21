@@ -1,17 +1,18 @@
 use std::result::Result;
 
-use jsonrpc_derive::rpc;
-use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
-
 use futures::channel::oneshot;
 use futures::FutureExt;
+use jsonrpc_derive::rpc;
+use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
+use rust_gpu_tools::opencl::GPUSelector;
 
 use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::Error;
-use common::{ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements};
-use rust_gpu_tools::opencl::GPUSelector;
+use common::{
+    ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskId, TaskRequirements,
+};
 
 type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
@@ -23,6 +24,7 @@ pub trait RpcMethods {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
+        job_context: String,
     ) -> AsyncRpcResult<Option<ResourceAlloc>>;
 
     #[rpc(name = "wait_preemptive")]
@@ -44,10 +46,10 @@ pub trait RpcMethods {
     fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "abort")]
-    fn abort(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn abort(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "remove_stalled")]
-    fn remove_stalled(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn remove_stalled(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>>;
 
     #[rpc(name = "monitoring")]
     fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
@@ -69,8 +71,9 @@ impl<H: Handler> RpcMethods for Server<H> {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
+        job_context: String,
     ) -> AsyncRpcResult<Option<ResourceAlloc>> {
-        let method = RequestMethod::Schedule(client, requirements);
+        let method = RequestMethod::Schedule(client, requirements, job_context);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
         self.0.process_request(request);
@@ -147,7 +150,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn abort(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn abort(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -162,7 +165,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn remove_stalled(&self, client: Vec<u32>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn remove_stalled(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>> {
         let method = RequestMethod::RemoveStalled(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };

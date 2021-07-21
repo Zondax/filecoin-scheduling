@@ -23,7 +23,7 @@ use jsonrpc_http_server::jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
 
-// check if defining this as an ev variable is more convinient
+// check if defining this as an ev variable is more convenient
 const SETTINGS_PATH: &str = "/tmp/scheduler.toml";
 
 /// Starts a json-rpc server listening to *addr*

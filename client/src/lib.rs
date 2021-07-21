@@ -1,25 +1,22 @@
-use rust_gpu_tools::opencl::GPUSelector;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, error, info, trace, warn};
 
-pub mod error;
-mod global_mutex;
-mod rpc_client;
+use rust_gpu_tools::opencl::GPUSelector;
+use tracing::{debug, error, info, trace, warn};
 
 pub use common::{
     list_devices, ClientToken, Deadline, Devices, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult, TaskType,
 };
-
+pub use error::Error;
 pub use rpc_client::{Client, RpcCaller};
 use scheduler::run_scheduler;
 pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError};
 
-use tokio::runtime::Runtime;
-
-pub use error::Error;
+pub mod error;
+mod global_mutex;
+mod rpc_client;
 
 const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 // delay in milliseconds between calls to wait_allocation/preemptive
@@ -40,9 +37,9 @@ const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
 // deadline values for winning and window post tasks.
 // for simplicity it is defined here but later it can move to
 // other place where it makes more sense to be.
-// 20 secs giving a marging of 5 secs
+// 20 secs giving a margin of 5 secs
 const WINNING_POST_END_DEADLINE: u64 = 20;
-// 25 mins marging of 5 mins
+// 25min margin of 5min
 const WINDOW_POST_END_DEADLINE: u64 = 1500;
 
 // for winning post this timeout(seconds) is used to fallback to CPU
@@ -61,15 +58,27 @@ fn server_address() -> String {
 
 #[tracing::instrument(level = "info")]
 pub fn abort(_client: ClientToken) -> Result<(), Error> {
-    Ok(())
+    unimplemented!();
 }
 
-#[tracing::instrument(level = "info", skip(client_id))]
-pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
-    let token = ClientToken { pid, client_id };
+#[tracing::instrument(level = "info", skip(context))]
+pub fn register<E: From<Error>>(
+    client_name: Option<String>,
+    context: Option<String>,
+) -> Result<Client, E> {
+    let pid = palaver::thread::gettid();
+    let token = ClientToken {
+        pid,
+        name: client_name.unwrap_or_else(|| "".to_string()),
+    };
     // TODO: Here we look for the config file and get the address from there as other params as
     // well
-    Client::new(&server_address(), token).map_err(E::from)
+    Client::new(
+        &server_address(),
+        token,
+        context.unwrap_or_else(Default::default),
+    )
+    .map_err(E::from)
 }
 
 /// Schedules a task
@@ -83,7 +92,7 @@ pub fn register<E: From<Error>>(pid: u32, client_id: u64) -> Result<Client, E> {
 /// * `task_func` - The task functions object that implements [TaskFunc] trait
 /// * `req` - The task requirements, what is needed for executing this task. It also gives some
 /// information about execution times, deadlines and resource requirements. If __None__ the task
-/// would be executed inmediately without the intervention of the scheduler service. Otherwise the
+/// would be executed immediately without the intervention of the scheduler service. Otherwise the
 /// task is scheduled on the resource that best fit the requirements. The task execution
 /// will be controlled by the scheduler service.
 /// * `timeout` - Indicates how much the client is able to wait for the task to be scheduled. It is
@@ -114,19 +123,14 @@ pub fn schedule_one_of<T, E: From<Error>>(
         _ => timeout,
     };
 
-    let mut rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
-
-    rt.block_on(async {
-        check_scheduler_service_or_launch(address).await?;
-        let caller = client
-            .connect()
-            .await
-            .map_err(|e| E::from(Error::RpcError(e.to_string())))?;
-        let allocation = wait_allocation(&caller, req, timeout).await?;
-        let result = execute_task(&caller, timeout, task_func, &allocation).await;
-        let _ = release(&caller).await;
-        result
-    })
+    check_scheduler_service_or_launch(address)?;
+    let caller = client
+        .connect()
+        .map_err(|e| E::from(Error::RpcError(e.to_string())))?;
+    let allocation = wait_allocation(&caller, req, timeout)?;
+    let result = execute_task(&caller, timeout, task_func, &allocation);
+    let _ = release(&caller);
+    result
 }
 
 pub fn execute_without_scheduler<T, E>(
@@ -141,42 +145,51 @@ pub fn execute_without_scheduler<T, E>(
 }
 
 #[tracing::instrument(level = "info", skip(client, timeout, task, alloc))]
-async fn execute_task<'a, T, E: From<Error>>(
+fn execute_task<'a, T, E: From<Error>>(
     client: &RpcCaller,
     timeout: Duration,
     task: &mut dyn TaskFunc<Output = T, Error = E>,
     alloc: &ResourceAlloc,
 ) -> Result<T, E> {
-    use std::panic::{catch_unwind, /*resume_unwind,*/ AssertUnwindSafe};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     task.init(Some(alloc))?;
     loop {
-        let preemtive_state = wait_preemptive(client, timeout).await?;
+        let preemptive_state = wait_preemptive(client, timeout)?;
 
-        match preemtive_state {
+        match preemptive_state {
             PreemptionResponse::Wait => {}
             PreemptionResponse::Execute => {
-                trace!("client {} Calling task function", client.token.pid);
+                trace!(
+                    "client: {}:{} from: {} - Calling task function",
+                    client.inner.token.pid,
+                    client.inner.token.name,
+                    client.inner.context,
+                );
                 // try to handle possible panics
                 let result = catch_unwind(AssertUnwindSafe(|| task.task(Some(alloc))));
                 if let Err(_error) = result {
-                    let _ = release_preemptive(client).await;
-                    let _ = release(client).await;
-                    error!("Client {} task function panics", client.token.pid);
-                    // TODO: Invastigate if  omitting the call to resume_unwind is UD
-                    //resume_unwind(_error);
+                    let _ = release_preemptive(client);
+                    let _ = release(client);
+                    error!(
+                        "Client: {}:{} in {} panics",
+                        client.inner.token.pid, client.inner.token.name, client.inner.context,
+                    );
                     // TODO: Look for ways to show the panic message. without propagating the panic
                     return Err(E::from(Error::TaskFunctionPanics));
                 }
                 let cont = result.unwrap()?;
-                trace!("Client {} task iteration completed", client.token.pid);
-                release_preemptive(client).await?;
+                trace!("Client {} task iteration completed", client.inner.token.pid);
+                release_preemptive(client)?;
                 if cont == TaskResult::Done {
                     break;
                 }
             }
             PreemptionResponse::Abort => {
-                warn!("Client {} aborted", client.token.pid);
+                warn!(
+                    "Client: {}:{} from: {} - aborted",
+                    client.inner.token.pid, client.inner.token.name, client.inner.context
+                );
                 return Err(E::from(Error::Aborted));
             }
         }
@@ -185,85 +198,80 @@ async fn execute_task<'a, T, E: From<Error>>(
     task.end(Some(alloc))
 }
 
-#[tracing::instrument(level = "info", skip(client, requirements, timeout), fields(pid = client.token.pid))]
-async fn wait_allocation(
+#[tracing::instrument(level = "info", skip(client, requirements, timeout), fields(pid = client.inner.token.pid))]
+fn wait_allocation(
     client: &RpcCaller,
     requirements: TaskRequirements,
     timeout: std::time::Duration,
 ) -> Result<ResourceAlloc, Error> {
-    let call_res = async {
-        loop {
-            let alloc_state = client
-                .wait_allocation(requirements.clone())
-                .await
-                .map_err(|e| Error::RpcError(e.to_string()))??;
-            if let Some(alloc) = alloc_state {
-                debug!(
-                    "Client: {} - got allocation {:?}",
-                    client.token.pid, alloc.devices
-                );
-                return Ok(alloc);
-            }
-            tokio::time::delay_for(Duration::from_millis(WAIT_ALLOCATION_DELAY)).await;
-            // There are not available resources at this point so we have to try
-            // again.
-            warn!(
-                "No available resources for client: {} - waiting",
-                client.token.pid
+    use std::time::Instant;
+    let start = Instant::now();
+    loop {
+        let alloc_state = client
+            .wait_allocation(requirements.clone(), client.inner.context.clone())
+            .map_err(|e| Error::RpcError(e.to_string()))??;
+        if let Some(alloc) = alloc_state {
+            debug!(
+                "Client: {}:{} from: {} - got allocation {:?}",
+                client.inner.token.pid,
+                client.inner.token.name,
+                client.inner.context,
+                alloc.devices,
             );
+            return Ok(alloc);
         }
-    };
-
-    tokio::time::timeout(timeout, call_res)
-        .await
-        .map_err(|_| Error::Timeout)?
+        if start.elapsed() > timeout {
+            return Err(Error::Timeout);
+        }
+        std::thread::sleep(Duration::from_millis(WAIT_ALLOCATION_DELAY));
+        // There are not available resources at this point so we have to try
+        // again.
+        warn!(
+            "Client: {} - Resources not available - waiting",
+            client.inner.token.pid
+        );
+    }
 }
 
-#[tracing::instrument(level = "info", skip(client, timeout), fields(pid = client.token.pid))]
-async fn wait_preemptive(
-    client: &RpcCaller,
-    timeout: Duration,
-) -> Result<PreemptionResponse, Error> {
-    let call_res = async {
-        loop {
-            let response = client
-                .wait_preemptive()
-                .await
-                .map_err(|e| Error::RpcError(e.to_string()))?
-                .map_err(Error::Scheduler);
-            if let Ok(PreemptionResponse::Wait) = response {
-                tokio::time::delay_for(Duration::from_millis(WAIT_PREEMPTIVE_DELAY)).await;
-            } else {
-                return response;
+#[tracing::instrument(level = "info", skip(client, timeout), fields(pid = client.inner.token.pid))]
+fn wait_preemptive(client: &RpcCaller, timeout: Duration) -> Result<PreemptionResponse, Error> {
+    use std::time::Instant;
+    let start = Instant::now();
+    loop {
+        let response = client
+            .wait_preemptive()
+            .map_err(|e| Error::RpcError(e.to_string()))?
+            .map_err(Error::Scheduler);
+        if let Ok(PreemptionResponse::Wait) = response {
+            if start.elapsed() > timeout {
+                return Err(Error::Timeout);
             }
+            std::thread::sleep(Duration::from_millis(WAIT_PREEMPTIVE_DELAY));
+        } else {
+            return response;
         }
-    };
-    tokio::time::timeout(timeout, call_res)
-        .await
-        .map_err(|_| Error::Timeout)?
+    }
 }
 
-#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
-async fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
+fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
     client
         .release_preemptive()
-        .await
         .map_err(|e| Error::RpcError(e.to_string()))?
         .map_err(Error::Scheduler)
 }
 
-#[tracing::instrument(level = "info", skip(client), fields(pid = client.token.pid))]
-async fn release(client: &RpcCaller) -> Result<(), Error> {
+#[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
+fn release(client: &RpcCaller) -> Result<(), Error> {
     client
         .release()
-        .await
         .map_err(|e| Error::RpcError(e.to_string()))?
         .map_err(Error::Scheduler)
 }
 
 #[allow(dead_code)]
 #[tracing::instrument(level = "debug", skip(address))]
-async fn launch_scheduler_process(address: String) -> Result<(), Error> {
+fn launch_scheduler_process(address: String) -> Result<(), Error> {
     use global_mutex::GlobalMutex;
     use nix::unistd::{fork, ForkResult};
 
@@ -275,10 +283,10 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
-            // number of retries to check scheduler-srvice before returning an error
+            // number of retries to check scheduler-service before returning an error
             let mut retries = START_SERVER_RETRIES;
-            tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
-            while let Err(e) = check_scheduler_service(address.clone()).await {
+            std::thread::sleep(Duration::from_millis(START_SERVER_DELAY));
+            while let Err(e) = check_scheduler_service(address.clone()) {
                 // make the parent process wait for the service to run
                 warn!("service has not been started yet, trying again in 500 ms");
                 retries -= 1;
@@ -288,7 +296,7 @@ async fn launch_scheduler_process(address: String) -> Result<(), Error> {
                         e.to_string()
                     )));
                 }
-                tokio::time::delay_for(Duration::from_millis(START_SERVER_DELAY)).await;
+                std::thread::sleep(Duration::from_millis(START_SERVER_DELAY));
             }
             Ok(())
         }
@@ -362,43 +370,38 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
 
 /// Returns a tuple with the ID and available memory of devices being used
 pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
-    let mut rt = Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
-    let res = rt
-        .block_on(async {
-            check_scheduler_service_or_launch(server_address()).await?;
-            let client = Client::new(&server_address(), Default::default())?;
-            let client = client
-                .connect()
-                .await
-                .map_err(|e| Error::RpcError(e.to_string()))?;
-            client.list_allocations().await.map_err(|e| {
-                error!(err = %e, "Got error listing allocations: ");
-                Error::Other(e.to_string())
-            })
+    check_scheduler_service_or_launch(server_address())?;
+    let client = Client::new(&server_address(), Default::default(), Default::default())?;
+    let client = client
+        .connect()
+        .map_err(|e| Error::RpcError(e.to_string()))?;
+    let res = client
+        .list_allocations()
+        .map_err(|e| {
+            error!(err = %e, "Got error listing allocations: ");
+            Error::Other(e.to_string())
         })
         .map(|res| res.unwrap());
     res.map(|vec| vec.into_iter().collect::<HashMap<GPUSelector, u64>>())
 }
 
 #[tracing::instrument(level = "debug")]
-async fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
-    if check_scheduler_service(address.clone()).await.is_ok() {
+fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
+    if check_scheduler_service(address.clone()).is_ok() {
         Ok(())
     } else {
         warn!("Scheduler service not running - trying to launch it");
-        launch_scheduler_process(address).await
+        launch_scheduler_process(address)
     }
 }
 
-#[allow(clippy::redundant_closure)]
 #[tracing::instrument(level = "debug")]
-async fn check_scheduler_service(address: String) -> Result<(), Error> {
-    let client = Client::new(&address, Default::default())?;
+fn check_scheduler_service(address: String) -> Result<(), Error> {
+    let client = Client::new(&address, Default::default(), Default::default())?;
     let client = client
         .connect()
-        .await
         .map_err(|e| Error::RpcError(e.to_string()))?;
-    match client.check_server().await {
+    match client.check_server() {
         Ok(_) => {
             info!("Scheduler service running");
             Ok(())
@@ -416,6 +419,7 @@ mod tests {
     use super::*;
 
     struct TaskTest;
+
     struct TaskTestPanic;
 
     impl TaskFunc for TaskTest {
@@ -461,12 +465,7 @@ mod tests {
 
     #[test]
     fn calls_scheduler_one_process() {
-        use rand::Rng;
-
-        let mut rng = rand::thread_rng();
-        let pid: u32 = rng.gen();
-        let client_id: u64 = rng.gen();
-        let token = register::<Error>(pid, client_id).unwrap();
+        let token = register::<Error>(None, None).unwrap();
 
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();
@@ -488,22 +487,17 @@ mod tests {
     fn release_test() {
         // This test only check communication and well formed param parsing
         let address = server_address();
-        let client = Client::new(&address, Default::default()).unwrap();
+        let client = Client::new(&address, Default::default(), Default::default()).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
-        let mut rt = Runtime::new().unwrap();
         let _res_req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
             preemptible: true,
         };
 
-        let res = rt
-            .block_on(async {
-                let client = client.connect().await.unwrap();
-                client.release().await
-            })
-            .unwrap();
+        let client = client.connect().unwrap();
+        let res = client.release();
         handle.close();
 
         assert!(res.is_ok());
@@ -512,7 +506,7 @@ mod tests {
     #[test]
     fn test_panic_handler() {
         let address = server_address();
-        let client = Client::new(&address, Default::default()).unwrap();
+        let client = Client::new(&address, Default::default(), Default::default()).unwrap();
         let devices = common::list_devices();
         let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
         let _res_req = ResourceReq {

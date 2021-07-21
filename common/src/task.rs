@@ -1,6 +1,6 @@
-use chrono::{offset::Utc, DateTime};
 use std::time::Duration;
 
+use chrono::{offset::Utc, DateTime};
 use serde::{Deserialize, Serialize};
 
 use super::{ResourceAlloc, ResourceReq};

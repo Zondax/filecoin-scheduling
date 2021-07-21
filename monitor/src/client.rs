@@ -13,6 +13,7 @@ pub struct Client {
 }
 
 impl Client {
+    //noinspection HttpUrlsUsage
     /// Creates a client
     /// `base_url` must be an address like: ip:port
     pub fn new(base_url: &str) -> Result<Self> {

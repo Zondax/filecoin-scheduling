@@ -1,5 +1,6 @@
-use scheduler::Error as SchedulerError;
 use std::io::Error as IoError;
+
+use scheduler::Error as SchedulerError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

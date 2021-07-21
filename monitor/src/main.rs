@@ -1,13 +1,11 @@
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+extern crate clap;
 
+use clap::{App, Arg, SubCommand};
 use client::*;
+use scheduler::MonitorInfo;
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use tokio::runtime::Runtime;
 use tokio::time::Duration;
-
-use scheduler::MonitorInfo;
-
-extern crate clap;
-use clap::{App, Arg, SubCommand};
 
 mod client;
 #[allow(clippy::all)]

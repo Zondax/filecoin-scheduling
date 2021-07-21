@@ -1,9 +1,11 @@
-use crate::monitor::MonitorInfo;
-use crate::Error;
-use common::{PreemptionResponse, RequestMethod, ResourceAlloc};
 use futures::channel::oneshot;
 use rust_gpu_tools::opencl::GPUSelector;
 use serde::{Deserialize, Serialize};
+
+use common::{PreemptionResponse, RequestMethod, ResourceAlloc};
+
+use crate::monitor::MonitorInfo;
+use crate::Error;
 
 #[derive(Serialize, Deserialize)]
 pub enum SchedulerResponse {

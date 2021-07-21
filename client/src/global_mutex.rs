@@ -18,6 +18,7 @@ impl GlobalMutex {
         Self::_new(None)
     }
 
+    //noinspection RsSelfConvention
     #[allow(dead_code)]
     pub fn with_name(name: &str) -> Result<Self, Error> {
         Self::_new(Some(name))

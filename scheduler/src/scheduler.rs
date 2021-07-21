@@ -1,8 +1,11 @@
-use chrono::Utc;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use chrono::Utc;
+use parking_lot::RwLock;
+use rust_gpu_tools::opencl::GPUSelector;
+use tracing::{debug, error, instrument, trace, warn};
 
 use crate::config::{Settings, Task};
 use crate::handler::Handler;
@@ -12,19 +15,17 @@ use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 use crate::Error;
 use common::{
-    ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
-    TaskType,
+    ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskId,
+    TaskRequirements, TaskType,
 };
-use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, instrument, trace, warn};
 
-// match all the devices that were assigned to task with type tasktype
-// returning None if there are not.
+// match all the devices that were assigned to task with type taskType
+// returns None if there are not.
 pub fn match_task_devices(
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &[Task],
 ) -> Option<Vec<GPUSelector>> {
-    let this_task = tasktype?;
+    let this_task = task_type?;
     for task in scheduler_settings {
         let devices = task.devices();
         if task.task_type() == this_task && !devices.is_empty() {
@@ -34,23 +35,23 @@ pub fn match_task_devices(
     None
 }
 
-//compute wheter a task is considered stalled
+// compute whether a task is considered stalled
 //
-// if no tasktype is provided then the task is valid if its `last_seen` is at least
+// if no taskType is provided then the task is valid if its `last_seen` is at least
 // settings.min_wait_time seconds before now
 //
-// if a tasktype is provided then the task exec time is fetched and used instead of
+// if a taskType is provided then the task exec time is fetched and used instead of
 // settings.min_wait_time
 pub fn task_is_stalled(
     last_seen: u64,
-    tasktype: Option<TaskType>,
+    task_type: Option<TaskType>,
     scheduler_settings: &Settings,
 ) -> bool {
     let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    if tasktype.is_none() {
+    if task_type.is_none() {
         return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
     }
-    let this_task = tasktype.unwrap();
+    let this_task = task_type.unwrap();
     let time_of_task = scheduler_settings
         .tasks_settings
         .iter()
@@ -67,10 +68,10 @@ pub fn task_is_stalled(
 pub(crate) struct Scheduler {
     // Keep a cache of jobs on the system. each job_id has an associated job state
     // indicating the current iteration, and allocated resources and its requirements per resource
-    tasks_state: RwLock<HashMap<u32, TaskState>>,
+    tasks_state: RwLock<HashMap<TaskId, TaskState>>,
 
     // Sorted jobs to be executed.
-    jobs_queue: RwLock<VecDeque<u32>>,
+    jobs_queue: RwLock<VecDeque<TaskId>>,
 
     devices: RwLock<Resources>,
     settings: Settings,
@@ -103,7 +104,12 @@ impl Scheduler {
     }
 
     #[instrument(level = "info", skip(requirements, self))]
-    fn schedule(&self, client: ClientToken, requirements: TaskRequirements) -> SchedulerResponse {
+    fn schedule(
+        &self,
+        client: ClientToken,
+        requirements: TaskRequirements,
+        job_context: String,
+    ) -> SchedulerResponse {
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
@@ -153,6 +159,7 @@ impl Scheduler {
             last_seen: AtomicU64::new(time),
             aborted: AtomicBool::new(false),
             creation_time: time,
+            context: job_context,
         };
 
         // Add the task to our list of jobs
@@ -187,14 +194,14 @@ impl Scheduler {
                     task.requirements.task_type,
                     &self.settings,
                 ) {
-                    warn!("Process {} is stalling!!", job_id);
+                    warn!("Process {}:{} is stalling!!", job_id, task.context);
                 }
             }
         }
     }
 
-    // this client has to wait if another is curently using the resource it shares
-    fn wait_for_busy_resources(&self, client: ClientToken) -> Result<bool, Error> {
+    // this client has to wait if another is currently using the resource it shares
+    fn wait_for_busy_resources(&self, client: &ClientToken) -> Result<bool, Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         let resources = self.devices.read();
@@ -203,7 +210,7 @@ impl Scheduler {
 
     // update the last_seen counter
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn update_last_seen(&self, client: ClientToken) -> Result<(), Error> {
+    fn update_last_seen(&self, client: &ClientToken) -> Result<(), Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         // update the last_seen counter
@@ -213,6 +220,7 @@ impl Scheduler {
         Ok(())
     }
 
+    //noinspection RsSelfConvention
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn set_resource_as_busy(&self, client: ClientToken) {
         let state = self.tasks_state.read();
@@ -227,7 +235,7 @@ impl Scheduler {
     // returns true if the job is at the top of the queue or among other jobs that share the same
     // resource. false if it has to wait
     #[instrument(level = "trace", skip(self), fields(pid = client))]
-    fn check_priority_queue(&self, client: u32) -> Result<bool, Error> {
+    fn check_priority_queue(&self, client: TaskId) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
         debug!("current job_plan {:?}", *queue);
         // check the job plan to see if the task is up-front the queue or not
@@ -262,7 +270,7 @@ impl Scheduler {
     }
 
     //is_task_from_client_aborted
-    fn abort_client(&self, client: ClientToken) -> Result<bool, Error> {
+    fn abort_client(&self, client: &ClientToken) -> Result<bool, Error> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
         Ok(current_task.aborted.load(Ordering::Relaxed))
@@ -270,15 +278,15 @@ impl Scheduler {
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
-        if self.abort_client(client)? {
+        if self.abort_client(&client)? {
             return Ok(PreemptionResponse::Abort);
         }
         // update the last_seen counter
-        self.update_last_seen(client)?;
+        self.update_last_seen(&client)?;
         self.log_stalled_jobs();
 
         // fast path the task's resource is being used by another task
-        if self.wait_for_busy_resources(client)? {
+        if self.wait_for_busy_resources(&client)? {
             return Ok(PreemptionResponse::Wait);
         }
 
@@ -339,11 +347,11 @@ impl Scheduler {
         }
     }
 
-    fn abort(&self, clients: Vec<u32>) -> Result<(), Error> {
+    fn abort(&self, clients: Vec<TaskId>) -> Result<(), Error> {
         for client in clients.iter() {
             let state = self.tasks_state.read();
-            warn!("aborting client {}", client);
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
+            warn!("aborting client: {} from: {}", client, current_task.context);
             current_task.aborted.store(true, Ordering::Relaxed);
         }
         Ok(())
@@ -351,7 +359,7 @@ impl Scheduler {
 
     // this function is experimental and might be removed in later versions of the
     // scheduler.
-    fn remove_stalled(&self, clients: Vec<u32>) -> Result<(), Error> {
+    fn remove_stalled(&self, clients: Vec<TaskId>) -> Result<(), Error> {
         for client in clients {
             let mut state = self.tasks_state.write();
             let task = state.get(&client).ok_or(Error::UnknownClient)?;
@@ -360,7 +368,12 @@ impl Scheduler {
                 task.requirements.task_type,
                 &self.settings,
             ) {
-                trace!("task {} is stalling, removing", client);
+                trace!(
+                    "task: {} from: {} is stalling, removing",
+                    client,
+                    task.context
+                );
+
                 let task = state.remove(&client).expect("Job in the state yet");
                 // remove job from the priority queue
                 (*self.jobs_queue.write()).retain(|pid| *pid != client);
@@ -383,7 +396,6 @@ impl Scheduler {
 
     #[instrument(level = "trace", skip(self))]
     fn monitor(&self) -> Result<MonitorInfo, String> {
-        trace!("External service is monitoring the scheduler service");
         let task_states = self.tasks_state.read();
         let resources = self.devices.read();
         let task_states = task_states
@@ -425,11 +437,11 @@ impl Scheduler {
 
 impl Handler for Scheduler {
     fn process_request(&self, request: SchedulerRequest) {
-        // TODO: Analize if spawning a thread is worth considering that doing so the handler's
-        // executer doesnt get blocked by this intensive operation
+        // TODO: Analyze if spawning a thread is worth considering that doing so the handler's
+        // Executor doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
-            RequestMethod::Schedule(client, req) => self.schedule(client, req),
+            RequestMethod::Schedule(client, req, context) => self.schedule(client, req, context),
             RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(client) => {
                 SchedulerResponse::SchedulerWaitPreemptive(self.wait_preemptive(client))
