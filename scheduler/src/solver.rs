@@ -211,7 +211,7 @@ pub struct TaskState {
     pub aborted: AtomicBool,
     // a timestamp indicating when this task was created
     pub creation_time: u64,
-    pub context: Option<String>,
+    pub context: String,
 }
 
 impl Clone for TaskState {
