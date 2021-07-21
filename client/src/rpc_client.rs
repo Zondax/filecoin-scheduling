@@ -1,16 +1,26 @@
 use jsonrpc_core_client::transports::http::connect;
 use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
 use rust_gpu_tools::opencl::GPUSelector;
+use tokio::runtime::Runtime;
 
+use super::Error as ClientError;
 use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
+
+use once_cell::sync::OnceCell;
+
+fn get_runtime() -> &'static Runtime {
+    static INSTANCE: OnceCell<Runtime> = OnceCell::new();
+    INSTANCE.get_or_init(|| Runtime::new().expect("Error creating tokio runtime"))
+}
 
 #[derive(Debug)]
 pub struct Client {
     pub base_url: String,
     pub token: ClientToken,
     /// Helper string that gives more context in logs messages
-    pub context: Option<String>,
+    /// if it is not set a None value is the default
+    pub context: String,
 }
 
 struct RpcHandler(TypedClient);
@@ -27,14 +37,9 @@ impl From<RpcChannel> for RpcHandler {
 }
 
 impl Client {
-    //noinspection HttpUrlsUsage
     /// Creates a client
     /// `base_url` must be an address like: ip:port
-    pub fn new(
-        base_url: &str,
-        token: ClientToken,
-        context: Option<String>,
-    ) -> Result<Self, crate::Error> {
+    pub fn new(base_url: &str, token: ClientToken, context: String) -> Result<Self, crate::Error> {
         let address = format!("http://{}", base_url);
         Ok(Self {
             base_url: address,
@@ -43,8 +48,11 @@ impl Client {
         })
     }
 
-    pub async fn connect(self) -> RpcResult<RpcCaller> {
-        let inner = connect(self.base_url.as_str()).await?;
+    pub fn connect(self) -> Result<RpcCaller, ClientError> {
+        let handle = get_runtime().handle();
+        let inner = handle
+            .block_on(async { connect(self.base_url.as_str()).await })
+            .map_err(|e| ClientError::RpcError(e.to_string()))?;
         let handler = RpcHandler(inner);
         Ok(RpcCaller {
             handler,
@@ -52,67 +60,84 @@ impl Client {
         })
     }
 }
-
 impl RpcCaller {
-    pub async fn wait_preemptive(&self) -> RpcResult<Result<PreemptionResponse, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "wait_preemptive",
-                "Result<PreemptionResponse, Error>",
-                (self.inner.token.clone(),),
-            )
-            .await
+    pub fn wait_preemptive(&self) -> RpcResult<Result<PreemptionResponse, Error>> {
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "wait_preemptive",
+                    "Result<PreemptionResponse, Error>",
+                    (self.inner.token.clone(),),
+                )
+                .await
+        })
     }
 
-    pub async fn check_server(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method("check_server", "Result<(), Error>", ())
-            .await
+    pub fn check_server(&self) -> RpcResult<Result<(), Error>> {
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method("check_server", "Result<(), Error>", ())
+                .await
+        })
     }
 
-    pub async fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "list_allocations",
-                "Result<Vec<(GPUSelector, u64)>, Error>",
-                (),
-            )
-            .await
+    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "list_allocations",
+                    "Result<Vec<(GPUSelector, u64)>, Error>",
+                    (),
+                )
+                .await
+        })
     }
 
-    pub async fn wait_allocation(
+    pub fn wait_allocation(
         &self,
         task: TaskRequirements,
-        job_context: Option<String>,
+        job_context: String,
     ) -> RpcResult<Result<Option<ResourceAlloc>, Error>> {
-        self.handler
-            .0
-            .call_method(
-                "wait_allocation",
-                "Result<Option<ResourceAlloc>, Error>>",
-                (self.inner.token.clone(), task, job_context),
-            )
-            .await
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "wait_allocation",
+                    "Result<Option<ResourceAlloc>, Error>>",
+                    (self.inner.token.clone(), task, job_context),
+                )
+                .await
+        })
     }
 
-    pub async fn release(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method("release", "Result<(), Error>>", (self.inner.token.clone(),))
-            .await
+    pub fn release(&self) -> RpcResult<Result<(), Error>> {
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method("release", "Result<(), Error>>", (self.inner.token.clone(),))
+                .await
+        })
     }
 
-    pub async fn release_preemptive(&self) -> RpcResult<Result<(), Error>> {
-        self.handler
-            .0
-            .call_method(
-                "release_preemptive",
-                "Result<(), Error>>",
-                (self.inner.token.clone(),),
-            )
-            .await
+    pub fn release_preemptive(&self) -> RpcResult<Result<(), Error>> {
+        let handle = get_runtime().handle();
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method(
+                    "release_preemptive",
+                    "Result<(), Error>>",
+                    (self.inner.token.clone(),),
+                )
+                .await
+        })
     }
 }

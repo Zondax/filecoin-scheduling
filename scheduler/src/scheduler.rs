@@ -108,7 +108,7 @@ impl Scheduler {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-        job_context: Option<String>,
+        job_context: String,
     ) -> SchedulerResponse {
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
@@ -194,11 +194,7 @@ impl Scheduler {
                     task.requirements.task_type,
                     &self.settings,
                 ) {
-                    warn!(
-                        "Process {}:{} is stalling!!",
-                        job_id,
-                        task.context.as_ref().unwrap_or(&"".to_string())
-                    );
+                    warn!("Process {}:{} is stalling!!", job_id, task.context);
                 }
             }
         }
@@ -355,11 +351,7 @@ impl Scheduler {
         for client in clients.iter() {
             let state = self.tasks_state.read();
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
-            warn!(
-                "aborting client: {} from: {}",
-                client,
-                current_task.context.as_ref().unwrap_or(&"".to_string())
-            );
+            warn!("aborting client: {} from: {}", client, current_task.context);
             current_task.aborted.store(true, Ordering::Relaxed);
         }
         Ok(())
@@ -379,7 +371,7 @@ impl Scheduler {
                 trace!(
                     "task: {} from: {} is stalling, removing",
                     client,
-                    task.context.as_ref().unwrap_or(&"".to_string())
+                    task.context
                 );
 
                 let task = state.remove(&client).expect("Job in the state yet");
