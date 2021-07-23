@@ -447,6 +447,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
 name = "dirs-sys"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2034,7 +2043,7 @@ name = "rust-gpu-tools"
 version = "0.3.0"
 source = "git+https://github.com/Zondax/rust-gpu-tools.git?branch=unique_id#30a572d105367d0a16c6349000286740b9be9e74"
 dependencies = [
- "dirs",
+ "dirs 2.0.2",
  "fil-ocl",
  "hex",
  "lazy_static",
@@ -2114,6 +2123,7 @@ dependencies = [
  "coin_cbc",
  "common",
  "config",
+ "dirs 3.0.2",
  "futures 0.3.15",
  "itertools",
  "jsonrpc-core",
