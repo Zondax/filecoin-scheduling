@@ -32,7 +32,7 @@ fn get_config_path() -> Result<PathBuf, Error> {
         path
     } else {
         let mut path =
-            dirs::config_dir().ok_or_else(|| Error::Other("Unsuported platform".to_string()))?;
+            dirs::config_dir().ok_or_else(|| Error::Other("Unsupported platform".to_string()))?;
         path.push("filecoin/");
         path
     };
