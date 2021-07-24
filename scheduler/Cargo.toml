@@ -27,4 +27,5 @@ toml = "0.5.8"
 chrono = "0.4.19"
 rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id", features = ["serde_support"]}
 parking_lot = "0.11.1"
+dirs = "3.0.2"
 

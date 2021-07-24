@@ -22,14 +22,34 @@ use std::net::SocketAddr;
 use jsonrpc_http_server::jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
+use std::path::PathBuf;
 
-// check if defining this as an ev variable is more convenient
-const SETTINGS_PATH: &str = "/tmp/scheduler.toml";
+const SCHEDULER_CONFIG_NAME: &str = "scheduler.toml";
+
+fn get_config_path() -> Result<PathBuf, Error> {
+    let mut path = if let Ok(val) = std::env::var("SCHEDULER_CONFIG_PATH") {
+        let path: PathBuf = val.into();
+        path
+    } else {
+        let mut path =
+            dirs::config_dir().ok_or_else(|| Error::Other("Unsupported platform".to_string()))?;
+        path.push("filecoin/");
+        path
+    };
+    // check that the dirs exist otherwise create them if possible
+    if !path.is_dir() {
+        std::fs::create_dir_all(&path)
+            .map_err(|e| Error::Other(format!("cannot create config dir {}", e.to_string())))?;
+    }
+    path.push(SCHEDULER_CONFIG_NAME);
+    Ok(path)
+}
 
 /// Starts a json-rpc server listening to *addr*
 #[tracing::instrument(level = "info")]
 pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Error> {
-    let settings = Settings::new(SETTINGS_PATH).map_err(|e| {
+    let path = get_config_path()?;
+    let settings = Settings::new(path).map_err(|e| {
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
@@ -54,7 +74,8 @@ pub fn spawn_scheduler_with_handler(
     address: &str,
     devices: common::Devices,
 ) -> Result<CloseHandle, Error> {
-    let settings = Settings::new(SETTINGS_PATH).map_err(|e| {
+    let path = get_config_path()?;
+    let settings = Settings::new(path).map_err(|e| {
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
