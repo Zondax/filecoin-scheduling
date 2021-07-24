@@ -39,7 +39,7 @@ fn get_config_path() -> Result<PathBuf, Error> {
     // check that the dirs exist otherwise create them if possible
     if !path.is_dir() {
         std::fs::create_dir_all(&path)
-            .map_err(|e| Error::Other(format!("can not create config dir {}", e.to_string())))?;
+            .map_err(|e| Error::Other(format!("cannot create config dir {}", e.to_string())))?;
     }
     path.push(SCHEDULER_CONFIG_NAME);
     Ok(path)
