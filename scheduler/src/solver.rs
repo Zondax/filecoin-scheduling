@@ -239,7 +239,7 @@ impl TaskState {
 pub trait Solver {
     fn solve_job_schedule(
         &mut self,
-        input: &HashMap<TaskId, TaskState>,
+        current_state: &HashMap<TaskId, TaskState>,
         scheduler_settings: &Settings,
     ) -> Result<VecDeque<TaskId>, Error>;
 
@@ -248,6 +248,7 @@ pub trait Solver {
         resources: &Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
+        task_state: &HashMap<TaskId, TaskState>,
     ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)>;
 }
 

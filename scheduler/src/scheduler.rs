@@ -137,11 +137,15 @@ impl Scheduler {
         }
 
         let mut solver = create_solver(None);
-        let (alloc, new_resources) =
-            match solver.allocate_task(&resources, &requirements, &restrictions) {
-                Some(res) => res,
-                _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
-            };
+        let (alloc, new_resources) = match solver.allocate_task(
+            &resources,
+            &requirements,
+            &restrictions,
+            &*self.tasks_state.read(),
+        ) {
+            Some(res) => res,
+            _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
+        };
         // drop here just for updating the resources state
         drop(resources);
 
