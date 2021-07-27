@@ -11,12 +11,19 @@ pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::solver::TaskState;
     use crate::solver::{ResourceState, Resources};
-    use common::{ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements};
+    use chrono::Utc;
+    use common::{
+        ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements,
+    };
+    use rust_gpu_tools::opencl::GPUSelector;
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
 
     #[test]
     fn check_gpu_allocation() {
+        let mut tasks = HashMap::new();
         let devices = common::list_devices();
         let state_t1 = devices
             .gpu_devices()
@@ -47,9 +54,22 @@ mod tests {
 
         let mut solver = create_solver(None);
         //can allocate on any device so go
-        let alloc = solver.allocate_task(&devices_t1, &task1, &None, &HashMap::new());
+        let alloc = solver.allocate_task(&devices_t1, &task1, &None, &tasks);
         assert!(alloc.is_some());
 
+        let allocation = ResourceAlloc {
+            requirement: task1.req[0].clone(),
+            devices: vec![GPUSelector::PciId(0)],
+        };
+        let time: u64 = Utc::now().timestamp() as u64;
+        let tasks_state = TaskState {
+            requirements: task1.clone(),
+            allocation: allocation.clone(),
+            last_seen: AtomicU64::new(time),
+            aborted: AtomicBool::new(false),
+            creation_time: time,
+            context: "".to_string(),
+        };
         let state_t2 = devices
             .gpu_devices()
             .iter()
@@ -68,9 +88,11 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let devices_t2 = Resources(state_t2);
 
+        tasks.insert(1, tasks_state);
+
         //resource 0 is busy so should allocate on idle GPU instead
         let (alloc, _) = solver
-            .allocate_task(&devices_t2, &task1, &None, &HashMap::new())
+            .allocate_task(&devices_t2, &task1, &None, &tasks)
             .unwrap();
         assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
 
@@ -129,7 +151,7 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let devices_t4 = Resources(state_t4);
         let (alloc, _) = solver
-            .allocate_task(&devices_t4, &task2, &None, &HashMap::new())
+            .allocate_task(&devices_t4, &task2, &None, &tasks)
             .unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
         assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
@@ -167,7 +189,7 @@ mod tests {
                 &devices_t5,
                 &task3,
                 &Some(vec![devices.gpu_devices()[0].device_id()]),
-                &HashMap::new(),
+                &tasks,
             )
             .unwrap();
         //allocate to 0 anyway since the task really needs to, even if it is busy..
