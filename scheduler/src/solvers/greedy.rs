@@ -73,15 +73,13 @@ impl Solver for GreedySolver {
             if optional_resources.len() >= quantity {
                 if resources.0.len() > 1 {
                     let ordered = get_by_resource_load(resources, tasks_state);
-                    options.push((
-                        ordered
-                            .iter()
-                            .take(quantity)
-                            .filter(|id| optional_resources.iter().any(|optional| optional == *id))
-                            .copied()
-                            .collect::<Vec<_>>(),
-                        req.clone(),
-                    ));
+                    let filtered = ordered
+                        .iter()
+                        .filter(|id| optional_resources.iter().any(|optional| optional == *id))
+                        .take(quantity)
+                        .copied()
+                        .collect::<Vec<_>>();
+                    options.push((filtered, req.clone()));
                 } else {
                     optional_resources.truncate(quantity);
                     options.push((optional_resources, req.clone()));
