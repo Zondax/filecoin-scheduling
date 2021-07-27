@@ -13,12 +13,35 @@ use std::cmp::Reverse;
 pub struct GreedySolver;
 use std::sync::atomic::Ordering;
 
-pub fn find_idle_gpus(resources: &'_ Resources) -> impl Iterator<Item = GPUSelector> + Clone + '_ {
-    resources
-        .0
-        .iter()
-        .filter(|(_, res)| !res.is_busy())
-        .map(|(id, _)| *id)
+fn get_by_resource_load(
+    resources: &Resources,
+    tasks_state: &HashMap<TaskId, TaskState>,
+) -> Vec<GPUSelector> {
+    let mut map = HashMap::new();
+    // get the load of each device
+    resources.0.iter().for_each(|(id, _)| {
+        map.insert(id, 0usize);
+    });
+    for (id, counter) in map.iter_mut() {
+        if tasks_state
+            .iter()
+            .any(|(_, state)| state.allocation.devices.iter().any(|dev| dev == *id))
+        {
+            *counter += 1;
+        }
+    }
+    let mut resource_load_queue = PriorityQueue::new();
+
+    // here we order the resources according to the number of jobs that are using it
+    // so we can select those with lower load
+    map.into_iter().for_each(|(key, val)| {
+        resource_load_queue.push(key, Reverse(val));
+    });
+
+    resource_load_queue
+        .into_sorted_iter()
+        .map(|(i, _)| *i)
+        .collect::<Vec<_>>()
 }
 
 impl Solver for GreedySolver {
@@ -27,62 +50,60 @@ impl Solver for GreedySolver {
         resources: &Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
+        tasks_state: &HashMap<TaskId, TaskState>,
     ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)> {
-        // Use heuristic criteria for picking up a resource depending on task requirements
-        // basing on the current resource load or even a greedy approach. For now we just take the
-        // first that match and return
-
         let device_restrictions = restrictions
             .clone()
             .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<GPUSelector>>());
 
-        let idle_gpus_iter = find_idle_gpus(resources);
         let mut options = vec![];
+
         for req in requirements.req.iter() {
-            let quantity = req.quantity;
+            let mut quantity = req.quantity;
+            // we are bounded by the number of resources the user has assigned to this task
+            if quantity > device_restrictions.len() {
+                quantity = device_restrictions.len();
+            }
             // check if the pool of devices have room for the requested allocations
-            let optional_resources = resources
+            let mut optional_resources = resources
                 .get_devices_with_requirements(req)
                 .filter(|b| device_restrictions.iter().any(|x| x == b))
                 .collect::<Vec<GPUSelector>>();
-            let idle_gpus_available = optional_resources
-                .iter()
-                .cloned()
-                .filter(|b| idle_gpus_iter.clone().any(|x| x == *b))
-                .collect::<Vec<GPUSelector>>();
 
-            //if there's enough idle gpus just offer those directly
-            if idle_gpus_available.len() >= quantity {
-                options = vec![(idle_gpus_available, req.clone())];
-                break;
-            } else if optional_resources.len() >= quantity {
-                //otherwise fallback to non-idle resources
-                options.push((optional_resources, req.clone()));
-                break;
+            if optional_resources.len() >= quantity {
+                if resources.0.len() > 1 {
+                    let ordered = get_by_resource_load(resources, tasks_state);
+                    let filtered = ordered
+                        .iter()
+                        .filter(|id| optional_resources.iter().any(|optional| optional == *id))
+                        .take(quantity)
+                        .copied()
+                        .collect::<Vec<_>>();
+                    options.push((filtered, req.clone()));
+                } else {
+                    optional_resources.truncate(quantity);
+                    options.push((optional_resources, req.clone()));
+                }
             }
         }
 
         // Make a new resource state, that the caller will use for updating the main resource state
         let mut resources = resources.0.clone();
         if !options.is_empty() {
-            let selected_req = options[0].1.clone();
             // it is here where we can use some heuristic approach to select the best devices
-            let selected_resources = options[0]
-                .0
-                .iter()
-                .cloned()
-                .take(selected_req.quantity as usize)
-                .collect::<Vec<_>>();
-            selected_resources.iter().for_each(|id| {
+            // but maybe for this we need a more advance scheduler algorithm
+            let requirement = options[0].1.clone();
+            let devices = options[0].0.clone();
+            devices.iter().for_each(|id| {
                 let _ = resources
                     .get_mut(id)
                     //allocate memory
-                    .map(|dev| dev.update_memory_usage(&selected_req.resource));
+                    .map(|dev| dev.update_memory_usage(&requirement.resource));
             });
             return Some((
                 ResourceAlloc {
-                    requirement: selected_req,
-                    devices: selected_resources,
+                    requirement,
+                    devices,
                 },
                 resources,
             ));
@@ -92,7 +113,7 @@ impl Solver for GreedySolver {
 
     fn solve_job_schedule(
         &mut self,
-        input: &HashMap<TaskId, TaskState>,
+        current_state: &HashMap<TaskId, TaskState>,
         scheduler_settings: &Settings,
     ) -> Result<VecDeque<TaskId>, Error> {
         // Criterion A; If the job is marked as stalled, it will be moved at the end of the queue.
@@ -106,7 +127,7 @@ impl Solver for GreedySolver {
         let mut priority_queue = PriorityQueue::new();
 
         // iterate our tasks for making the triplet pushing it into the queue
-        for (job_id, state) in input.iter() {
+        for (job_id, state) in current_state.iter() {
             // stalled jobs are moved to the back of the queue, but the resource(s) it is using
             // will remain marked as busy, blocking other task from using the resource(s) and continue,
             // which will lead to a kind of deadlock.
