@@ -4,7 +4,7 @@ use rust_gpu_tools::opencl::GPUSelector;
 use tokio::runtime::Runtime;
 
 use super::Error as ClientError;
-use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
 
 use once_cell::sync::OnceCell;
@@ -75,12 +75,12 @@ impl RpcCaller {
         })
     }
 
-    pub fn check_server(&self) -> RpcResult<Result<(), Error>> {
+    pub fn check_server(&self) -> RpcResult<Pid> {
         let handle = get_runtime().handle();
         handle.block_on(async {
             self.handler
                 .0
-                .call_method("check_server", "Result<(), Error>", ())
+                .call_method("service_status", "Pid", ())
                 .await
         })
     }

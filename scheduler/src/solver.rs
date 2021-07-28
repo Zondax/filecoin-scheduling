@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Settings;
 use crate::Error;
 use common::{
-    Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements,
+    Device, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
 };
 use rust_gpu_tools::opencl::GPUSelector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,7 +21,7 @@ pub struct ResourceState {
     pub mem_usage: u64,
     /// The task that is using this resource
     /// None means the resource is free
-    pub current_task: Option<TaskId>,
+    pub current_task: Option<Pid>,
 }
 
 impl ResourceState {
@@ -51,7 +51,7 @@ impl ResourceState {
         }
     }
 
-    pub fn set_as_busy(&mut self, task: TaskId) {
+    pub fn set_as_busy(&mut self, task: Pid) {
         // It is an error trying to set as busy a resource that is being used by
         // another process. It means that the scheduler is allowing multiple task
         // to use a resource at the same time.
@@ -62,14 +62,14 @@ impl ResourceState {
         self.current_task.replace(task);
     }
 
-    pub fn set_as_free(&mut self, task: TaskId) {
+    pub fn set_as_free(&mut self, task: Pid) {
         // only the task that set the resource as busy can freed it
         if Some(task) == self.current_task {
             self.current_task.take();
         }
     }
 
-    pub fn current_task(&self) -> Option<TaskId> {
+    pub fn current_task(&self) -> Option<Pid> {
         self.current_task
     }
 
@@ -137,13 +137,13 @@ impl Resources {
             .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[GPUSelector], task: TaskId) {
+    pub fn set_busy_resources(&mut self, devices: &[GPUSelector], task: Pid) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy(task));
         });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[GPUSelector], task: TaskId) {
+    pub fn unset_busy_resources(&mut self, devices: &[GPUSelector], task: Pid) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_free(task));
         });
@@ -239,16 +239,16 @@ impl TaskState {
 pub trait Solver {
     fn solve_job_schedule(
         &mut self,
-        current_state: &HashMap<TaskId, TaskState>,
+        current_state: &HashMap<Pid, TaskState>,
         scheduler_settings: &Settings,
-    ) -> Result<VecDeque<TaskId>, Error>;
+    ) -> Result<VecDeque<Pid>, Error>;
 
     fn allocate_task(
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
-        task_state: &HashMap<TaskId, TaskState>,
+        task_state: &HashMap<Pid, TaskState>,
     ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)>;
 }
 
