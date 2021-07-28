@@ -14,9 +14,7 @@ mod tests {
     use crate::solver::TaskState;
     use crate::solver::{ResourceState, Resources};
     use chrono::Utc;
-    use common::{
-        ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements,
-    };
+    use common::{Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
     use rust_gpu_tools::opencl::GPUSelector;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -75,7 +73,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as TaskId) } else { None };
+                let current_task = if i == 0 { Some(i as Pid) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
@@ -138,7 +136,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as TaskId) } else { None };
+                let current_task = if i == 0 { Some(i as Pid) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {
@@ -172,7 +170,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, dev)| {
-                let current_task = if i == 0 { Some(i as TaskId) } else { None };
+                let current_task = if i == 0 { Some(i as Pid) } else { None };
                 (
                     dev.device_id(),
                     ResourceState {

@@ -2185,6 +2185,7 @@ dependencies = [
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "more-asserts",
+ "palaver",
  "parking_lot",
  "priority-queue",
  "rust-gpu-tools",

@@ -29,4 +29,5 @@ rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-
 parking_lot = "0.11.1"
 dirs = "3.0.2"
 sysinfo = "0.19.2"
+palaver = "0.2.8"
 

@@ -16,8 +16,8 @@ use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 use crate::Error;
 use common::{
-    ClientToken, Devices, PreemptionResponse, RequestMethod, ResourceType, TaskId,
-    TaskRequirements, TaskType,
+    ClientToken, Devices, Pid, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
+    TaskType,
 };
 
 // match all the devices that were assigned to task with type taskType
@@ -69,14 +69,15 @@ pub fn task_is_stalled(
 pub(crate) struct Scheduler {
     // Keep a cache of jobs on the system. each job_id has an associated job state
     // indicating the current iteration, and allocated resources and its requirements per resource
-    tasks_state: RwLock<HashMap<TaskId, TaskState>>,
+    tasks_state: RwLock<HashMap<Pid, TaskState>>,
 
     // Sorted jobs to be executed.
-    jobs_queue: RwLock<VecDeque<TaskId>>,
+    jobs_queue: RwLock<VecDeque<Pid>>,
 
     devices: RwLock<Resources>,
     settings: Settings,
     system: Mutex<System>,
+    pid: Pid,
 }
 
 impl Scheduler {
@@ -90,7 +91,7 @@ impl Scheduler {
                     dev.device_id(),
                     ResourceState {
                         dev: dev.clone(),
-                        mem_usage: Default::default(),
+                        mem_usage: 0,
                         current_task: None,
                     },
                 )
@@ -98,12 +99,14 @@ impl Scheduler {
             .collect::<HashMap<GPUSelector, ResourceState>>();
         let devices = RwLock::new(Resources(state));
         let system = Mutex::new(System::new());
+        let pid = palaver::thread::gettid();
         Self {
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
             devices,
             settings,
             system,
+            pid,
         }
     }
 
@@ -231,7 +234,7 @@ impl Scheduler {
     // returns true if the job is at the top of the queue or among other jobs that share the same
     // resource. false if it has to wait
     #[instrument(level = "trace", skip(self), fields(pid = client))]
-    fn check_priority_queue(&self, client: TaskId) -> Result<bool, Error> {
+    fn check_priority_queue(&self, client: Pid) -> Result<bool, Error> {
         let queue = self.jobs_queue.read();
         debug!("current job_plan {:?}", *queue);
         // check the job plan to see if the task is up-front the queue or not
@@ -343,7 +346,7 @@ impl Scheduler {
         }
     }
 
-    fn abort(&self, clients: Vec<TaskId>) -> Result<(), Error> {
+    fn abort(&self, clients: Vec<Pid>) -> Result<(), Error> {
         for client in clients.iter() {
             let state = self.tasks_state.read();
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
@@ -353,7 +356,7 @@ impl Scheduler {
         Ok(())
     }
 
-    fn check_process_exist(&self, pid: TaskId) -> bool {
+    fn check_process_exist(&self, pid: Pid) -> bool {
         let mut s = self.system.lock();
         s.refresh_process(pid as _)
     }
@@ -380,7 +383,7 @@ impl Scheduler {
 
     // this function is experimental and might be removed in later versions of the
     // scheduler.
-    fn remove_stalled(&self, clients: Vec<TaskId>) -> Result<(), Error> {
+    fn remove_stalled(&self, clients: Vec<Pid>) -> Result<(), Error> {
         let stalled = self.get_stalled_jobs();
         clients
             .into_iter()
@@ -389,7 +392,7 @@ impl Scheduler {
         Ok(())
     }
 
-    fn get_stalled_jobs(&self) -> Vec<TaskId> {
+    fn get_stalled_jobs(&self) -> Vec<Pid> {
         let mut stalled = vec![];
         for (job_id, task) in self.tasks_state.read().iter() {
             if task_is_stalled(
@@ -403,7 +406,7 @@ impl Scheduler {
         stalled
     }
 
-    fn remove_job(&self, id: TaskId) {
+    fn remove_job(&self, id: Pid) {
         // remove job from our priority queue
         self.jobs_queue.write().retain(|pid| *pid != id);
         // remove job from the state and unset any resources that were in used
@@ -481,6 +484,7 @@ impl Handler for Scheduler {
                 SchedulerResponse::RemoveStalled(self.remove_stalled(client_id))
             }
             RequestMethod::Monitoring => SchedulerResponse::Monitoring(self.monitor()),
+            RequestMethod::CheckService => SchedulerResponse::CheckService(self.pid),
         };
         let _ = sender.send(response);
     }

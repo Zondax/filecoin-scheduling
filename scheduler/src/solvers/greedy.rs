@@ -4,7 +4,7 @@ use crate::config::Settings;
 use crate::scheduler::task_is_stalled;
 use crate::solver::{ResourceState, Resources, Solver, TaskState};
 use crate::Error;
-use common::{ResourceAlloc, TaskId, TaskRequirements};
+use common::{Pid, ResourceAlloc, TaskRequirements};
 
 use priority_queue::PriorityQueue;
 use rust_gpu_tools::opencl::GPUSelector;
@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 
 fn get_by_resource_load(
     resources: &Resources,
-    tasks_state: &HashMap<TaskId, TaskState>,
+    tasks_state: &HashMap<Pid, TaskState>,
 ) -> Vec<GPUSelector> {
     let mut map = HashMap::new();
     // get the load of each device
@@ -50,7 +50,7 @@ impl Solver for GreedySolver {
         resources: &Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
-        tasks_state: &HashMap<TaskId, TaskState>,
+        tasks_state: &HashMap<Pid, TaskState>,
     ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)> {
         let device_restrictions = restrictions
             .clone()
@@ -113,9 +113,9 @@ impl Solver for GreedySolver {
 
     fn solve_job_schedule(
         &mut self,
-        current_state: &HashMap<TaskId, TaskState>,
+        current_state: &HashMap<Pid, TaskState>,
         scheduler_settings: &Settings,
-    ) -> Result<VecDeque<TaskId>, Error> {
+    ) -> Result<VecDeque<Pid>, Error> {
         // Criterion A; If the job is marked as stalled, it will be moved at the end of the queue.
         //
         // Criterion B: Use task deadline as a priority indicator. The sooner the deadline the higher
@@ -150,7 +150,7 @@ impl Solver for GreedySolver {
         Ok(priority_queue
             .into_sorted_iter()
             .map(|(i, _)| *i)
-            .collect::<VecDeque<TaskId>>())
+            .collect::<VecDeque<Pid>>())
     }
 }
 

@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 pub use common::{
-    list_devices, ClientToken, Deadline, Devices, PreemptionResponse, ResourceAlloc,
+    list_devices, ClientToken, Deadline, Devices, Pid, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult, TaskType,
 };
@@ -124,9 +124,7 @@ pub fn schedule_one_of<T, E: From<Error>>(
     };
 
     check_scheduler_service_or_launch(address)?;
-    let caller = client
-        .connect()
-        .map_err(|e| E::from(Error::RpcError(e.to_string())))?;
+    let caller = client.connect()?;
     let allocation = wait_allocation(&caller, req, timeout)?;
     let result = execute_task(&caller, timeout, task_func, &allocation);
     let _ = release(&caller);
@@ -283,7 +281,7 @@ fn launch_scheduler_process(address: String) -> Result<(), Error> {
 
     match unsafe { fork() } {
         Ok(ForkResult::Parent { .. }) => {
-            // number of retries to check scheduler-service before returning an error
+            // number of retries to check that the scheduler-service is running
             let mut retries = START_SERVER_RETRIES;
             std::thread::sleep(Duration::from_millis(START_SERVER_DELAY));
             while let Err(e) = check_scheduler_service(address.clone()) {
@@ -321,7 +319,7 @@ fn launch_scheduler_process(address: String) -> Result<(), Error> {
                         }
                         Ok(())
                     });
-                    handler.join().unwrap()
+                    handler.join().expect("The scheduler lock holder panics")
                 }
                 Err(e) => {
                     error!(err = %e,"Error acquiring lock");
@@ -372,9 +370,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
 pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
     check_scheduler_service_or_launch(server_address())?;
     let client = Client::new(&server_address(), Default::default(), Default::default())?;
-    let client = client
-        .connect()
-        .map_err(|e| Error::RpcError(e.to_string()))?;
+    let client = client.connect()?;
     let res = client
         .list_allocations()
         .map_err(|e| {
@@ -396,15 +392,13 @@ fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
 }
 
 #[tracing::instrument(level = "debug")]
-fn check_scheduler_service(address: String) -> Result<(), Error> {
+fn check_scheduler_service(address: String) -> Result<Pid, Error> {
     let client = Client::new(&address, Default::default(), Default::default())?;
-    let client = client
-        .connect()
-        .map_err(|e| Error::RpcError(e.to_string()))?;
+    let client = client.connect()?;
     match client.check_server() {
-        Ok(_) => {
-            info!("Scheduler service running");
-            Ok(())
+        Ok(pid) => {
+            debug!("Scheduler service running, PID: {}", pid);
+            Ok(pid)
         }
         Err(e) => {
             let err = e.to_string();

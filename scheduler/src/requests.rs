@@ -2,7 +2,7 @@ use futures::channel::oneshot;
 use rust_gpu_tools::opencl::GPUSelector;
 use serde::{Deserialize, Serialize};
 
-use common::{PreemptionResponse, RequestMethod, ResourceAlloc};
+use common::{Pid, PreemptionResponse, RequestMethod, ResourceAlloc};
 
 use crate::monitor::MonitorInfo;
 use crate::Error;
@@ -16,6 +16,7 @@ pub enum SchedulerResponse {
     ReleasePreemptive,
     Abort(Result<(), Error>),
     RemoveStalled(Result<(), Error>),
+    CheckService(Pid),
     Monitoring(Result<MonitorInfo, String>),
 }
 
