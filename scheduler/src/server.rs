@@ -36,7 +36,7 @@ pub trait RpcMethods {
     #[rpc(name = "list_allocations")]
     fn list_allocations(&self) -> BoxFuture<RpcResult<AllocationResult>>;
 
-    #[rpc(name = "check_server")]
+    #[rpc(name = "service_status")]
     fn health_check(&self) -> BoxFuture<RpcResult<u64>>;
 
     #[rpc(name = "release")]

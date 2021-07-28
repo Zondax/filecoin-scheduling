@@ -77,7 +77,12 @@ impl RpcCaller {
 
     pub fn check_server(&self) -> RpcResult<Pid> {
         let handle = get_runtime().handle();
-        handle.block_on(async { self.handler.0.call_method("check_server", "Pid", ()).await })
+        handle.block_on(async {
+            self.handler
+                .0
+                .call_method("service_status", "Pid", ())
+                .await
+        })
     }
 
     pub fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
