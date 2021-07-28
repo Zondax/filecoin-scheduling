@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use sysinfo::{System, SystemExt};
 
 use chrono::Utc;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rust_gpu_tools::opencl::GPUSelector;
 use tracing::{debug, error, instrument, trace, warn};
 
@@ -75,6 +76,7 @@ pub(crate) struct Scheduler {
 
     devices: RwLock<Resources>,
     settings: Settings,
+    system: Mutex<System>,
 }
 
 impl Scheduler {
@@ -95,11 +97,13 @@ impl Scheduler {
             })
             .collect::<HashMap<GPUSelector, ResourceState>>();
         let devices = RwLock::new(Resources(state));
+        let system = Mutex::new(System::new());
         Self {
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
             devices,
             settings,
+            system,
         }
     }
 
@@ -188,18 +192,38 @@ impl Scheduler {
         SchedulerResponse::Schedule(Ok(Some(alloc)))
     }
 
-    fn log_stalled_jobs(&self) {
-        let queue = self.jobs_queue.read();
+    // this function will log stalled jobs that appears to be active in the system however,
+    // those that not correspond to any alive process will be removed.
+    fn log_remove_stalled_jobs(&self) {
         let state = self.tasks_state.read();
-        for job_id in queue.iter() {
-            if let Some(task) = state.get(job_id) {
-                if task_is_stalled(
-                    task.last_seen.load(Ordering::Relaxed),
-                    task.requirements.task_type,
-                    &self.settings,
-                ) {
+        let mut to_remove = vec![];
+        for (job_id, task) in state.iter() {
+            if task_is_stalled(
+                task.last_seen.load(Ordering::Relaxed),
+                task.requirements.task_type,
+                &self.settings,
+            ) {
+                let mut s = self.system.lock();
+                if !s.refresh_process(*job_id as _) {
+                    to_remove.push(*job_id);
+                } else {
                     warn!("Process {}:{} is stalling!!", job_id, task.context);
                 }
+            }
+        }
+        drop(state);
+        for id in to_remove.into_iter() {
+            warn!(
+                "Removing stalled job {} whose parent process does not exist",
+                id
+            );
+            // remove job(s) from our priority queue
+            self.jobs_queue.write().retain(|pid| *pid != id);
+            // remove job(s) from the state and unset any resources that were in used
+            if let Some(current_task) = self.tasks_state.write().remove(&id) {
+                self.devices
+                    .write()
+                    .unset_busy_resources(&current_task.allocation.devices, id);
             }
         }
     }
@@ -287,7 +311,7 @@ impl Scheduler {
         }
         // update the last_seen counter
         self.update_last_seen(&client)?;
-        self.log_stalled_jobs();
+        self.log_remove_stalled_jobs();
 
         // fast path the task's resource is being used by another task
         if self.wait_for_busy_resources(&client)? {
