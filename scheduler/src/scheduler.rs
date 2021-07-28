@@ -6,7 +6,7 @@ use sysinfo::{System, SystemExt};
 use chrono::Utc;
 use parking_lot::{Mutex, RwLock};
 use rust_gpu_tools::opencl::GPUSelector;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, instrument, warn};
 
 use crate::config::{Settings, Task};
 use crate::handler::Handler;
@@ -114,6 +114,10 @@ impl Scheduler {
         requirements: TaskRequirements,
         job_context: String,
     ) -> SchedulerResponse {
+        // check for stalled jobs and remove those that no longer exists
+        // making room for client
+        self.log_remove_stalled_jobs();
+
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
             return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
@@ -190,42 +194,6 @@ impl Scheduler {
         }
 
         SchedulerResponse::Schedule(Ok(Some(alloc)))
-    }
-
-    // this function will log stalled jobs that appears to be active in the system however,
-    // those that not correspond to any alive process will be removed.
-    fn log_remove_stalled_jobs(&self) {
-        let state = self.tasks_state.read();
-        let mut to_remove = vec![];
-        for (job_id, task) in state.iter() {
-            if task_is_stalled(
-                task.last_seen.load(Ordering::Relaxed),
-                task.requirements.task_type,
-                &self.settings,
-            ) {
-                let mut s = self.system.lock();
-                if !s.refresh_process(*job_id as _) {
-                    to_remove.push(*job_id);
-                } else {
-                    warn!("Process {}:{} is stalling!!", job_id, task.context);
-                }
-            }
-        }
-        drop(state);
-        for id in to_remove.into_iter() {
-            warn!(
-                "Removing stalled job {} whose parent process does not exist",
-                id
-            );
-            // remove job(s) from our priority queue
-            self.jobs_queue.write().retain(|pid| *pid != id);
-            // remove job(s) from the state and unset any resources that were in used
-            if let Some(current_task) = self.tasks_state.write().remove(&id) {
-                self.devices
-                    .write()
-                    .unset_busy_resources(&current_task.allocation.devices, id);
-            }
-        }
     }
 
     // this client has to wait if another is currently using the resource it shares
@@ -385,41 +353,67 @@ impl Scheduler {
         Ok(())
     }
 
+    fn check_process_exist(&self, pid: TaskId) -> bool {
+        let mut s = self.system.lock();
+        s.refresh_process(pid as _)
+    }
+
+    // this function logs stalled jobs that appears to be active in the system however,
+    // those that do not correspond to any alive process will be removed.
+    fn log_remove_stalled_jobs(&self) {
+        for stalled in self.get_stalled_jobs().iter() {
+            if !self.check_process_exist(*stalled) {
+                warn!(
+                    "Removing stalled job {} whose parent process does not exist",
+                    stalled
+                );
+                self.remove_job(*stalled);
+            } else {
+                // although the job appears to be in the queue(steps above)
+                // it might have returned and called release at this point, so it is better to check here.
+                if let Some(task) = self.tasks_state.read().get(stalled) {
+                    warn!("Process {}:{} is stalling!!", stalled, task.context);
+                }
+            }
+        }
+    }
+
     // this function is experimental and might be removed in later versions of the
     // scheduler.
     fn remove_stalled(&self, clients: Vec<TaskId>) -> Result<(), Error> {
-        for client in clients {
-            let mut state = self.tasks_state.write();
-            let task = state.get(&client).ok_or(Error::UnknownClient)?;
+        let stalled = self.get_stalled_jobs();
+        clients
+            .into_iter()
+            .filter(|to_remove| stalled.iter().any(|stalled_id| stalled_id == to_remove))
+            .for_each(|to_remove| self.remove_job(to_remove));
+        Ok(())
+    }
+
+    fn get_stalled_jobs(&self) -> Vec<TaskId> {
+        let mut stalled = vec![];
+        for (job_id, task) in self.tasks_state.read().iter() {
             if task_is_stalled(
                 task.last_seen.load(Ordering::Relaxed),
                 task.requirements.task_type,
                 &self.settings,
             ) {
-                trace!(
-                    "task: {} from: {} is stalling, removing",
-                    client,
-                    task.context
-                );
-
-                let task = state.remove(&client).expect("Job in the state yet");
-                // remove job from the priority queue
-                (*self.jobs_queue.write()).retain(|pid| *pid != client);
-                drop(state);
-                // only the process with higher priority can mark the resource as free
-                self.devices
-                    .write()
-                    .unset_busy_resources(&task.allocation.devices, client);
-                if let ResourceType::Gpu(ref m) = task.allocation.requirement.resource {
-                    self.devices
-                        .write()
-                        .free_memory(m, task.allocation.devices.as_slice());
-                }
-            } else {
-                return Err(Error::JobNotStalling(client));
+                stalled.push(*job_id);
             }
         }
-        Ok(())
+        stalled
+    }
+
+    fn remove_job(&self, id: TaskId) {
+        // remove job from our priority queue
+        self.jobs_queue.write().retain(|pid| *pid != id);
+        // remove job from the state and unset any resources that were in used
+        if let Some(current_task) = self.tasks_state.write().remove(&id) {
+            let mut devices = self.devices.write();
+            devices.unset_busy_resources(&current_task.allocation.devices, id);
+            if let ResourceType::Gpu(ref m) = current_task.allocation.requirement.resource {
+                devices.free_memory(m, current_task.allocation.devices.as_slice());
+            }
+        }
     }
 
     #[instrument(level = "trace", skip(self))]
