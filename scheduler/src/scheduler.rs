@@ -119,7 +119,7 @@ impl Scheduler {
     ) -> SchedulerResponse {
         // check for stalled jobs and remove those that no longer exists
         // making room for client
-        self.log_remove_stalled_jobs();
+        self.log_stalled_jobs();
 
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
@@ -282,7 +282,7 @@ impl Scheduler {
         }
         // update the last_seen counter
         self.update_last_seen(&client)?;
-        self.log_remove_stalled_jobs();
+        self.log_stalled_jobs();
 
         // fast path the task's resource is being used by another task
         if self.wait_for_busy_resources(&client)? {
@@ -363,20 +363,19 @@ impl Scheduler {
 
     // this function logs stalled jobs that appears to be active in the system however,
     // those that do not correspond to any alive process will be removed.
-    fn log_remove_stalled_jobs(&self) {
+    fn log_stalled_jobs(&self) {
         for stalled in self.get_stalled_jobs().iter() {
-            if !self.check_process_exist(*stalled) {
-                warn!(
-                    "Removing stalled job {} whose parent process does not exist",
-                    stalled
-                );
+            // just in case the maintenance thread is not running this removal happens on-demand,
+            // more specifically  if there are stalled jobs and calls to wait_preemptive from
+            // clients.
+            if self.check_process_exist(*stalled) {
                 self.remove_job(*stalled);
-            } else {
-                // although the job appears to be in the queue(steps above)
-                // it might have returned and called release at this point, so it is better to check here.
-                if let Some(task) = self.tasks_state.read().get(stalled) {
-                    warn!("Process {}:{} is stalling!!", stalled, task.context);
-                }
+                continue;
+            }
+            // although the job appears to be in the queue(steps above)
+            // it might have returned and called release at this point, so it is better to check here.
+            if let Some(task) = self.tasks_state.read().get(stalled) {
+                warn!("Process {}:{} is stalling!!", stalled, task.context);
             }
         }
     }
@@ -487,5 +486,20 @@ impl Handler for Scheduler {
             RequestMethod::CheckService => SchedulerResponse::CheckService(self.pid),
         };
         let _ = sender.send(response);
+    }
+
+    fn maintenance(&self) {
+        // remove jobs that no longer exist in the system.
+        let mut to_remove = vec![];
+        for id in self.jobs_queue.read().iter() {
+            if !self.check_process_exist(*id) {
+                warn!("Removing stalled job {}. Parent process does not exist", id);
+                to_remove.push(*id);
+            }
+        }
+
+        for id in to_remove.into_iter() {
+            self.remove_job(id);
+        }
     }
 }

@@ -7,6 +7,8 @@ use tracing::error;
 
 use common::TaskType;
 
+const MAINTENANCE_INTERVAL: u64 = 10000;
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
     exec_time: u64,
@@ -75,6 +77,9 @@ where
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct Service {
     address: String,
+    /// interval in milliseconds. if present in the configuration file, creates a thread that performs some maintenance
+    /// operations such as removing tasks that no longer exist in the system.
+    pub maintenance_interval: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -93,6 +98,7 @@ impl Default for Settings {
     fn default() -> Self {
         let service = Service {
             address: "127.0.0.1:5000".to_string(),
+            maintenance_interval: Some(MAINTENANCE_INTERVAL),
         };
 
         let time_settings = TimeSettings { min_wait_time: 120 };

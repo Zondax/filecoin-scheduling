@@ -53,8 +53,12 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Erro
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
+    let maintenance_interval = settings.service.maintenance_interval;
     let handler = scheduler::Scheduler::new(settings, devices);
     let server = Server::new(handler);
+    if let Some(tick) = maintenance_interval {
+        server.start_maintenance_thread(tick);
+    }
     let mut io = IoHandler::new();
 
     let address: SocketAddr = address.parse().map_err(|_| Error::InvalidAddress)?;
