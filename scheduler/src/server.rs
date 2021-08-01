@@ -1,4 +1,5 @@
 use std::result::Result;
+use std::sync::Arc;
 
 use futures::channel::oneshot;
 use futures::FutureExt;
@@ -55,14 +56,27 @@ pub trait RpcMethods {
     fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
 }
 
-pub struct Server<H: Handler>(H);
+pub struct Server<H: Handler>(Arc<H>);
 
 impl<H> Server<H>
 where
     H: Handler,
 {
     pub fn new(handler: H) -> Self {
+        let handler = Arc::new(handler);
         Self(handler)
+    }
+
+    pub fn start_maintenance_thread(&self, tick_interval: u64) {
+        use crossbeam::channel::{select, tick};
+        use std::time::Duration;
+        let handler = self.0.clone();
+        let ticker = tick(Duration::from_millis(tick_interval));
+        std::thread::spawn(move || loop {
+            select! {
+                recv(ticker) -> _ => handler.maintenance(),
+            }
+        });
     }
 }
 
