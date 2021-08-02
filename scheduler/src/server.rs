@@ -15,6 +15,8 @@ use common::{
     ClientToken, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
 };
 
+use tracing::warn;
+
 type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
 
@@ -74,7 +76,12 @@ where
         let ticker = tick(Duration::from_millis(tick_interval));
         std::thread::spawn(move || loop {
             select! {
-                recv(ticker) -> _ => handler.maintenance(),
+                recv(ticker) -> _ => {
+                    if !handler.maintenance() {
+                        warn!("Closing maintenance thread");
+                        break;
+                    }
+                },
             }
         });
     }
