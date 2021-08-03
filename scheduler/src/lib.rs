@@ -1,4 +1,4 @@
-use tracing::error;
+use tracing::{error, warn};
 
 mod config;
 mod error;
@@ -24,6 +24,8 @@ use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
 use std::path::PathBuf;
 
+use crossbeam::channel::bounded;
+
 const SCHEDULER_CONFIG_NAME: &str = "scheduler.toml";
 
 fn get_config_path() -> Result<PathBuf, Error> {
@@ -46,7 +48,7 @@ fn get_config_path() -> Result<PathBuf, Error> {
 }
 
 /// Starts a json-rpc server listening to *addr*
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "debug", skip(devices))]
 pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Error> {
     let path = get_config_path()?;
     let settings = Settings::new(path).map_err(|e| {
@@ -54,7 +56,8 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Erro
         Error::InvalidConfig(e.to_string())
     })?;
     let maintenance_interval = settings.service.maintenance_interval;
-    let handler = scheduler::Scheduler::new(settings, devices);
+    let (shutdown_tx, shutdown_rx) = bounded(0);
+    let handler = scheduler::Scheduler::new(settings, devices, Some(shutdown_tx));
     let server = Server::new(handler);
     if let Some(tick) = maintenance_interval {
         server.start_maintenance_thread(tick);
@@ -68,11 +71,18 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Erro
         .start_http(&address)
         .map_err(|e| Error::ConnectionError(e.to_string()))?;
 
-    server.wait();
+    let close_handle = server.close_handle();
+    std::thread::spawn(move || {
+        server.wait();
+    });
+
+    let _ = shutdown_rx.recv().unwrap();
+    close_handle.close();
+    warn!("Service closed");
     Ok(())
 }
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "debug", skip(devices))]
 // To be use for testing purposes
 pub fn spawn_scheduler_with_handler(
     address: &str,
@@ -83,7 +93,7 @@ pub fn spawn_scheduler_with_handler(
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
-    let handler = scheduler::Scheduler::new(settings, devices);
+    let handler = scheduler::Scheduler::new(settings, devices, None);
     let server = Server::new(handler);
     let mut io = IoHandler::new();
 

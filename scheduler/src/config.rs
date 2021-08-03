@@ -8,6 +8,7 @@ use tracing::error;
 use common::TaskType;
 
 const MAINTENANCE_INTERVAL: u64 = 10000;
+const SHUTDOWN_TIMEOUT: u64 = 300;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
@@ -78,8 +79,13 @@ where
 pub struct Service {
     address: String,
     /// interval in milliseconds. if present in the configuration file, creates a thread that performs some maintenance
-    /// operations such as removing tasks that no longer exist in the system.
+    /// operations such as removing tasks that no longer exist in the system or automatic shutdown
+    /// if there are not more tasks or requests.
     pub maintenance_interval: Option<u64>,
+    /// Time in seconds until the service should close itself if there are not more clients or
+    /// requests. This is done only if the [Service::maintenance_interval] setting is set in the
+    /// configuration.
+    pub shutdown_timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -99,6 +105,7 @@ impl Default for Settings {
         let service = Service {
             address: "127.0.0.1:5000".to_string(),
             maintenance_interval: Some(MAINTENANCE_INTERVAL),
+            shutdown_timeout: Some(SHUTDOWN_TIMEOUT),
         };
 
         let time_settings = TimeSettings { min_wait_time: 120 };

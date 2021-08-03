@@ -4,8 +4,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use sysinfo::{System, SystemExt};
 
 use chrono::Utc;
+use crossbeam::channel::Sender;
 use parking_lot::{Mutex, RwLock};
 use rust_gpu_tools::opencl::GPUSelector;
+use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
 use crate::config::{Settings, Task};
@@ -78,10 +80,12 @@ pub(crate) struct Scheduler {
     settings: Settings,
     system: Mutex<System>,
     pid: Pid,
+    shutdown_tracker: RwLock<Instant>,
+    shutdown_tx: Option<Sender<()>>,
 }
 
 impl Scheduler {
-    pub fn new(settings: Settings, devices: Devices) -> Self {
+    pub fn new(settings: Settings, devices: Devices, shutdown_tx: Option<Sender<()>>) -> Self {
         // Created a solver
         let state = devices
             .gpu_devices()
@@ -100,6 +104,7 @@ impl Scheduler {
         let devices = RwLock::new(Resources(state));
         let system = Mutex::new(System::new());
         let pid = palaver::thread::gettid();
+        let shutdown_tracker = RwLock::new(Instant::now());
         Self {
             tasks_state: RwLock::new(HashMap::new()),
             jobs_queue: RwLock::new(VecDeque::new()),
@@ -107,6 +112,8 @@ impl Scheduler {
             settings,
             system,
             pid,
+            shutdown_tracker,
+            shutdown_tx,
         }
     }
 
@@ -180,6 +187,7 @@ impl Scheduler {
         // Add the task to our list of jobs
         let mut state = self.tasks_state.write();
         state.insert(client.pid, task_state);
+        *self.shutdown_tracker.write() = Instant::now();
 
         // Update our plan
         let new_plan = match solver.solve_job_schedule(&*state, &self.settings) {
@@ -316,21 +324,6 @@ impl Scheduler {
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn release(&self, client: ClientToken) {
-        let task_state = { self.tasks_state.write().remove(&client.pid) };
-        if let Some(state) = task_state {
-            if let ResourceType::Gpu(ref m) = state.allocation.requirement.resource {
-                self.devices
-                    .write()
-                    .free_memory(m, state.allocation.devices.as_slice());
-            }
-            (*self.jobs_queue.write()).retain(|pid| *pid != client.pid);
-        } else {
-            warn!("Task resources already released");
-        }
-    }
-
-    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn release_preemptive(&self, client: ClientToken) {
         let state = self.tasks_state.read();
         if let Some(current_task) = state.get(&client.pid) {
@@ -344,6 +337,11 @@ impl Scheduler {
         } else {
             warn!("Task: {} is not in the queue - ignoring", client.pid);
         }
+    }
+
+    #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
+    fn release(&self, client: ClientToken) {
+        self.remove_job(client.pid)
     }
 
     fn abort(&self, clients: Vec<Pid>) -> Result<(), Error> {
@@ -415,6 +413,9 @@ impl Scheduler {
             if let ResourceType::Gpu(ref m) = current_task.allocation.requirement.resource {
                 devices.free_memory(m, current_task.allocation.devices.as_slice());
             }
+        }
+        if !self.tasks_state.read().is_empty() {
+            *self.shutdown_tracker.write() = Instant::now();
         }
     }
 
@@ -488,12 +489,13 @@ impl Handler for Scheduler {
         let _ = sender.send(response);
     }
 
-    fn maintenance(&self) {
+    fn maintenance(&self) -> bool {
+        let mut _continue = true;
         // remove jobs that no longer exist in the system.
         let mut to_remove = vec![];
         for id in self.jobs_queue.read().iter() {
             if !self.check_process_exist(*id) {
-                warn!("Removing stalled job {}. Parent process does not exist", id);
+                warn!("Removing job {}. Parent process does not exist", id);
                 to_remove.push(*id);
             }
         }
@@ -501,5 +503,16 @@ impl Handler for Scheduler {
         for id in to_remove.into_iter() {
             self.remove_job(id);
         }
+
+        if let Some(shutdown_timeout) = self.settings.service.shutdown_timeout {
+            if self.shutdown_tracker.read().elapsed().as_secs() > shutdown_timeout {
+                let _ = self.shutdown_tx.as_ref().map(|tx| {
+                    warn!("Closing service after {}s of inactivity", shutdown_timeout);
+                    let _ = tx.try_send(());
+                    _continue = false;
+                });
+            }
+        }
+        _continue
     }
 }
