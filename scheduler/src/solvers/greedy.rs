@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::config::Settings;
 use crate::scheduler::task_is_stalled;
-use crate::solver::{ResourceState, Resources, Solver, TaskState};
+use crate::solver::{Resources, Solver, TaskState};
 use crate::Error;
 use common::{Pid, ResourceAlloc, TaskRequirements};
 
@@ -47,11 +47,11 @@ fn get_by_resource_load(
 impl Solver for GreedySolver {
     fn allocate_task(
         &mut self,
-        resources: &Resources,
+        resources: &mut Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
         tasks_state: &HashMap<Pid, TaskState>,
-    ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)> {
+    ) -> Option<ResourceAlloc> {
         let device_restrictions = restrictions
             .clone()
             .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<GPUSelector>>());
@@ -87,8 +87,6 @@ impl Solver for GreedySolver {
             }
         }
 
-        // Make a new resource state, that the caller will use for updating the main resource state
-        let mut resources = resources.0.clone();
         if !options.is_empty() {
             // it is here where we can use some heuristic approach to select the best devices
             // but maybe for this we need a more advance scheduler algorithm
@@ -96,17 +94,15 @@ impl Solver for GreedySolver {
             let devices = options[0].0.clone();
             devices.iter().for_each(|id| {
                 let _ = resources
+                    .0
                     .get_mut(id)
                     //allocate memory
                     .map(|dev| dev.update_memory_usage(&requirement.resource));
             });
-            return Some((
-                ResourceAlloc {
-                    requirement,
-                    devices,
-                },
-                resources,
-            ));
+            return Some(ResourceAlloc {
+                requirement,
+                devices,
+            });
         }
         None
     }

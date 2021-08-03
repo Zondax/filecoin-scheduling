@@ -245,11 +245,11 @@ pub trait Solver {
 
     fn allocate_task(
         &mut self,
-        resources: &Resources,
+        resources: &mut Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
         task_state: &HashMap<Pid, TaskState>,
-    ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)>;
+    ) -> Option<ResourceAlloc>;
 }
 
 #[cfg(dummy_devices)]
