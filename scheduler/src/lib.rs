@@ -10,7 +10,8 @@ mod server;
 mod solver;
 mod solvers;
 
-use crate::config::Settings;
+pub use crate::config::Settings;
+pub use crate::scheduler::Scheduler;
 pub use error::Error;
 pub use handler::Handler;
 pub use monitor::*;

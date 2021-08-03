@@ -6,11 +6,10 @@ use std::time::Duration;
 use rust_gpu_tools::opencl::GPUSelector;
 
 use client::{
-    register, schedule_one_of, spawn_scheduler_with_handler, Deadline, Error, ResourceAlloc,
-    ResourceMemory, ResourceReq, ResourceType, TaskFunc, TaskReqBuilder, TaskRequirements,
+    register, schedule_one_of, spawn_scheduler_with_handler, Error, ResourceAlloc, TaskFunc,
     TaskResult,
 };
-use common::TaskType;
+use common::{dummy_task_requirements, TaskType};
 
 const NUM_ITERATIONS: usize = 20;
 
@@ -24,7 +23,6 @@ struct DevicesState(HashMap<GPUSelector, AtomicBool>);
 unsafe impl Sync for DevicesState {}
 
 impl DevicesState {
-    //noinspection RsSelfConvention
     fn set_state(&self, id: &GPUSelector, state: bool) {
         if self.0.get(id).unwrap().swap(state, Ordering::SeqCst) == state {
             panic!("Error: Multiple tasks using the same resource at the same time");
@@ -78,22 +76,6 @@ impl TaskFunc for Test {
     }
 }
 
-fn task_requirements() -> TaskRequirements {
-    let start = chrono::Utc::now();
-    let end = start + chrono::Duration::seconds(30);
-    let deadline = Deadline::new(start, end);
-
-    TaskReqBuilder::new()
-        .resource_req(ResourceReq {
-            resource: ResourceType::Gpu(ResourceMemory::All),
-            quantity: 1,
-            preemptible: true,
-        })
-        .with_time_estimations(Duration::from_millis(500), 1)
-        .with_deadline(Some(deadline))
-        .build()
-}
-
 #[test]
 fn test_schedule() {
     tracing_subscriber::fmt()
@@ -118,7 +100,7 @@ fn test_schedule() {
             let client = register::<Error>(None, Some(format!("{}:{}", file!(), line!()))).unwrap();
             let mut test_func = Test::new(i as _, state);
 
-            let mut task_req = task_requirements();
+            let mut task_req = dummy_task_requirements();
             if i == 0 {
                 task_req.task_type = Some(TaskType::MerkleProof);
                 task_req.deadline = None;

@@ -159,3 +159,22 @@ pub struct TaskRequirements {
     pub estimations: Option<TaskEstimations>,
     pub task_type: Option<TaskType>,
 }
+
+// Creates a dummy task requirements that is useful for testing purposes
+pub fn dummy_task_requirements() -> TaskRequirements {
+    use super::{ResourceMemory, ResourceType};
+
+    let start = chrono::Utc::now();
+    let end = start + chrono::Duration::seconds(30);
+    let deadline = Deadline::new(start, end);
+
+    TaskReqBuilder::new()
+        .resource_req(ResourceReq {
+            resource: ResourceType::Gpu(ResourceMemory::All),
+            quantity: 1,
+            preemptible: true,
+        })
+        .with_time_estimations(Duration::from_millis(500), 1)
+        .with_deadline(Some(deadline))
+        .build()
+}

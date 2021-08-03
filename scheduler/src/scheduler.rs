@@ -68,7 +68,7 @@ pub fn task_is_stalled(
 }
 
 #[derive(Debug)]
-pub(crate) struct Scheduler {
+pub struct Scheduler {
     // Keep a cache of jobs on the system. each job_id has an associated job state
     // indicating the current iteration, and allocated resources and its requirements per resource
     tasks_state: RwLock<HashMap<Pid, TaskState>>,
@@ -118,7 +118,7 @@ impl Scheduler {
     }
 
     #[instrument(level = "info", skip(requirements, self))]
-    fn schedule(
+    pub fn schedule(
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
@@ -284,7 +284,7 @@ impl Scheduler {
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
+    pub fn wait_preemptive(&self, client: ClientToken) -> Result<PreemptionResponse, Error> {
         if self.abort_client(&client)? {
             return Ok(PreemptionResponse::Abort);
         }
@@ -324,7 +324,7 @@ impl Scheduler {
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn release_preemptive(&self, client: ClientToken) {
+    pub fn release_preemptive(&self, client: ClientToken) {
         let state = self.tasks_state.read();
         if let Some(current_task) = state.get(&client.pid) {
             self.devices
@@ -340,7 +340,7 @@ impl Scheduler {
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
-    fn release(&self, client: ClientToken) {
+    pub fn release(&self, client: ClientToken) {
         self.remove_job(client.pid)
     }
 
