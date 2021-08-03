@@ -32,3 +32,14 @@ sysinfo = "0.19.2"
 palaver = "0.2.8"
 crossbeam = "0.8.1"
 
+[dev-dependencies]
+criterion = "0.3.4"
+rand = "0.8.4"
+
+[[bench]]
+name = "allocation"
+harness = false
+
+[[bench]]
+name = "wait_preemptive"
+harness = false

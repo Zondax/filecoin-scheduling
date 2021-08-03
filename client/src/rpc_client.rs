@@ -14,7 +14,7 @@ fn get_runtime() -> &'static Runtime {
     INSTANCE.get_or_init(|| Runtime::new().expect("Error creating tokio runtime"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
     pub base_url: String,
     pub token: ClientToken,

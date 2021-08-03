@@ -10,10 +10,11 @@ mod server;
 mod solver;
 mod solvers;
 
-use crate::config::Settings;
+pub use crate::config::Settings;
 pub use error::Error;
 pub use handler::Handler;
 pub use monitor::*;
+pub use scheduler::Scheduler;
 pub use server::RpcMethods;
 pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};
