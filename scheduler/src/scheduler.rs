@@ -146,7 +146,7 @@ impl Scheduler {
         let restrictions =
             match_task_devices(requirements.task_type, &self.settings.tasks_settings);
 
-        let resources = self.devices.read();
+        let mut resources = self.devices.write();
 
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
@@ -155,8 +155,8 @@ impl Scheduler {
         }
 
         let mut solver = create_solver(None);
-        let (alloc, new_resources) = match solver.allocate_task(
-            &resources,
+        let alloc = match solver.allocate_task(
+            &mut resources,
             &requirements,
             &restrictions,
             &*self.tasks_state.read(),
@@ -164,13 +164,7 @@ impl Scheduler {
             Some(res) => res,
             _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
         };
-        // drop here just for updating the resources state
         drop(resources);
-
-        {
-            let mut dev = self.devices.write();
-            dev.0 = new_resources;
-        }
 
         let time: u64 = Utc::now().timestamp() as u64;
 

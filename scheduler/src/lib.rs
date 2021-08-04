@@ -69,6 +69,7 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Erro
     io.extend_with(server.to_delegate());
 
     let server = ServerBuilder::new(io)
+        .threads(num_cpus::get())
         .start_http(&address)
         .map_err(|e| Error::ConnectionError(e.to_string()))?;
 
@@ -102,6 +103,7 @@ pub fn spawn_scheduler_with_handler(
     io.extend_with(server.to_delegate());
 
     let server = ServerBuilder::new(io)
+        .threads(num_cpus::get())
         .start_http(&address)
         .map_err(|e| Error::ConnectionError(e.to_string()))?;
     let close_handle = server.close_handle();

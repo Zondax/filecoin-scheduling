@@ -32,5 +32,5 @@ tracing-appender = "0.1.2"
 tracing-subscriber = { version = "0.2.19", default-features = true }
 
 [[bench]]
-name = "scheduler"
+name = "schedule_one_of"
 harness = false

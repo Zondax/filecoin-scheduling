@@ -2353,6 +2353,7 @@ dependencies = [
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "more-asserts",
+ "num_cpus",
  "palaver",
  "parking_lot",
  "priority-queue",
