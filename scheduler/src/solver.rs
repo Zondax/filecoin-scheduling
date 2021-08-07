@@ -161,9 +161,7 @@ fn deserialize_atomic_u64<'de, D>(de: D) -> Result<AtomicU64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(de)?;
-
-    match s.parse::<u64>() {
+    match u64::deserialize(de) {
         Ok(value) => Ok(AtomicU64::new(value)),
         Err(_) => Err(serde::de::Error::custom(
             "error trying to deserialize u64 for task last_seen timestamp",
@@ -182,9 +180,7 @@ fn deserialize_atomic_bool<'de, D>(de: D) -> Result<AtomicBool, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(de)?;
-
-    match s.parse::<bool>() {
+    match bool::deserialize(de) {
         Ok(value) => Ok(AtomicBool::new(value)),
         Err(_) => Err(serde::de::Error::custom(
             "error trying to deserialize boolean for task abort flag",
