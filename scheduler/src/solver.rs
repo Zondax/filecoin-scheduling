@@ -241,7 +241,7 @@ pub trait Solver {
 
     fn allocate_task(
         &mut self,
-        resources: &mut Resources,
+        resources: &Resources,
         requirements: &TaskRequirements,
         restrictions: &Option<Vec<GPUSelector>>,
         task_state: &HashMap<Pid, TaskState>,

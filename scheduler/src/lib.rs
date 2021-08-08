@@ -1,6 +1,7 @@
 use tracing::{error, warn};
 
 mod config;
+mod db;
 mod error;
 mod handler;
 mod monitor;
@@ -27,10 +28,12 @@ use std::path::PathBuf;
 
 use crossbeam::channel::bounded;
 
+pub type Result<T> = std::result::Result<T, Error>;
+
 const SCHEDULER_CONFIG_NAME: &str = "scheduler.toml";
 
-fn get_config_path() -> Result<PathBuf, Error> {
-    let mut path = if let Ok(val) = std::env::var("SCHEDULER_CONFIG_PATH") {
+pub(crate) fn get_config_path() -> Result<PathBuf> {
+    let path = if let Ok(val) = std::env::var("SCHEDULER_CONFIG_PATH") {
         let path: PathBuf = val.into();
         path
     } else {
@@ -44,21 +47,21 @@ fn get_config_path() -> Result<PathBuf, Error> {
         std::fs::create_dir_all(&path)
             .map_err(|e| Error::Other(format!("cannot create config dir {}", e.to_string())))?;
     }
-    path.push(SCHEDULER_CONFIG_NAME);
     Ok(path)
 }
 
 /// Starts a json-rpc server listening to *addr*
 #[tracing::instrument(level = "debug", skip(devices))]
-pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Error> {
-    let path = get_config_path()?;
+pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<()> {
+    let mut path = get_config_path()?;
+    path.push(SCHEDULER_CONFIG_NAME);
     let settings = Settings::new(path).map_err(|e| {
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
     let maintenance_interval = settings.service.maintenance_interval;
     let (shutdown_tx, shutdown_rx) = bounded(0);
-    let handler = scheduler::Scheduler::new(settings, devices, Some(shutdown_tx));
+    let handler = scheduler::Scheduler::new(settings, devices, Some(shutdown_tx))?;
     let server = Server::new(handler);
     if let Some(tick) = maintenance_interval {
         server.start_maintenance_thread(tick);
@@ -89,13 +92,14 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<(), Erro
 pub fn spawn_scheduler_with_handler(
     address: &str,
     devices: common::Devices,
-) -> Result<CloseHandle, Error> {
-    let path = get_config_path()?;
+) -> Result<CloseHandle> {
+    let mut path = get_config_path()?;
+    path.push(SCHEDULER_CONFIG_NAME);
     let settings = Settings::new(path).map_err(|e| {
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
-    let handler = scheduler::Scheduler::new(settings, devices, None);
+    let handler = scheduler::Scheduler::new(settings, devices, None)?;
     let server = Server::new(handler);
     let mut io = IoHandler::new();
 

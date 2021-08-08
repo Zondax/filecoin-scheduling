@@ -53,6 +53,7 @@ mod tests {
         let mut solver = create_solver(None);
         //can allocate on any device so go
         let alloc = solver.allocate_task(&mut devices_t1, &task1, &None, &tasks);
+
         assert!(alloc.is_some());
 
         let allocation = ResourceAlloc {

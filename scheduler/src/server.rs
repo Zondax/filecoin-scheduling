@@ -1,4 +1,4 @@
-use std::result::Result;
+//use std::result::Result;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
@@ -10,15 +10,16 @@ use rust_gpu_tools::opencl::GPUSelector;
 use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::Error;
+
 use common::{
     ClientToken, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
 };
 
+use crate::Result;
 use tracing::warn;
 
-type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
-pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
+type AllocationResult = Result<Vec<(GPUSelector, u64)>>;
+pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T>>>;
 
 #[rpc(server)]
 pub trait RpcMethods {
@@ -34,7 +35,7 @@ pub trait RpcMethods {
     fn wait_preemptive(
         &self,
         task: ClientToken,
-    ) -> BoxFuture<RpcResult<Result<PreemptionResponse, Error>>>;
+    ) -> BoxFuture<RpcResult<Result<PreemptionResponse>>>;
 
     #[rpc(name = "list_allocations")]
     fn list_allocations(&self) -> BoxFuture<RpcResult<AllocationResult>>;
@@ -43,19 +44,19 @@ pub trait RpcMethods {
     fn health_check(&self) -> BoxFuture<RpcResult<u64>>;
 
     #[rpc(name = "release")]
-    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "release_preemptive")]
-    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "abort")]
-    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "remove_stalled")]
-    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "monitoring")]
-    fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
+    fn monitoring(&self) -> BoxFuture<RpcResult<std::result::Result<MonitorInfo, String>>>;
 }
 
 pub struct Server<H: Handler>(Arc<H>);
@@ -111,7 +112,7 @@ impl<H: Handler> RpcMethods for Server<H> {
     fn wait_preemptive(
         &self,
         client: ClientToken,
-    ) -> BoxFuture<RpcResult<Result<PreemptionResponse, Error>>> {
+    ) -> BoxFuture<RpcResult<Result<PreemptionResponse>>> {
         let method = RequestMethod::WaitPreemptive(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -141,7 +142,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::Release(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -156,7 +157,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::ReleasePreemptive(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -171,7 +172,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -186,7 +187,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::RemoveStalled(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -201,7 +202,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>> {
+    fn monitoring(&self) -> BoxFuture<RpcResult<std::result::Result<MonitorInfo, String>>> {
         let method = RequestMethod::Monitoring;
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
