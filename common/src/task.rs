@@ -91,8 +91,8 @@ impl Deadline {
     pub fn as_duration(&self) -> Option<Duration> {
         let start = self.start_timestamp_secs();
         let end = self.end_timestamp_secs();
-        let duration_secs = end.checked_sub(start)?;
-        Some(Duration::from_secs(duration_secs as u64))
+        end.checked_sub(start)
+            .map(|duration_secs| Duration::from_secs(duration_secs as u64))
     }
 }
 
