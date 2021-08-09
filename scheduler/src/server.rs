@@ -1,4 +1,3 @@
-//use std::result::Result;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
