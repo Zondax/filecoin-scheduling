@@ -35,7 +35,7 @@ fn preemption(bench: &mut Bencher, clients: &mut HashSet<ClientToken>) {
     let settings = Settings::default();
     let devices = list_devices();
     let task_req = dummy_task_requirements();
-    let scheduler = Scheduler::new(settings, devices, None);
+    let scheduler = Scheduler::new(settings, devices, None).unwrap();
     let mut rng = rand::thread_rng();
     for client in clients.iter() {
         scheduler.schedule(client.clone(), task_req.clone(), "".to_string());

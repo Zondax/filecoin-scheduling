@@ -32,7 +32,7 @@ fn schedule_500_jobs_bench(c: &mut Criterion) {
 fn schedule(bench: &mut Bencher, clients: &[ClientToken]) {
     let settings = Settings::default();
     let devices = list_devices();
-    let scheduler = Scheduler::new(settings, devices, None);
+    let scheduler = Scheduler::new(settings, devices, None).unwrap();
     let task_req = dummy_task_requirements();
     bench.iter(|| {
         for client in clients.iter() {
