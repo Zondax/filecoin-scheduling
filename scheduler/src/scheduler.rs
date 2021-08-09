@@ -41,33 +41,26 @@ pub fn match_task_devices(
     None
 }
 
-// compute whether a task is considered stalled
-//
-// if no taskType is provided then the task is valid if its `last_seen` is at least
-// settings.min_wait_time seconds before now
-//
-// if a taskType is provided then the task exec time is fetched and used instead of
-// settings.min_wait_time
+/// compute whether a task is considered stalled
+///
+/// using the value of [Settings::min_wait_time] seconds before now
+///
+/// if [Settings::max_wait_time] is set, this function will check if the
+/// stalled task should be removed regardless its parent process remains
+/// active in the system.
 pub fn task_is_stalled(
     last_seen: u64,
-    task_type: Option<TaskType>,
+    _task_type: Option<TaskType>,
     scheduler_settings: &Settings,
-) -> bool {
+) -> (bool, bool) {
     let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    if task_type.is_none() {
-        return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
-    }
-    let this_task = task_type.unwrap();
-    let time_of_task = scheduler_settings
-        .tasks_settings
-        .iter()
-        .find(|task| task.task_type() == this_task)
-        .map(|task| task.exec_time());
-    if time_of_task.is_none() {
-        //should not happen though....
-        return Utc::now().timestamp() as u64 - min_wait_time > last_seen;
-    }
-    Utc::now().timestamp() as u64 - time_of_task.unwrap() > last_seen
+    let max_wait_time = scheduler_settings.time_settings.max_wait_time;
+    let now = Utc::now().timestamp() as u64;
+    let is_stalled = now - min_wait_time > last_seen;
+    let must_be_removed = max_wait_time
+        .map(|max| now - max > last_seen)
+        .unwrap_or(false);
+    (is_stalled, must_be_removed)
 }
 
 //#[derive(Debug)]
@@ -409,18 +402,18 @@ impl Scheduler {
     // this function logs stalled jobs that appears to be active in the system however,
     // those that do not correspond to any alive process will be removed.
     fn log_stalled_jobs(&self) {
-        for stalled in self.get_stalled_jobs().iter() {
+        for (id, remove) in self.get_stalled_jobs().into_iter() {
             // just in case the maintenance thread is not running this removal happens on-demand,
             // more specifically  if there are stalled jobs and calls to wait_preemptive from
             // clients.
-            if self.check_process_exist(*stalled) {
-                self.remove_job(*stalled);
+            if !self.check_process_exist(id) || remove {
+                self.remove_job(id);
                 continue;
             }
             // although the job appears to be in the queue(steps above)
             // it might have returned and called release at this point, so it is better to check here.
-            if let Some(task) = self.tasks_state.read().get(stalled) {
-                warn!("Process {}:{} is stalling!!", stalled, task.context);
+            if let Some(task) = self.tasks_state.read().get(&id) {
+                warn!("Process {}:{} is stalling!!", id, task.context);
             }
         }
     }
@@ -431,20 +424,23 @@ impl Scheduler {
         let stalled = self.get_stalled_jobs();
         clients
             .into_iter()
-            .filter(|to_remove| stalled.iter().any(|stalled_id| stalled_id == to_remove))
+            .filter(|to_remove| stalled.iter().any(|stalled_id| stalled_id.0 == *to_remove))
             .for_each(|to_remove| self.remove_job(to_remove));
         Ok(())
     }
 
-    fn get_stalled_jobs(&self) -> Vec<Pid> {
+    // returns the id of stalling jobs and indicates if the
+    // task should be removed according to the configuration file
+    fn get_stalled_jobs(&self) -> Vec<(Pid, bool)> {
         let mut stalled = vec![];
         for (job_id, task) in self.tasks_state.read().iter() {
-            if task_is_stalled(
+            let (stalls, remove) = task_is_stalled(
                 task.last_seen.load(Ordering::Relaxed),
                 task.requirements.task_type,
                 &self.settings,
-            ) {
-                stalled.push(*job_id);
+            );
+            if stalls {
+                stalled.push((*job_id, remove));
             }
         }
         stalled
@@ -485,7 +481,8 @@ impl Scheduler {
                         last_seen,
                         state.requirements.task_type,
                         &self.settings,
-                    ),
+                    )
+                    .0,
                 }
             })
             .collect::<Vec<_>>();
