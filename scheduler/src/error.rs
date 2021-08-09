@@ -23,5 +23,5 @@ pub enum Error {
     #[error("Job:`{0}` is not stalling")]
     JobNotStalling(Pid),
     #[error("Database error: `{0}`")]
-    DataBase(String),
+    Database(String),
 }

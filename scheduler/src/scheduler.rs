@@ -11,7 +11,7 @@ use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
 use crate::config::{Settings, Task};
-use crate::db::DataBase;
+use crate::db::Database;
 use crate::handler::Handler;
 use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
 use crate::requests::{SchedulerRequest, SchedulerResponse};
@@ -82,7 +82,7 @@ pub struct Scheduler {
     // the db object to store the current state
     // so in case something goes wrong we can retrive the last
     // state from the db and re-construct our scheduler.
-    db: DataBase,
+    db: Database,
 
     devices: RwLock<Resources>,
     settings: Settings,
@@ -121,7 +121,7 @@ impl Scheduler {
 
         let mut path = crate::get_config_path()?;
         path.push(SCHEDULER_DB_NAME);
-        let db = DataBase::open(path)?;
+        let db = Database::open(path)?;
         let mut tasks_state = HashMap::new();
         let mut jobs_queue = VecDeque::new();
         //loading jobs from previous session

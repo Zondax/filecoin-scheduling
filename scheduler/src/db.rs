@@ -6,11 +6,11 @@ use std::iter::Iterator;
 use std::ops::RangeBounds;
 use std::path::Path;
 
-pub(crate) struct DataBase {
+pub(crate) struct Database {
     db: Db,
 }
 
-impl DataBase {
+impl Database {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let config = Config::default()
             .path(path)
@@ -89,6 +89,6 @@ impl DataBase {
 
 impl From<sled::Error> for Error {
     fn from(e: sled::Error) -> Self {
-        Self::DataBase(e.to_string())
+        Self::Database(e.to_string())
     }
 }
