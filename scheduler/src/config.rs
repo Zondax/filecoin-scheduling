@@ -10,10 +10,10 @@ use common::TaskType;
 const MAINTENANCE_INTERVAL: u64 = 10000;
 const SHUTDOWN_TIMEOUT: u64 = 300;
 
+const MIN_WAIT_TIME: u64 = 120;
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
-    exec_time: u64,
-    memory: u64,
     #[serde(
         deserialize_with = "deserialize_devices",
         serialize_with = "serialize_devices"
@@ -26,10 +26,6 @@ pub struct Task {
 impl Task {
     pub fn task_type(&self) -> TaskType {
         self.task_type
-    }
-
-    pub fn exec_time(&self) -> u64 {
-        self.exec_time
     }
 
     pub fn devices(&self) -> Vec<GPUSelector> {
@@ -90,7 +86,13 @@ pub struct Service {
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct TimeSettings {
+    /// time in seconds after which a task is considered stalled
     pub min_wait_time: u64,
+    /// time in seconds after which a task that is stalling would be removed
+    /// this setting just remove the job from the scheduler internal state,
+    /// there is not any warranty on the state of the resources the task was using.
+    /// this is undefined behavior and is not enable by default.
+    pub max_wait_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -108,17 +110,16 @@ impl Default for Settings {
             shutdown_timeout: Some(SHUTDOWN_TIMEOUT),
         };
 
-        let time_settings = TimeSettings { min_wait_time: 120 };
-        let exec_time = 60;
-        let memory = 1024 * 32; // 32 kib
+        let time_settings = TimeSettings {
+            min_wait_time: MIN_WAIT_TIME,
+            max_wait_time: None,
+        };
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
             .map(|d| d.device_id())
             .collect::<Vec<_>>();
         let task = Task {
-            exec_time,
-            memory,
             devices: all_devices.clone(),
             task_type: TaskType::MerkleProof,
         };
