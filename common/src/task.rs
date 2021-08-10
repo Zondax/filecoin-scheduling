@@ -87,6 +87,13 @@ impl Deadline {
     pub fn end_timestamp_secs(&self) -> i64 {
         self.end.timestamp()
     }
+
+    pub fn as_duration(&self) -> Option<Duration> {
+        let start = self.start_timestamp_secs();
+        let end = self.end_timestamp_secs();
+        end.checked_sub(start)
+            .map(|duration_secs| Duration::from_secs(duration_secs as u64))
+    }
 }
 
 /// Contains all the timing descriptions for

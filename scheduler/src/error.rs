@@ -22,4 +22,6 @@ pub enum Error {
     SolverOther(String),
     #[error("Job:`{0}` is not stalling")]
     JobNotStalling(Pid),
+    #[error("Database error: `{0}`")]
+    Database(String),
 }
