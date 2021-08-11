@@ -109,7 +109,7 @@ pub fn list_devices() -> Devices {
     let gpu_devices = (0..3)
         .map(|i| Device {
             memory: 4,
-            id: DeviceId(UniqueId::try_from(format!("00:0{}", i).as_str()).unwrap()),
+            id: DeviceId::try_from(format!("00:0{}", i).as_str()).unwrap(),
         })
         .collect::<Vec<Device>>();
 
