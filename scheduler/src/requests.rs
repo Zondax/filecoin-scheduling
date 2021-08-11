@@ -1,8 +1,7 @@
 use futures::channel::oneshot;
-use rust_gpu_tools::opencl::GPUSelector;
 use serde::{Deserialize, Serialize};
 
-use common::{Pid, PreemptionResponse, RequestMethod, ResourceAlloc};
+use common::{DeviceId, Pid, PreemptionResponse, RequestMethod, ResourceAlloc};
 
 use crate::monitor::MonitorInfo;
 use crate::Result;
@@ -11,7 +10,7 @@ use crate::Result;
 pub enum SchedulerResponse {
     Schedule(Result<Option<ResourceAlloc>>),
     SchedulerWaitPreemptive(Result<PreemptionResponse>),
-    ListAllocations(Result<Vec<(GPUSelector, u64)>>),
+    ListAllocations(Result<Vec<(DeviceId, u64)>>),
     Release,
     ReleasePreemptive,
     Abort(Result<()>),

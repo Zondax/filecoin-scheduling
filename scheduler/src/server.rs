@@ -4,20 +4,19 @@ use futures::channel::oneshot;
 use futures::FutureExt;
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
-use rust_gpu_tools::opencl::GPUSelector;
 
 use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 
 use common::{
-    ClientToken, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
+    ClientToken, DeviceId, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
 };
 
 use crate::Result;
 use tracing::warn;
 
-type AllocationResult = Result<Vec<(GPUSelector, u64)>>;
+type AllocationResult = Result<Vec<(DeviceId, u64)>>;
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T>>>;
 
 #[rpc(server)]

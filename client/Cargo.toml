@@ -20,7 +20,6 @@ fs2 = "0.4.3"
 thiserror = "1.0.26"
 jsonrpc-core = "17.1.0"
 jsonrpc-core-client = { version = "17.1.0", features = ["http"] }
-rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id" , features = ["serde_support"]}
 palaver = "0.2.8"
 once_cell = "1.8.0"
 

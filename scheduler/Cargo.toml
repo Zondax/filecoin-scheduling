@@ -4,8 +4,6 @@ version = "0.1.0"
 authors = ["Zondax GmbH <info@zondax.ch>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 common = { path = "../common/" }
 futures = "0.3.12"
@@ -20,7 +18,6 @@ thiserror = "1.0.24"
 config = "0.11.0"
 toml = "0.5.8"
 chrono = "0.4.19"
-rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id", features = ["serde_support"]}
 parking_lot = "0.11.1"
 dirs = "3.0.2"
 sysinfo = "0.19.2"

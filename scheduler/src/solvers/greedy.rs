@@ -5,10 +5,9 @@ use crate::{
     solver::{Resources, Solver, TaskState},
     Result,
 };
-use common::{Pid, ResourceAlloc, TaskRequirements};
+use common::{DeviceId, Pid, ResourceAlloc, TaskRequirements};
 
 use priority_queue::PriorityQueue;
-use rust_gpu_tools::opencl::GPUSelector;
 use std::cmp::Reverse;
 
 pub struct GreedySolver;
@@ -16,7 +15,7 @@ pub struct GreedySolver;
 fn get_by_resource_load(
     resources: &Resources,
     tasks_state: &HashMap<Pid, TaskState>,
-) -> Vec<GPUSelector> {
+) -> Vec<DeviceId> {
     let mut map = HashMap::new();
     // get the load of each device
     resources.0.iter().for_each(|(id, _)| {
@@ -40,7 +39,7 @@ fn get_by_resource_load(
 
     resource_load_queue
         .into_sorted_iter()
-        .map(|(i, _)| *i)
+        .map(|(i, _)| i.clone())
         .collect::<Vec<_>>()
 }
 
@@ -49,12 +48,12 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<GPUSelector>>,
+        restrictions: &Option<Vec<DeviceId>>,
         tasks_state: &HashMap<Pid, TaskState>,
     ) -> Option<ResourceAlloc> {
         let device_restrictions = restrictions
             .clone()
-            .unwrap_or_else(|| resources.0.keys().copied().collect::<Vec<GPUSelector>>());
+            .unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
 
         let mut options = vec![];
 
@@ -68,7 +67,7 @@ impl Solver for GreedySolver {
             let mut optional_resources = resources
                 .get_devices_with_requirements(req)
                 .filter(|b| device_restrictions.iter().any(|x| x == b))
-                .collect::<Vec<GPUSelector>>();
+                .collect::<Vec<DeviceId>>();
 
             if optional_resources.len() >= quantity {
                 if resources.0.len() > 1 {
@@ -77,7 +76,7 @@ impl Solver for GreedySolver {
                         .iter()
                         .filter(|id| optional_resources.iter().any(|optional| optional == *id))
                         .take(quantity)
-                        .copied()
+                        .cloned()
                         .collect::<Vec<_>>();
                     options.push((filtered, req.clone()));
                 } else {

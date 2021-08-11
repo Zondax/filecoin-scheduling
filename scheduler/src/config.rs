@@ -1,24 +1,27 @@
 use config::{Config, ConfigError, File};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-use rust_gpu_tools::opencl::{DeviceUuid, GPUSelector};
 use std::path::Path;
-use tracing::error;
 
-use common::TaskType;
+use common::{DeviceId, TaskType};
 
-const MAINTENANCE_INTERVAL: u64 = 10000;
+/// Define the interval in milliseconds
+/// after which the maintenance thread
+/// will perform a maintenance cycle
+const MAINTENANCE_INTERVAL: u64 = 2000;
+
+/// define the time in seconds after which
+/// the maintenance thread will close the
+/// scheduler if it has been inactive in the
+/// sense that there are neither pending jobs
+/// nor requests from clients
 const SHUTDOWN_TIMEOUT: u64 = 300;
 
 const MIN_WAIT_TIME: u64 = 120;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
-    #[serde(
-        deserialize_with = "deserialize_devices",
-        serialize_with = "serialize_devices"
-    )]
-    devices: Vec<GPUSelector>,
+    devices: Vec<DeviceId>,
     #[serde(deserialize_with = "TaskType::deserialize_with")]
     task_type: TaskType,
 }
@@ -28,47 +31,9 @@ impl Task {
         self.task_type
     }
 
-    pub fn devices(&self) -> Vec<GPUSelector> {
+    pub fn devices(&self) -> Vec<DeviceId> {
         self.devices.clone()
     }
-}
-pub fn deserialize_devices<'de, D>(de: D) -> Result<Vec<GPUSelector>, D::Error>
-where
-    D: serde::de::Deserializer<'de>,
-{
-    use std::convert::TryFrom;
-    use std::str::FromStr;
-    let s: Vec<String> = Vec::deserialize(de)?;
-    let mut selectors = vec![];
-    for id in s.iter() {
-        match (
-            DeviceUuid::try_from(id.as_str()),
-            u32::from_str(id.as_str()),
-        ) {
-            (Ok(uuid), Err(_)) => selectors.push(GPUSelector::Uuid(uuid)),
-            (Err(_), Ok(pci)) => selectors.push(GPUSelector::PciId(pci)),
-            _ => {
-                error!("unrecognized device id format: {}", id);
-                return Err(serde::de::Error::custom("Unrecognized device id format"));
-            }
-        }
-    }
-    Ok(selectors)
-}
-
-fn serialize_devices<S>(v: &[GPUSelector], s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let devices = v
-        .iter()
-        .map(|sel| match sel {
-            GPUSelector::Uuid(uuid) => uuid.to_string(),
-            GPUSelector::PciId(pci) => pci.to_string(),
-            _ => Default::default(),
-        })
-        .collect::<Vec<String>>();
-    s.collect_seq(devices)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -133,7 +98,7 @@ impl Default for Settings {
                     _ => TaskType::MerkleProof,
                 };
                 if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
-                    task_i.devices = [all_devices[2]].to_vec();
+                    task_i.devices = [all_devices[2].clone()].to_vec();
                 }
                 task_i
             })
