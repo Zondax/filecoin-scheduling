@@ -6,7 +6,6 @@ use sysinfo::{System, SystemExt};
 use chrono::Utc;
 use crossbeam::channel::Sender;
 use parking_lot::{Mutex, RwLock};
-use rust_gpu_tools::opencl::GPUSelector;
 use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
@@ -19,8 +18,8 @@ use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 use crate::{Error, Result};
 use common::{
-    ClientToken, Devices, Pid, PreemptionResponse, RequestMethod, ResourceType, TaskRequirements,
-    TaskType,
+    ClientToken, DeviceId, Devices, Pid, PreemptionResponse, RequestMethod, ResourceType,
+    TaskRequirements, TaskType,
 };
 
 const SCHEDULER_DB_NAME: &str = "scheduler_db";
@@ -30,7 +29,7 @@ const SCHEDULER_DB_NAME: &str = "scheduler_db";
 pub fn match_task_devices(
     task_type: Option<TaskType>,
     scheduler_settings: &[Task],
-) -> Option<Vec<GPUSelector>> {
+) -> Option<Vec<DeviceId>> {
     let this_task = task_type?;
     for task in scheduler_settings {
         let devices = task.devices();
@@ -105,7 +104,7 @@ impl Scheduler {
                     },
                 )
             })
-            .collect::<HashMap<GPUSelector, ResourceState>>();
+            .collect::<HashMap<DeviceId, ResourceState>>();
 
         // System object to track processes
         let system = Mutex::new(System::new());
@@ -353,12 +352,12 @@ impl Scheduler {
             .iter()
             .filter_map(|(i, device)| {
                 if device.mem_usage() > 0 {
-                    Some((*i, device.available_memory()))
+                    Some((i.clone(), device.available_memory()))
                 } else {
                     None
                 }
             })
-            .collect::<Vec<(GPUSelector, u64)>>();
+            .collect::<Vec<(DeviceId, u64)>>();
         SchedulerResponse::ListAllocations(Ok(alloc))
     }
 
@@ -490,7 +489,7 @@ impl Scheduler {
             .0
             .iter()
             .map(|(id, state)| GpuResource {
-                device_id: *id,
+                device_id: id.clone(),
                 name: state.dev.name(),
                 memory: state.dev.memory(),
                 mem_usage: state.mem_usage,

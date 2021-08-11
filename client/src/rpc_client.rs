@@ -1,10 +1,9 @@
 use jsonrpc_core_client::transports::http::connect;
 use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
-use rust_gpu_tools::opencl::GPUSelector;
 use tokio::runtime::Runtime;
 
 use super::Error as ClientError;
-use common::{ClientToken, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, DeviceId, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
 
 use once_cell::sync::OnceCell;
@@ -85,14 +84,14 @@ impl RpcCaller {
         })
     }
 
-    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
+    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(DeviceId, u64)>, Error>> {
         let handle = get_runtime().handle();
         handle.block_on(async {
             self.handler
                 .0
                 .call_method(
                     "list_allocations",
-                    "Result<Vec<(GPUSelector, u64)>, Error>",
+                    "Result<Vec<(DeviceId, u64)>, Error>",
                     (),
                 )
                 .await

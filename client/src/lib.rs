@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use rust_gpu_tools::opencl::GPUSelector;
 use tracing::{debug, error, trace, warn};
 
 pub use common::{
-    list_devices, ClientToken, Deadline, Devices, Pid, PreemptionResponse, ResourceAlloc,
+    list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
     TaskRequirements, TaskResult, TaskType,
 };
@@ -364,7 +363,7 @@ pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
 }
 
 /// Returns a tuple with the ID and available memory of devices being used
-pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
+pub fn list_allocations() -> Result<HashMap<DeviceId, u64>, Error> {
     check_scheduler_service_or_launch(server_address())?;
     let client = Client::new(&server_address(), Default::default(), Default::default())?;
     let client = client.connect()?;
@@ -375,7 +374,7 @@ pub fn list_allocations() -> Result<HashMap<GPUSelector, u64>, Error> {
             Error::Other(e.to_string())
         })
         .map(|res| res.unwrap());
-    res.map(|vec| vec.into_iter().collect::<HashMap<GPUSelector, u64>>())
+    res.map(|vec| vec.into_iter().collect::<HashMap<DeviceId, u64>>())
 }
 
 #[tracing::instrument(level = "debug")]

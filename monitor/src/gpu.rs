@@ -1,4 +1,3 @@
-use rust_gpu_tools::opencl::GPUSelector;
 use tui::widgets::TableState;
 
 use crate::MonitorInfo;
@@ -50,7 +49,7 @@ impl GpuTable {
                     break;
                 }
             }
-            row.push(format!("{:?}", resource.device_id));
+            row.push(format!("{:?}", resource.device_id.0));
             row.push(resource.name.clone());
             // memory in GB
             row.push(format!("{}", resource.memory));

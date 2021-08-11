@@ -14,9 +14,11 @@ mod tests {
     use crate::solver::TaskState;
     use crate::solver::{ResourceState, Resources};
     use chrono::Utc;
-    use common::{Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements};
-    use rust_gpu_tools::opencl::GPUSelector;
+    use common::{
+        DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
+    };
     use std::collections::HashMap;
+    use std::convert::TryFrom;
     use std::sync::atomic::{AtomicBool, AtomicU64};
 
     #[test]
@@ -58,7 +60,7 @@ mod tests {
 
         let allocation = ResourceAlloc {
             requirement: task1.req[0].clone(),
-            devices: vec![GPUSelector::PciId(0)],
+            devices: vec![DeviceId::try_from("00:00").unwrap()],
         };
         let time: u64 = Utc::now().timestamp() as u64;
         let tasks_state = TaskState {

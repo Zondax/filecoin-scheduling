@@ -1,15 +1,14 @@
-#[cfg(not(dummy_devices))]
 use std::hash::{Hash, Hasher};
 
-use rust_gpu_tools::opencl::GPUSelector;
-#[cfg(not(dummy_devices))]
-use rust_gpu_tools::opencl::{Device as ClDevice, DeviceUuid};
+use crate::DeviceId;
+
+use rust_gpu_tools::opencl::Device as ClDevice;
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone)]
 pub struct Device {
     dev: ClDevice,
-    pub selector: GPUSelector,
+    pub id: DeviceId,
 }
 
 #[cfg(not(dummy_devices))]
@@ -17,11 +16,11 @@ impl Hash for Device {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         if let Some(uuid) = self.dev.uuid() {
             uuid.hash(hasher);
-        } else if let Some(pci_id) = self.dev.pci_id() {
-            pci_id.hash(hasher);
         } else {
             self.dev.name().hash(hasher);
         }
+        let pci_id = self.dev.pci_id();
+        pci_id.hash(hasher);
     }
 }
 
@@ -29,28 +28,14 @@ impl Hash for Device {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     memory: u64,
-    selector: GPUSelector,
+    id: DeviceId,
 }
 
 #[cfg(not(dummy_devices))]
 impl Device {
-    pub fn device_id(&self) -> GPUSelector {
-        self.selector
+    pub fn device_id(&self) -> DeviceId {
+        self.id.clone()
     }
-    pub fn device_uuid(&self) -> Option<DeviceUuid> {
-        match self.selector {
-            GPUSelector::Uuid(uuid) => Some(uuid),
-            _ => None,
-        }
-    }
-
-    pub fn device_pci_id(&self) -> Option<u32> {
-        match self.selector {
-            GPUSelector::PciId(pci) => Some(pci),
-            _ => None,
-        }
-    }
-
     pub fn name(&self) -> String {
         self.dev.name()
     }
@@ -63,15 +48,13 @@ impl Device {
         self.dev.clone()
     }
 }
-
 #[cfg(dummy_devices)]
 impl Device {
-    pub fn device_id(&self) -> GPUSelector {
-        self.selector
+    pub fn device_id(&self) -> DeviceId {
+        self.id.clone()
     }
-
     pub fn name(&self) -> String {
-        format!("dummy_dev: {:?}", self.selector)
+        self.id.to_string()
     }
 
     pub fn memory(&self) -> u64 {
@@ -100,23 +83,13 @@ pub fn list_devices() -> Devices {
     let gpu_devices = {
         ClDevice::all()
             .into_iter()
-            .filter_map(|dev| {
-                if let Some(uuid) = dev.uuid() {
-                    Some((GPUSelector::Uuid(uuid), dev))
-                } else {
-                    dev.pci_id()
-                        .map(|pci| (GPUSelector::PciId(pci), dev))
-                        .or_else(|| {
-                            tracing::error!(
-                                "Device does not support the UUId nor PciId extensions"
-                            );
-                            None
-                        })
-                }
+            .map(|dev| {
+                let unique_id = dev.unique_id();
+                (DeviceId(unique_id), dev)
             })
-            .map(|(selector, dev)| Device {
+            .map(|(id, dev)| Device {
                 dev: dev.clone(),
-                selector,
+                id,
             })
             .collect::<Vec<Device>>()
     };
@@ -130,10 +103,13 @@ pub fn list_devices() -> Devices {
 
 #[cfg(dummy_devices)]
 pub fn list_devices() -> Devices {
+    use rust_gpu_tools::opencl::UniqueId;
+    use std::convert::TryFrom;
+
     let gpu_devices = (0..3)
         .map(|i| Device {
             memory: 4,
-            selector: GPUSelector::PciId(i as _),
+            id: DeviceId(UniqueId::try_from(format!("00:0{}", i).as_str()).unwrap()),
         })
         .collect::<Vec<Device>>();
 

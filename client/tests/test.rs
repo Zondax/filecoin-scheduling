@@ -3,13 +3,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rust_gpu_tools::opencl::GPUSelector;
-
 use client::{
     register, schedule_one_of, spawn_scheduler_with_handler, Error, ResourceAlloc, TaskFunc,
     TaskResult,
 };
-use common::{dummy_task_requirements, TaskType};
+use common::{dummy_task_requirements, DeviceId, TaskType};
 
 const NUM_ITERATIONS: usize = 20;
 
@@ -19,11 +17,11 @@ struct Test {
     devices_state: Arc<DevicesState>,
 }
 
-struct DevicesState(HashMap<GPUSelector, AtomicBool>);
+struct DevicesState(HashMap<DeviceId, AtomicBool>);
 unsafe impl Sync for DevicesState {}
 
 impl DevicesState {
-    fn set_state(&self, id: &GPUSelector, state: bool) {
+    fn set_state(&self, id: &DeviceId, state: bool) {
         if self.0.get(id).unwrap().swap(state, Ordering::SeqCst) == state {
             panic!("Error: Multiple tasks using the same resource at the same time");
         }

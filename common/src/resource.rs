@@ -1,4 +1,4 @@
-use rust_gpu_tools::opencl::GPUSelector;
+use crate::DeviceId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,11 +24,11 @@ pub struct ResourceReq {
     pub preemptible: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResourceAlloc {
     pub requirement: ResourceReq,
     // the devices allowed to use
-    pub devices: Vec<GPUSelector>,
+    pub devices: Vec<DeviceId>,
 }
 
 impl Default for ResourceAlloc {
