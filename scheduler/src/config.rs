@@ -1,21 +1,27 @@
 use config::{Config, ConfigError, File};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
-use rust_gpu_tools::opencl::{DeviceUuid, GPUSelector};
 use std::path::Path;
-use tracing::error;
 
-use common::TaskType;
+use common::{DeviceId, TaskType};
+
+/// Define the interval in milliseconds
+/// after which the maintenance thread
+/// will perform a maintenance cycle
+const MAINTENANCE_INTERVAL: u64 = 2000;
+
+/// define the time in seconds after which
+/// the maintenance thread will close the
+/// scheduler if it has been inactive in the
+/// sense that there are neither pending jobs
+/// nor requests from clients
+const SHUTDOWN_TIMEOUT: u64 = 300;
+
+const MIN_WAIT_TIME: u64 = 120;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
-    exec_time: u64,
-    memory: u64,
-    #[serde(
-        deserialize_with = "deserialize_devices",
-        serialize_with = "serialize_devices"
-    )]
-    devices: Vec<GPUSelector>,
+    devices: Vec<DeviceId>,
     #[serde(deserialize_with = "TaskType::deserialize_with")]
     task_type: TaskType,
 }
@@ -25,61 +31,33 @@ impl Task {
         self.task_type
     }
 
-    pub fn exec_time(&self) -> u64 {
-        self.exec_time
-    }
-
-    pub fn devices(&self) -> Vec<GPUSelector> {
+    pub fn devices(&self) -> Vec<DeviceId> {
         self.devices.clone()
     }
-}
-pub fn deserialize_devices<'de, D>(de: D) -> Result<Vec<GPUSelector>, D::Error>
-where
-    D: serde::de::Deserializer<'de>,
-{
-    use std::convert::TryFrom;
-    use std::str::FromStr;
-    let s: Vec<String> = Vec::deserialize(de)?;
-    let mut selectors = vec![];
-    for id in s.iter() {
-        match (
-            DeviceUuid::try_from(id.as_str()),
-            u32::from_str(id.as_str()),
-        ) {
-            (Ok(uuid), Err(_)) => selectors.push(GPUSelector::Uuid(uuid)),
-            (Err(_), Ok(pci)) => selectors.push(GPUSelector::PciId(pci)),
-            _ => {
-                error!("unrecognized device id format: {}", id);
-                return Err(serde::de::Error::custom("Unrecognized device id format"));
-            }
-        }
-    }
-    Ok(selectors)
-}
-
-fn serialize_devices<S>(v: &[GPUSelector], s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let devices = v
-        .iter()
-        .map(|sel| match sel {
-            GPUSelector::Uuid(uuid) => uuid.to_string(),
-            GPUSelector::PciId(pci) => pci.to_string(),
-            _ => Default::default(),
-        })
-        .collect::<Vec<String>>();
-    s.collect_seq(devices)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct Service {
     address: String,
+    /// interval in milliseconds. if present in the configuration file, creates a thread that performs some maintenance
+    /// operations such as removing tasks that no longer exist in the system or automatic shutdown
+    /// if there are not more tasks or requests.
+    pub maintenance_interval: Option<u64>,
+    /// Time in seconds until the service should close itself if there are not more clients or
+    /// requests. This is done only if the [Service::maintenance_interval] setting is set in the
+    /// configuration.
+    pub shutdown_timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct TimeSettings {
+    /// time in seconds after which a task is considered stalled
     pub min_wait_time: u64,
+    /// time in seconds after which a task that is stalling would be removed
+    /// this setting just remove the job from the scheduler internal state,
+    /// there is not any warranty on the state of the resources the task was using.
+    /// this is undefined behavior and is not enable by default.
+    pub max_wait_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -93,21 +71,22 @@ impl Default for Settings {
     fn default() -> Self {
         let service = Service {
             address: "127.0.0.1:5000".to_string(),
+            maintenance_interval: Some(MAINTENANCE_INTERVAL),
+            shutdown_timeout: Some(SHUTDOWN_TIMEOUT),
         };
 
-        let time_settings = TimeSettings { min_wait_time: 120 };
-        let exec_time = 60;
-        let memory = 1024 * 32; // 32 kib
+        let time_settings = TimeSettings {
+            min_wait_time: MIN_WAIT_TIME,
+            max_wait_time: None,
+        };
         let all_devices = common::list_devices()
             .gpu_devices()
             .iter()
             .map(|d| d.device_id())
             .collect::<Vec<_>>();
         let task = Task {
-            exec_time,
-            memory,
             devices: all_devices.clone(),
-            task_type: TaskType::MerkleProof,
+            task_type: TaskType::MerkleTree,
         };
         // create a setting with 3 task description
         let tasks_settings = (0..3)
@@ -116,10 +95,10 @@ impl Default for Settings {
                 task_i.task_type = match i {
                     1 => TaskType::WindowPost,
                     2 => TaskType::WinningPost,
-                    _ => TaskType::MerkleProof,
+                    _ => TaskType::MerkleTree,
                 };
                 if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
-                    task_i.devices = [all_devices[2]].to_vec();
+                    task_i.devices = [all_devices[2].clone()].to_vec();
                 }
                 task_i
             })

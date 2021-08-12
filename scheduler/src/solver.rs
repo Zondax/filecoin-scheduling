@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::Settings;
 use crate::Error;
 use common::{
-    Device, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskId, TaskRequirements,
+    Device, DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType,
+    TaskRequirements,
 };
-use rust_gpu_tools::opencl::GPUSelector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Wrapper that add additional information regarding to the Resource
@@ -21,7 +21,7 @@ pub struct ResourceState {
     pub mem_usage: u64,
     /// The task that is using this resource
     /// None means the resource is free
-    pub current_task: Option<TaskId>,
+    pub current_task: Option<Pid>,
 }
 
 impl ResourceState {
@@ -51,7 +51,7 @@ impl ResourceState {
         }
     }
 
-    pub fn set_as_busy(&mut self, task: TaskId) {
+    pub fn set_as_busy(&mut self, task: Pid) {
         // It is an error trying to set as busy a resource that is being used by
         // another process. It means that the scheduler is allowing multiple task
         // to use a resource at the same time.
@@ -62,14 +62,14 @@ impl ResourceState {
         self.current_task.replace(task);
     }
 
-    pub fn set_as_free(&mut self, task: TaskId) {
+    pub fn set_as_free(&mut self, task: Pid) {
         // only the task that set the resource as busy can freed it
         if Some(task) == self.current_task {
             self.current_task.take();
         }
     }
 
-    pub fn current_task(&self) -> Option<TaskId> {
+    pub fn current_task(&self) -> Option<Pid> {
         self.current_task
     }
 
@@ -79,7 +79,7 @@ impl ResourceState {
 }
 
 #[derive(Clone, Debug)]
-pub struct Resources(pub HashMap<GPUSelector, ResourceState>);
+pub struct Resources(pub HashMap<DeviceId, ResourceState>);
 
 impl Resources {
     pub fn available_memory(&self) -> u64 {
@@ -89,7 +89,7 @@ impl Resources {
     pub fn get_devices_with_requirements<'r>(
         &'r self,
         requirements: &'r ResourceReq,
-    ) -> impl Iterator<Item = GPUSelector> + 'r {
+    ) -> impl Iterator<Item = DeviceId> + 'r {
         self.0
             .iter()
             .filter_map(move |(sel, dev)| {
@@ -125,25 +125,25 @@ impl Resources {
         false
     }
 
-    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[GPUSelector]) {
+    pub fn free_memory(&mut self, mem: &ResourceMemory, devices: &[DeviceId]) {
         for id in devices {
             let _ = self.0.get_mut(id).map(|dev| dev.free_memory(mem));
         }
     }
 
-    pub fn has_busy_resources(&self, devices: &[GPUSelector]) -> bool {
+    pub fn has_busy_resources(&self, devices: &[DeviceId]) -> bool {
         devices
             .iter()
             .any(|id| self.0.get(id).map(|dev| dev.is_busy()).unwrap_or(false))
     }
 
-    pub fn set_busy_resources(&mut self, devices: &[GPUSelector], task: TaskId) {
+    pub fn set_busy_resources(&mut self, devices: &[DeviceId], task: Pid) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_busy(task));
         });
     }
 
-    pub fn unset_busy_resources(&mut self, devices: &[GPUSelector], task: TaskId) {
+    pub fn unset_busy_resources(&mut self, devices: &[DeviceId], task: Pid) {
         devices.iter().for_each(|id| {
             let _ = self.0.get_mut(id).map(|dev| dev.set_as_free(task));
         });
@@ -161,9 +161,7 @@ fn deserialize_atomic_u64<'de, D>(de: D) -> Result<AtomicU64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(de)?;
-
-    match s.parse::<u64>() {
+    match u64::deserialize(de) {
         Ok(value) => Ok(AtomicU64::new(value)),
         Err(_) => Err(serde::de::Error::custom(
             "error trying to deserialize u64 for task last_seen timestamp",
@@ -182,9 +180,7 @@ fn deserialize_atomic_bool<'de, D>(de: D) -> Result<AtomicBool, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(de)?;
-
-    match s.parse::<bool>() {
+    match bool::deserialize(de) {
         Ok(value) => Ok(AtomicBool::new(value)),
         Err(_) => Err(serde::de::Error::custom(
             "error trying to deserialize boolean for task abort flag",
@@ -239,16 +235,17 @@ impl TaskState {
 pub trait Solver {
     fn solve_job_schedule(
         &mut self,
-        input: &HashMap<TaskId, TaskState>,
+        current_state: &HashMap<Pid, TaskState>,
         scheduler_settings: &Settings,
-    ) -> Result<VecDeque<TaskId>, Error>;
+    ) -> Result<VecDeque<Pid>, Error>;
 
     fn allocate_task(
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<GPUSelector>>,
-    ) -> Option<(ResourceAlloc, HashMap<GPUSelector, ResourceState>)>;
+        restrictions: &Option<Vec<DeviceId>>,
+        task_state: &HashMap<Pid, TaskState>,
+    ) -> Option<ResourceAlloc>;
 }
 
 #[cfg(dummy_devices)]

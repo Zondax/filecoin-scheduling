@@ -1,21 +1,23 @@
-use std::result::Result;
+use std::sync::Arc;
 
 use futures::channel::oneshot;
 use futures::FutureExt;
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::jsonrpc_core::{BoxFuture, Result as RpcResult};
-use rust_gpu_tools::opencl::GPUSelector;
 
 use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::Error;
+
 use common::{
-    ClientToken, PreemptionResponse, RequestMethod, ResourceAlloc, TaskId, TaskRequirements,
+    ClientToken, DeviceId, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
 };
 
-type AllocationResult = Result<Vec<(GPUSelector, u64)>, Error>;
-pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T, Error>>>;
+use crate::Result;
+use tracing::warn;
+
+type AllocationResult = Result<Vec<(DeviceId, u64)>>;
+pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T>>>;
 
 #[rpc(server)]
 pub trait RpcMethods {
@@ -31,38 +33,56 @@ pub trait RpcMethods {
     fn wait_preemptive(
         &self,
         task: ClientToken,
-    ) -> BoxFuture<RpcResult<Result<PreemptionResponse, Error>>>;
+    ) -> BoxFuture<RpcResult<Result<PreemptionResponse>>>;
 
     #[rpc(name = "list_allocations")]
     fn list_allocations(&self) -> BoxFuture<RpcResult<AllocationResult>>;
 
-    #[rpc(name = "check_server")]
-    fn health_check(&self) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    #[rpc(name = "service_status")]
+    fn health_check(&self) -> BoxFuture<RpcResult<u64>>;
 
     #[rpc(name = "release")]
-    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "release_preemptive")]
-    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "abort")]
-    fn abort(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "remove_stalled")]
-    fn remove_stalled(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>>;
+    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>>;
 
     #[rpc(name = "monitoring")]
-    fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>>;
+    fn monitoring(&self) -> BoxFuture<RpcResult<std::result::Result<MonitorInfo, String>>>;
 }
 
-pub struct Server<H: Handler>(H);
+pub struct Server<H: Handler>(Arc<H>);
 
 impl<H> Server<H>
 where
     H: Handler,
 {
     pub fn new(handler: H) -> Self {
+        let handler = Arc::new(handler);
         Self(handler)
+    }
+
+    pub fn start_maintenance_thread(&self, tick_interval: u64) {
+        use crossbeam::channel::{select, tick};
+        use std::time::Duration;
+        let handler = self.0.clone();
+        let ticker = tick(Duration::from_millis(tick_interval));
+        std::thread::spawn(move || loop {
+            select! {
+                recv(ticker) -> _ => {
+                    if !handler.maintenance() {
+                        warn!("Closing maintenance thread");
+                        break;
+                    }
+                },
+            }
+        });
     }
 }
 
@@ -90,7 +110,7 @@ impl<H: Handler> RpcMethods for Server<H> {
     fn wait_preemptive(
         &self,
         client: ClientToken,
-    ) -> BoxFuture<RpcResult<Result<PreemptionResponse, Error>>> {
+    ) -> BoxFuture<RpcResult<Result<PreemptionResponse>>> {
         let method = RequestMethod::WaitPreemptive(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -120,7 +140,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn release(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::Release(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -135,7 +155,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn release_preemptive(&self, client: ClientToken) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::ReleasePreemptive(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -150,7 +170,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn abort(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn abort(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::Abort(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -165,7 +185,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn remove_stalled(&self, client: Vec<TaskId>) -> BoxFuture<RpcResult<Result<(), Error>>> {
+    fn remove_stalled(&self, client: Vec<Pid>) -> BoxFuture<RpcResult<Result<()>>> {
         let method = RequestMethod::RemoveStalled(client);
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -180,7 +200,7 @@ impl<H: Handler> RpcMethods for Server<H> {
         )
     }
 
-    fn monitoring(&self) -> BoxFuture<RpcResult<Result<MonitorInfo, String>>> {
+    fn monitoring(&self) -> BoxFuture<RpcResult<std::result::Result<MonitorInfo, String>>> {
         let method = RequestMethod::Monitoring;
         let (sender, receiver) = oneshot::channel();
         let request = SchedulerRequest { sender, method };
@@ -196,7 +216,18 @@ impl<H: Handler> RpcMethods for Server<H> {
     }
 
     // Endpoint for clients to check if the server instance is running
-    fn health_check(&self) -> BoxFuture<RpcResult<Result<(), Error>>> {
-        Box::pin(async { Ok(Ok(())) })
+    fn health_check(&self) -> BoxFuture<RpcResult<u64>> {
+        let method = RequestMethod::CheckService;
+        let (sender, receiver) = oneshot::channel();
+        let request = SchedulerRequest { sender, method };
+        self.0.process_request(request);
+        Box::pin(
+            receiver
+                .map(|e| match e {
+                    Ok(SchedulerResponse::CheckService(pid)) => Ok(pid),
+                    _ => unreachable!(),
+                })
+                .boxed(),
+        )
     }
 }

@@ -1,10 +1,9 @@
 use jsonrpc_core_client::transports::http::connect;
 use jsonrpc_core_client::{RpcChannel, RpcResult, TypedClient};
-use rust_gpu_tools::opencl::GPUSelector;
 use tokio::runtime::Runtime;
 
 use super::Error as ClientError;
-use common::{ClientToken, PreemptionResponse, ResourceAlloc, TaskRequirements};
+use common::{ClientToken, DeviceId, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements};
 use scheduler::Error;
 
 use once_cell::sync::OnceCell;
@@ -14,7 +13,7 @@ fn get_runtime() -> &'static Runtime {
     INSTANCE.get_or_init(|| Runtime::new().expect("Error creating tokio runtime"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
     pub base_url: String,
     pub token: ClientToken,
@@ -75,24 +74,24 @@ impl RpcCaller {
         })
     }
 
-    pub fn check_server(&self) -> RpcResult<Result<(), Error>> {
+    pub fn check_server(&self) -> RpcResult<Pid> {
         let handle = get_runtime().handle();
         handle.block_on(async {
             self.handler
                 .0
-                .call_method("check_server", "Result<(), Error>", ())
+                .call_method("service_status", "Pid", ())
                 .await
         })
     }
 
-    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(GPUSelector, u64)>, Error>> {
+    pub fn list_allocations(&self) -> RpcResult<Result<Vec<(DeviceId, u64)>, Error>> {
         let handle = get_runtime().handle();
         handle.block_on(async {
             self.handler
                 .0
                 .call_method(
                     "list_allocations",
-                    "Result<Vec<(GPUSelector, u64)>, Error>",
+                    "Result<Vec<(DeviceId, u64)>, Error>",
                     (),
                 )
                 .await

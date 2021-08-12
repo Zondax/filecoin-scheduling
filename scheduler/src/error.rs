@@ -1,4 +1,4 @@
-use common::TaskId;
+use common::Pid;
 
 #[derive(thiserror::Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Error {
@@ -21,5 +21,7 @@ pub enum Error {
     #[error("Solver error: `{0}`")]
     SolverOther(String),
     #[error("Job:`{0}` is not stalling")]
-    JobNotStalling(TaskId),
+    JobNotStalling(Pid),
+    #[error("Database error: `{0}`")]
+    Database(String),
 }

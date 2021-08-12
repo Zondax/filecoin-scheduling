@@ -17,4 +17,4 @@ futures = "0.3.12"
 tui = "0.14.0"
 termion = "1.5.6"
 chrono = "0.4.19"
-rust-gpu-tools = { version = "0.3.0", git = "https://github.com/Zondax/rust-gpu-tools.git" , branch = "unique_id", features = ["serde_support"]}
+serde = { version = "1.0.120", features = ["serde_derive"] }

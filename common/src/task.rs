@@ -26,7 +26,7 @@ pub enum TaskResult {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TaskType {
-    MerkleProof,
+    MerkleTree,
     WinningPost,
     WindowPost,
 }
@@ -41,7 +41,7 @@ impl TaskType {
         s.make_ascii_lowercase();
 
         match s.as_ref() {
-            "merkleproof" => Ok(TaskType::MerkleProof),
+            "merkletree" => Ok(TaskType::MerkleTree),
             "winningpost" => Ok(TaskType::WinningPost),
             "windowpost" => Ok(TaskType::WindowPost),
             _ => Err(serde::de::Error::custom(
@@ -86,6 +86,13 @@ impl Deadline {
 
     pub fn end_timestamp_secs(&self) -> i64 {
         self.end.timestamp()
+    }
+
+    pub fn as_duration(&self) -> Option<Duration> {
+        let start = self.start_timestamp_secs();
+        let end = self.end_timestamp_secs();
+        end.checked_sub(start)
+            .map(|duration_secs| Duration::from_secs(duration_secs as u64))
     }
 }
 
@@ -158,4 +165,23 @@ pub struct TaskRequirements {
     pub deadline: Option<Deadline>,
     pub estimations: Option<TaskEstimations>,
     pub task_type: Option<TaskType>,
+}
+
+// Creates a dummy task requirements that is useful for testing purposes
+pub fn dummy_task_requirements() -> TaskRequirements {
+    use super::{ResourceMemory, ResourceType};
+
+    let start = chrono::Utc::now();
+    let end = start + chrono::Duration::seconds(30);
+    let deadline = Deadline::new(start, end);
+
+    TaskReqBuilder::new()
+        .resource_req(ResourceReq {
+            resource: ResourceType::Gpu(ResourceMemory::All),
+            quantity: 1,
+            preemptible: true,
+        })
+        .with_time_estimations(Duration::from_millis(500), 1)
+        .with_deadline(Some(deadline))
+        .build()
 }
