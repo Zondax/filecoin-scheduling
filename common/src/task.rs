@@ -26,7 +26,7 @@ pub enum TaskResult {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TaskType {
-    MerkleProof,
+    MerkleTree,
     WinningPost,
     WindowPost,
 }
@@ -41,7 +41,7 @@ impl TaskType {
         s.make_ascii_lowercase();
 
         match s.as_ref() {
-            "merkleproof" => Ok(TaskType::MerkleProof),
+            "merkletree" => Ok(TaskType::MerkleTree),
             "winningpost" => Ok(TaskType::WinningPost),
             "windowpost" => Ok(TaskType::WindowPost),
             _ => Err(serde::de::Error::custom(

@@ -86,7 +86,7 @@ impl Default for Settings {
             .collect::<Vec<_>>();
         let task = Task {
             devices: all_devices.clone(),
-            task_type: TaskType::MerkleProof,
+            task_type: TaskType::MerkleTree,
         };
         // create a setting with 3 task description
         let tasks_settings = (0..3)
@@ -95,7 +95,7 @@ impl Default for Settings {
                 task_i.task_type = match i {
                     1 => TaskType::WindowPost,
                     2 => TaskType::WinningPost,
-                    _ => TaskType::MerkleProof,
+                    _ => TaskType::MerkleTree,
                 };
                 if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
                     task_i.devices = [all_devices[2].clone()].to_vec();
