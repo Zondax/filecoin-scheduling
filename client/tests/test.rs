@@ -100,7 +100,7 @@ fn test_schedule() {
 
             let mut task_req = dummy_task_requirements();
             if i == 0 {
-                task_req.task_type = Some(TaskType::MerkleProof);
+                task_req.task_type = Some(TaskType::MerkleTree);
                 task_req.deadline = None;
             }
             if i == 1 {
