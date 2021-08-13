@@ -14,16 +14,6 @@ const IPC_PATH: &str = "ipc_buffer";
 pub struct GlobalMutex(File);
 
 impl GlobalMutex {
-    pub fn new() -> Result<Self, Error> {
-        Self::_new(None)
-    }
-
-    //noinspection RsSelfConvention
-    #[allow(dead_code)]
-    pub fn with_name(name: &str) -> Result<Self, Error> {
-        Self::_new(Some(name))
-    }
-
     fn tmp_path(filename: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
         p.push(filename);
@@ -41,11 +31,19 @@ impl GlobalMutex {
         Ok(Self(file))
     }
 
-    #[tracing::instrument(level = "debug", skip(self))]
-    pub fn try_lock(&self) -> Result<(), Error> {
-        debug!("Trying to acquire the mutex");
-        self.0.try_lock_exclusive()?;
-        Ok(())
+    #[tracing::instrument(level = "debug")]
+    pub fn try_lock() -> Result<Self, Error> {
+        let f = Self::_new(None)?;
+        debug!("trying to acquire the mutex");
+        f.0.try_lock_exclusive()?;
+        Ok(f)
+    }
+    #[tracing::instrument(level = "debug")]
+    pub fn try_lock_with_name(name: &str) -> Result<Self, Error> {
+        let f = Self::_new(Some(name))?;
+        debug!("trying to acquire the mutex");
+        f.0.try_lock_exclusive()?;
+        Ok(f)
     }
 
     pub fn release(&self) -> Result<(), Error> {
@@ -99,8 +97,7 @@ mod tests {
                 .name(i.to_string())
                 .spawn(move || {
                     // Pass a name to the mutex because so that it is exclusive to this test
-                    let mutex = GlobalMutex::with_name("threads").unwrap();
-                    let guard = mutex.try_lock();
+                    let guard = GlobalMutex::try_lock_with_name("threads");
                     if guard.is_ok() {
                         sender.send(MutexState::Owned).unwrap();
                         // Ensures that this threads owns the mutex along the test
@@ -147,21 +144,15 @@ mod tests {
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = if let Ok(mutex) = GlobalMutex::with_name("process") {
-                    mutex
-                } else {
-                    sender.send(&MutexState::Error).unwrap();
-                    return;
-                };
-                let guard = mutex.try_lock();
+                let guard = GlobalMutex::try_lock_with_name("process");
                 if guard.is_ok() {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
                     std::thread::sleep(std::time::Duration::from_millis(300));
+                    drop(guard);
                 } else {
                     sender.send(&MutexState::Locked).unwrap();
                 }
-                drop(guard);
 
                 let mut res: Vec<MutexState> = vec![];
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
@@ -188,21 +179,15 @@ mod tests {
                 }
                 let shared = SharedRingBuffer::open(IPC_PATH).unwrap();
                 let sender = Sender::new(shared);
-                let mutex = if let Ok(mutex) = GlobalMutex::with_name("process") {
-                    mutex
-                } else {
-                    sender.send(&MutexState::Error).unwrap();
-                    return;
-                };
-                let guard = mutex.try_lock();
+                let guard = GlobalMutex::try_lock_with_name("process");
                 if guard.is_ok() {
                     sender.send(&MutexState::Owned).unwrap();
                     // Ensures that this threads owns the mutex along the test
                     std::thread::sleep(std::time::Duration::from_millis(300));
+                    drop(guard);
                 } else {
                     sender.send(&MutexState::Locked).unwrap();
                 }
-                drop(guard);
             }
             Err(e) => panic!("{}", e.to_string()),
         }
