@@ -297,33 +297,28 @@ fn launch_scheduler_process(address: String) -> Result<(), Error> {
             }
             Ok(())
         }
-        Ok(ForkResult::Child) => {
-            let mutex = GlobalMutex::new().map_err(|e| {
-                error!(err = %e,"Failed creating scheduler lock file");
-                e
-            })?;
-            match mutex.try_lock() {
-                Ok(_) => {
-                    let mut retries = START_SERVER_RETRIES;
-                    while let Err(e) = run_scheduler(&address, devices.clone()) {
-                        error!(err = %e,"Got error trying to start the server");
-                        retries -= 1;
-                        if retries == 0 {
-                            return Err(Error::Other(format!(
-                                "Can not start scheduler service: {}",
-                                e.to_string()
-                            )));
-                        }
+        Ok(ForkResult::Child) => match GlobalMutex::try_lock() {
+            Ok(guard) => {
+                let mut retries = START_SERVER_RETRIES;
+                while let Err(e) = run_scheduler(&address, devices.clone()) {
+                    error!(err = %e,"Got error trying to start the server");
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Other(format!(
+                            "Can not start scheduler service: {}",
+                            e.to_string()
+                        )));
                     }
-                    Ok(())
                 }
-                Err(e) => {
-                    error!(err = %e,"Error acquiring lock");
-                    debug!("another process started the scheduler - exiting");
-                    Err(e)
-                }
+                drop(guard);
+                Ok(())
             }
-        }
+            Err(e) => {
+                error!(err = %e,"Error acquiring lock");
+                debug!("another process started the scheduler - exiting");
+                Err(e)
+            }
+        },
         Err(e) => Err(Error::Other(e.to_string())),
     }
 }
