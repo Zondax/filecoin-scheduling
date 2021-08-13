@@ -22,8 +22,6 @@ use common::{
     TaskRequirements, TaskType,
 };
 
-const SCHEDULER_DB_NAME: &str = "scheduler_db";
-
 // match all the devices that were assigned to task with type taskType
 // returns None if there are not.
 pub fn match_task_devices(
@@ -89,6 +87,7 @@ impl Scheduler {
         settings: Settings,
         devices: Devices,
         shutdown_tx: Option<Sender<()>>,
+        db: Database,
     ) -> Result<Self> {
         // get the system resources
         let mut devices = devices
@@ -111,9 +110,6 @@ impl Scheduler {
         let shutdown_tracker = RwLock::new(Instant::now());
         let pid = palaver::thread::gettid();
 
-        let mut path = crate::get_config_path()?;
-        path.push(SCHEDULER_DB_NAME);
-        let db = Database::open(path)?;
         let mut tasks_state = HashMap::new();
         let mut jobs_queue = VecDeque::new();
         //loading jobs from previous session

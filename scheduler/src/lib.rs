@@ -21,6 +21,7 @@ pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};
 use std::net::SocketAddr;
 
+use crate::db::Database;
 use jsonrpc_http_server::jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
@@ -30,7 +31,10 @@ use crossbeam::channel::bounded;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+const SCHEDULER_DB_NAME: &str = "scheduler_db";
 const SCHEDULER_CONFIG_NAME: &str = "scheduler.toml";
+const TEST_DB_NAME: &str = "scheduler_test_db";
+const TEST_CONFIG_NAME: &str = "scheduler_test.toml";
 
 pub(crate) fn get_config_path() -> Result<PathBuf> {
     let path = if let Ok(val) = std::env::var("SCHEDULER_CONFIG_PATH") {
@@ -61,7 +65,10 @@ pub fn run_scheduler(address: &str, devices: common::Devices) -> Result<()> {
     })?;
     let maintenance_interval = settings.service.maintenance_interval;
     let (shutdown_tx, shutdown_rx) = bounded(0);
-    let handler = scheduler::Scheduler::new(settings, devices, Some(shutdown_tx))?;
+    let mut path = crate::get_config_path()?;
+    path.push(SCHEDULER_DB_NAME);
+    let db = Database::open(path, false)?;
+    let handler = scheduler::Scheduler::new(settings, devices, Some(shutdown_tx), db)?;
     let server = Server::new(handler);
     if let Some(tick) = maintenance_interval {
         server.start_maintenance_thread(tick);
@@ -93,13 +100,17 @@ pub fn spawn_scheduler_with_handler(
     address: &str,
     devices: common::Devices,
 ) -> Result<CloseHandle> {
-    let mut path = get_config_path()?;
-    path.push(SCHEDULER_CONFIG_NAME);
-    let settings = Settings::new(path).map_err(|e| {
+    let mut path = PathBuf::new();
+    path.push("/tmp");
+    path.push(TEST_CONFIG_NAME);
+    let settings = Settings::new(path.clone()).map_err(|e| {
         error!(err = %e, "Error reading config file");
         Error::InvalidConfig(e.to_string())
     })?;
-    let handler = scheduler::Scheduler::new(settings, devices, None)?;
+    path.pop();
+    path.push(TEST_DB_NAME);
+    let db = Database::open(path, true)?;
+    let handler = scheduler::Scheduler::new(settings, devices, None, db)?;
     let server = Server::new(handler);
     let mut io = IoHandler::new();
 
