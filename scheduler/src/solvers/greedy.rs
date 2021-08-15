@@ -78,10 +78,10 @@ impl Solver for GreedySolver {
                         .take(quantity)
                         .cloned()
                         .collect::<Vec<_>>();
-                    options.push((filtered, req.clone()));
+                    options.push((filtered, req));
                 } else {
                     optional_resources.truncate(quantity);
-                    options.push((optional_resources, req.clone()));
+                    options.push((optional_resources, req));
                 }
             }
         }
@@ -89,7 +89,7 @@ impl Solver for GreedySolver {
         if !options.is_empty() {
             // it is here where we can use some heuristic approach to select the best devices
             // but maybe for this we need a more advance scheduler algorithm
-            let requirement = options[0].1.clone();
+            let requirement = *options[0].1;
             let devices = options[0].0.clone();
             return Some(ResourceAlloc {
                 requirement,
