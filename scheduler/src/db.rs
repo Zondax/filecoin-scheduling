@@ -6,15 +6,15 @@ use std::iter::Iterator;
 use std::ops::RangeBounds;
 use std::path::Path;
 
-pub(crate) struct Database {
+pub struct Database {
     db: Db,
 }
 
 impl Database {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P, temporary: bool) -> Result<Self> {
         let config = Config::default()
             .path(path)
-            .temporary(false)
+            .temporary(temporary)
             .print_profile_on_drop(true)
             .flush_every_ms(Some(1000));
         let db = config.open().map_err(Error::from)?;
