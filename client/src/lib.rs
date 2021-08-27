@@ -204,9 +204,8 @@ fn wait_allocation(
     use std::time::Instant;
     let start = Instant::now();
     loop {
-        let alloc_state = client
-            .wait_allocation(requirements.clone(), client.inner.context.clone())
-            .map_err(|e| Error::RpcError(e.to_string()))??;
+        let alloc_state =
+            client.wait_allocation(requirements.clone(), client.inner.context.clone())?;
         if let Some(alloc) = alloc_state {
             debug!(
                 "Client: {}:{} from: {} - got allocation {:?}",
@@ -235,10 +234,7 @@ fn wait_preemptive(client: &RpcCaller, timeout: Duration) -> Result<PreemptionRe
     use std::time::Instant;
     let start = Instant::now();
     loop {
-        let response = client
-            .wait_preemptive()
-            .map_err(|e| Error::RpcError(e.to_string()))?
-            .map_err(Error::Scheduler);
+        let response = client.wait_preemptive();
         if let Ok(PreemptionResponse::Wait) = response {
             if start.elapsed() > timeout {
                 return Err(Error::Timeout);
@@ -252,18 +248,12 @@ fn wait_preemptive(client: &RpcCaller, timeout: Duration) -> Result<PreemptionRe
 
 #[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
 fn release_preemptive(client: &RpcCaller) -> Result<(), Error> {
-    client
-        .release_preemptive()
-        .map_err(|e| Error::RpcError(e.to_string()))?
-        .map_err(Error::Scheduler)
+    client.release_preemptive()
 }
 
 #[tracing::instrument(level = "info", skip(client), fields(pid = client.inner.token.pid))]
 fn release(client: &RpcCaller) -> Result<(), Error> {
-    client
-        .release()
-        .map_err(|e| Error::RpcError(e.to_string()))?
-        .map_err(Error::Scheduler)
+    client.release()
 }
 
 #[allow(dead_code)]
@@ -362,14 +352,9 @@ pub fn list_allocations() -> Result<HashMap<DeviceId, u64>, Error> {
     check_scheduler_service_or_launch(server_address())?;
     let client = Client::new(&server_address(), Default::default(), Default::default())?;
     let client = client.connect()?;
-    let res = client
-        .list_allocations()
-        .map_err(|e| {
-            error!(err = %e, "Got error listing allocations: ");
-            Error::Other(e.to_string())
-        })
-        .map(|res| res.unwrap());
-    res.map(|vec| vec.into_iter().collect::<HashMap<DeviceId, u64>>())
+    let res = client.list_allocations()?;
+
+    Ok(res.into_iter().collect::<HashMap<DeviceId, u64>>())
 }
 
 #[tracing::instrument(level = "debug")]
@@ -386,17 +371,9 @@ fn check_scheduler_service_or_launch(address: String) -> Result<(), Error> {
 fn check_scheduler_service(address: String) -> Result<Pid, Error> {
     let client = Client::new(&address, Default::default(), Default::default())?;
     let client = client.connect()?;
-    match client.check_server() {
-        Ok(pid) => {
-            debug!("Scheduler service running, PID: {}", pid);
-            Ok(pid)
-        }
-        Err(e) => {
-            let err = e.to_string();
-            error!(err = %e, "Scheduler service not running");
-            Err(Error::Other(err))
-        }
-    }
+    let pid = client.check_server()?;
+    debug!("Scheduler service running, PID: {}", pid);
+    Ok(pid)
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 
+use jsonrpc_core_client::RpcError;
 use scheduler::Error as SchedulerError;
 
 #[derive(thiserror::Error, Debug)]
@@ -22,4 +23,10 @@ pub enum Error {
     TaskFunctionPanics,
     #[error("Unknown error: `{0}`")]
     Other(String),
+}
+
+impl From<RpcError> for Error {
+    fn from(err: RpcError) -> Self {
+        Self::RpcError(err.to_string())
+    }
 }
