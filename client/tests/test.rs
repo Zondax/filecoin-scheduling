@@ -3,10 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use client::{
-    register, schedule_one_of, spawn_scheduler_with_handler, Error, ResourceAlloc, TaskFunc,
-    TaskResult,
-};
+use client::{spawn_scheduler_with_handler, Client, Error, ResourceAlloc, TaskFunc, TaskResult};
 use common::{dummy_task_requirements, DeviceId, TaskType};
 
 const NUM_ITERATIONS: usize = 20;
@@ -95,7 +92,8 @@ fn test_schedule() {
     for i in 0..4 {
         let state = devices_state.clone();
         joiner.push(std::thread::spawn(move || {
-            let client = register::<Error>(None, Some(format!("{}:{}", file!(), line!()))).unwrap();
+            let mut client = Client::register::<Error>().unwrap();
+            client.set_context(format!("{}:{}", file!(), line!()));
             let mut test_func = Test::new(i as _, state);
 
             let mut task_req = dummy_task_requirements();
@@ -113,13 +111,14 @@ fn test_schedule() {
             }
 
             tracing::info!("Task {} <<<<<<<< {:?}", i, task_req.req);
-            schedule_one_of(client, &mut test_func, task_req, Duration::from_secs(60))
+            client.schedule_one_of(&mut test_func, task_req, Duration::from_secs(60))
         }));
         std::thread::sleep(Duration::from_secs(2));
     }
 
     for j in joiner.into_iter() {
         let res = j.join().unwrap();
+        println!("{:?}", res);
         assert!(res.is_ok());
     }
 

@@ -6,10 +6,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common/" }
-futures = "0.3.15"
-jsonrpc-http-server = "17.1.0"
 nix = "0.22.0"
-reqwest = "0.11.4"
 scheduler = { path = "../scheduler/" }
 serde = { version = "1.0.126", features = ["serde_derive"] }
 tokio = { version = "0.2", features = ["time", "rt-threaded"] }
