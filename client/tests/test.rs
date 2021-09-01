@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use client::{spawn_scheduler_with_handler, Client, Error, ResourceAlloc, TaskFunc, TaskResult};
+use client::{
+    spawn_scheduler_with_handler, Client, Error, ResourceAlloc, Settings, TaskFunc, TaskResult,
+};
 use common::{dummy_task_requirements, DeviceId, TaskType};
 
 const NUM_ITERATIONS: usize = 20;
@@ -54,7 +56,7 @@ impl TaskFunc for Test {
         let result = if self.index < NUM_ITERATIONS {
             self.index += 1;
             tracing::info!("Task {} >>> {} ", self.id, self.index);
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(100));
             tracing::info!("Task {} <<<  ", self.id);
             TaskResult::Continue
         } else {
@@ -85,35 +87,40 @@ fn test_schedule() {
     });
     let devices_state = Arc::new(DevicesState(hash_map));
 
-    let handler = spawn_scheduler_with_handler("127.0.0.1:5000", devices).ok();
+    let mut settings = Settings::new("/tmp/test.config.toml").unwrap();
+    settings.service.address = "127.0.0.1:4000".to_owned();
+    let handler =
+        spawn_scheduler_with_handler(settings.clone(), "/tmp/schedule/", devices).unwrap();
+    //std::thread::sleep(Duration::from_millis(500));
 
     let mut joiner = vec![];
 
     for i in 0..4 {
         let state = devices_state.clone();
+        let settings = settings.clone();
         joiner.push(std::thread::spawn(move || {
-            let mut client = Client::register::<Error>().unwrap();
+            let mut client = Client::register_with_settings::<Error>(settings).unwrap();
             client.set_context(format!("{}:{}", file!(), line!()));
             let mut test_func = Test::new(i as _, state);
 
             let mut task_req = dummy_task_requirements();
-            if i == 0 {
-                task_req.task_type = Some(TaskType::MerkleTree);
-                task_req.deadline = None;
-            }
+            task_req.task_type = Some(TaskType::MerkleTree);
             if i == 1 {
-                task_req.task_type = Some(TaskType::WindowPost);
-                task_req.deadline = None;
+                task_req.task_type = Some(TaskType::WinningPost);
             }
             if i == 2 {
-                task_req.task_type = Some(TaskType::WinningPost);
-                task_req.deadline = None;
+                task_req.task_type = Some(TaskType::WindowPost);
             }
 
-            tracing::info!("Task {} <<<<<<<< {:?}", i, task_req.req);
+            tracing::info!(
+                "Task {} - pid {} <<<<<<<< {:?}",
+                i,
+                client.token.pid,
+                task_req.req
+            );
             client.schedule_one_of(&mut test_func, task_req, Duration::from_secs(60))
         }));
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     for j in joiner.into_iter() {
@@ -122,7 +129,5 @@ fn test_schedule() {
         assert!(res.is_ok());
     }
 
-    if let Some(h) = handler {
-        h.close();
-    }
+    handler.close();
 }

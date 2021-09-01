@@ -11,14 +11,14 @@ pub use common::{
 };
 pub use error::Error;
 pub use rpc_client::RpcCaller;
-use scheduler::{run_scheduler, Settings};
-pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError};
+use scheduler::run_scheduler;
+pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError, Settings};
+use std::path::PathBuf;
 
 pub mod error;
 mod global_mutex;
 mod rpc_client;
 
-const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 // delay in milliseconds between calls to wait_allocation/preemptive
 // this might be part of a configuration file.
 const WAIT_ALLOCATION_DELAY: u64 = 500;
@@ -29,55 +29,49 @@ const START_SERVER_RETRIES: u64 = 3;
 // amount of time to wait between retries in milliseconds
 const START_SERVER_DELAY: u64 = 500;
 
-// The initial idea for testing addresses was using std::net::TcpListener::bind(x.x.x.x:0)
-// that returns a random port that is not being used, but considering that we may have multiple
-// processes running on tests, having a static address is the best approach so far.
-const TEST_SERVER_ADDRESS: &str = "127.0.0.1:8000";
+const SCHEDULER_DB_NAME: &str = "scheduler_db";
+const SCHEDULER_CONFIG_NAME: &str = "scheduler.config.toml";
 
-// deadline values for winning and window post tasks.
-// for simplicity it is defined here but later it can move to
-// other place where it makes more sense to be.
-// 20 secs giving a margin of 5 secs
-const WINNING_POST_END_DEADLINE: u64 = 20;
-// 25min margin of 5min
-const WINDOW_POST_END_DEADLINE: u64 = 1500;
-
-// for winning post this timeout(seconds) is used to fallback to CPU
-const WINNING_POST_TIMEOUT: u64 = 10;
-
-// this function might be removed later as this
-// setting is part of the configuration file
-fn server_address() -> String {
-    if !cfg!(test) {
-        // This can change so the address might come from a configuration file along other settings
-        SERVER_ADDRESS.to_string()
+#[cfg(not(dummy_devices))]
+pub fn get_config_path() -> Result<PathBuf, Error> {
+    let path = if let Ok(val) = std::env::var("SCHEDULER_CONFIG_PATH") {
+        let path: PathBuf = val.into();
+        path
     } else {
-        TEST_SERVER_ADDRESS.to_string()
+        let mut path =
+            dirs::config_dir().ok_or_else(|| Error::Other("Unsupported platform".to_string()))?;
+        path.push("filecoin/");
+        path
+    };
+    // check that the dirs exist otherwise create them if possible
+    if !path.is_dir() {
+        std::fs::create_dir_all(&path).map_err(|e| {
+            Error::ConfigError(format!("cannot create config dir {}", e.to_string()))
+        })?;
     }
+    Ok(path)
 }
 
-#[tracing::instrument(level = "info")]
-pub fn abort(_client: ClientToken) -> Result<(), Error> {
-    unimplemented!();
+#[cfg(dummy_devices)]
+pub fn get_config_path() -> Result<PathBuf, Error> {
+    Ok(PathBuf::new().join("/tmp/"))
 }
 
 #[derive(Clone)]
 pub struct Client {
-    pub address: String,
     pub token: ClientToken,
-    /// Helper string that gives more context in logs messages
-    /// if it is not set a None value is the default
     pub context: String,
     pub(crate) rpc_caller: RpcCaller,
+    settings: Settings,
 }
 
 impl fmt::Debug for Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Client")
-            .field("adress", &self.address)
             .field("token", &self.token)
             .field("context", &self.context)
             .field("rpc_caller", &"http")
+            .field("settings", &self.settings)
             .finish()
     }
 }
@@ -85,25 +79,26 @@ impl fmt::Debug for Client {
 impl Client {
     #[tracing::instrument(level = "info")]
     pub fn register<E: From<Error>>() -> Result<Client, E> {
-        let pid = palaver::thread::gettid();
-        let token = ClientToken {
-            pid,
-            name: String::new(),
-        };
-        // TODO: Here we look for the config file and get the address from there as other params as
-        // well
-        Client::new(&server_address(), token).map_err(E::from)
+        let mut path = get_config_path()?;
+        path.push(SCHEDULER_CONFIG_NAME);
+        let settings = Settings::new(path).map_err(|e| Error::ConfigError(e.to_string()))?;
+        Client::new(Default::default(), settings).map_err(E::from)
     }
+
+    pub fn register_with_settings<E: From<Error>>(settings: Settings) -> Result<Client, E> {
+        Client::new(Default::default(), settings).map_err(E::from)
+    }
+
     /// Creates a client
     /// `address` must be an address like: ip:port
-    fn new(address: &str, token: ClientToken) -> Result<Self, crate::Error> {
-        let base_url = format!("http://{}", address);
+    fn new(token: ClientToken, settings: Settings) -> Result<Self, crate::Error> {
+        let base_url = format!("http://{}", settings.service.address);
         let rpc_caller = RpcCaller::new(&base_url.as_str())?;
         let client = Self {
-            address: address.to_owned(),
             token,
             context: String::new(),
             rpc_caller,
+            settings,
         };
         // start service if it is not running already
         client.check_scheduler_service_or_launch()?;
@@ -135,32 +130,26 @@ impl Client {
     /// task is scheduled on the resource that best fit the requirements. The task execution
     /// will be controlled by the scheduler service.
     /// * `timeout` - Indicates how much the client is able to wait for the task to be scheduled. It is
-    /// possible that the client have to wait for resources to be freed when other task are done. If it expires and Error would be returned indicating it was
+    /// possible that the client have to wait for resources to be freed when other task are done. If it expires an error would be returned indicating it was
     /// the case.
     #[tracing::instrument(level = "info", skip(self,timeout, task_func, req), fields(pid = self.token.pid))]
     pub fn schedule_one_of<T, E: From<Error>>(
         &self,
         task_func: &mut dyn TaskFunc<Output = T, Error = E>,
-        mut req: TaskRequirements,
+        req: TaskRequirements,
         timeout: Duration,
     ) -> Result<T, E> {
-        let timeout = match req.task_type {
-            Some(TaskType::WindowPost) => {
-                // modify the deadline only if it is empty
-                req.deadline
-                    .get_or_insert(Deadline::from_secs(0, WINDOW_POST_END_DEADLINE));
-                timeout
-            }
-            Some(TaskType::WinningPost) => {
-                // modify the deadline only if it is empty
-                req.deadline
-                    .get_or_insert(Deadline::from_secs(0, WINNING_POST_END_DEADLINE));
-                Duration::from_secs(WINNING_POST_TIMEOUT)
-            }
-            _ => timeout,
-        };
+        let timeout = req
+            .task_type
+            .and_then(|t| {
+                self.settings
+                    .tasks_settings
+                    .iter()
+                    .find(|s| s.task_type == t)
+                    .map(|task| Duration::from_secs(task.timeout))
+            })
+            .unwrap_or(timeout);
 
-        //self.check_scheduler_service_or_launch(address)?;
         let allocation = self.wait_allocation(req, timeout)?;
         let result = self.execute_task(timeout, task_func, &allocation);
         let _ = self.release();
@@ -292,40 +281,6 @@ impl Client {
         self.rpc_caller.release(&self.token)
     }
 
-    /// Helper function for creating a ResourceReq list
-    /// - Get the current allocations in the scheduler, push any resource that has not been allocated and use it as requirements
-    /// - If there are not available resources, which means all memory is used
-    /// it would list the raw devices information and use that as requirements.
-    //pub fn resources_as_requirements() -> Result<Vec<common::ResourceReq>, Error> {
-    //// Get the current devices state.
-    //// removing those that do not have available memory
-    //let mut resources = list_allocations()?;
-    //resources.retain(|_, memory| *memory > 0);
-
-    //// Push the devices that has no been allocated
-    //// or in case there are not available. Just get the current devices in the system and propose
-    //// them as a requirement
-    //common::list_devices().gpu_devices().iter().for_each(|dev| {
-    //let selector = dev.device_id();
-    //resources.entry(selector).or_insert_with(|| dev.memory());
-    //});
-
-    //// map to memory => quantity
-    //let mut reqs: HashMap<u64, usize> = HashMap::new();
-    //resources.into_iter().for_each(|(_, memory)| {
-    //let entry = reqs.entry(memory).or_insert(0);
-    //*entry += 1;
-    //});
-    //Ok(reqs
-    //.into_iter()
-    //.map(|(memory, quantity)| ResourceReq {
-    //resource: ResourceType::Gpu(ResourceMemory::Mem(memory)),
-    //quantity,
-    //preemptible: true, // by default the resource is preemptible assuming the task will perform more than 1 iteration
-    //})
-    //.collect::<Vec<_>>())
-    //}
-
     /// Returns a tuple with the ID and available memory of devices being used
     pub fn list_allocations(&self) -> Result<HashMap<DeviceId, u64>, Error> {
         let res = self.rpc_caller.list_allocations()?;
@@ -333,17 +288,16 @@ impl Client {
         Ok(res.into_iter().collect::<HashMap<DeviceId, u64>>())
     }
 
-    #[tracing::instrument(level = "debug")]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn check_scheduler_service_or_launch(&self) -> Result<(), Error> {
         if self.check_scheduler_service().is_ok() {
             Ok(())
         } else {
-            println!("Starting service");
             self.launch_scheduler_process()
         }
     }
 
-    #[tracing::instrument(level = "debug")]
+    #[tracing::instrument(level = "debug", skip(self))]
     fn check_scheduler_service(&self) -> Result<Pid, Error> {
         let pid = self.rpc_caller.check_server()?;
         debug!("Scheduler service running, PID: {}", pid);
@@ -380,9 +334,12 @@ impl Client {
             Ok(ForkResult::Child) => match GlobalMutex::try_lock() {
                 Ok(guard) => {
                     let mut retries = START_SERVER_RETRIES;
-                    while let Err(e) = run_scheduler(&self.address, devices.clone()) {
+                    let mut path = get_config_path()?;
+                    path.push(SCHEDULER_DB_NAME);
+                    while let Err(e) =
+                        run_scheduler(self.settings.clone(), path.clone(), devices.clone())
+                    {
                         retries -= 1;
-                        println!("RETRIES {}", retries);
                         if retries == 0 {
                             error!(err = %e, "Failed starting scheduler service");
                             return Err(Error::Scheduler(e));
@@ -392,8 +349,8 @@ impl Client {
                     Ok(())
                 }
                 Err(e) => {
-                    error!(err = %e,"Error acquiring lock");
                     debug!("another process started the scheduler - exiting");
+                    error!(err = %e,"Error acquiring lock");
                     Err(e)
                 }
             },
@@ -402,13 +359,6 @@ impl Client {
     }
 }
 
-#[tracing::instrument(level = "debug")]
-fn check_scheduler_service(address: String) -> Result<Pid, Error> {
-    let client = Client::register::<Error>()?;
-    let pid = client.rpc_caller.check_server()?;
-    debug!("Scheduler service running, PID: {}", pid);
-    Ok(pid)
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,10 +410,12 @@ mod tests {
 
     #[test]
     fn calls_scheduler_one_process() {
-        let client = Client::register::<Error>().unwrap();
+        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
+        settings.service.address = "127.0.0.1:8000".to_string();
+        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
 
         let devices = common::list_devices();
-        let handle = scheduler::spawn_scheduler_with_handler(&server_address(), devices).unwrap();
+        let handle = spawn_scheduler_with_handler(settings, "/tmp/one_task/", devices).unwrap();
 
         let res = client.schedule_one_of(&mut TaskTest, task_requirements(), Default::default());
         // Accept just this type of error
@@ -476,10 +428,11 @@ mod tests {
     #[test]
     fn release_test() {
         // This test only check communication and well formed param parsing
-        let address = server_address();
-        let client = Client::register::<Error>().unwrap();
+        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
+        settings.service.address = "127.0.0.1:10000".to_string();
+        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
         let devices = common::list_devices();
-        let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
+        let handle = spawn_scheduler_with_handler(settings, "/tmp/release/", devices).unwrap();
         let _res_req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,
@@ -494,10 +447,12 @@ mod tests {
 
     #[test]
     fn test_panic_handler() {
-        let address = server_address();
-        let client = Client::register::<Error>().unwrap();
+        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
+        settings.service.address = "127.0.0.1:9000".to_string();
+        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
         let devices = common::list_devices();
-        let handle = scheduler::spawn_scheduler_with_handler(&address, devices).unwrap();
+        let handle =
+            spawn_scheduler_with_handler(settings, "/tmp/panic_handler/", devices).unwrap();
         let _res_req = ResourceReq {
             resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
             quantity: 1,

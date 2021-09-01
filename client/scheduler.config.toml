@@ -1,0 +1,25 @@
+[[tasks_settings]]
+task_type = "MerkleTree"
+devices = ["00:00", "00:01", "00:02"]
+timeout = 1500
+deadline = 1500
+
+[[tasks_settings]]
+task_type = "WinningPost"
+devices = ["00:02"]
+timeout = 15
+deadline = 15
+
+[[tasks_settings]]
+task_type = "WindowPost"
+devices = ["00:00", "00:01", "00:02"]
+timeout = 900
+deadline = 900
+
+[service]
+address = "127.0.0.1:5000"
+maintenance_interval = 2000
+shutdown_timeout = 300
+
+[time_settings]
+min_wait_time = 120

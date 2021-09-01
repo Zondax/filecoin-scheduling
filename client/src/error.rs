@@ -23,6 +23,8 @@ pub enum Error {
     TaskFunctionPanics,
     #[error("ConnectionError: `{0}`")]
     ConnectionError(String),
+    #[error("ConfigError: `{0}`")]
+    ConfigError(String),
     #[error("Unknown error: `{0}`")]
     Other(String),
 }
