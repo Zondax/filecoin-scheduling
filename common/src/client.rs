@@ -9,10 +9,9 @@ pub struct ClientToken {
 impl Default for ClientToken {
     fn default() -> Self {
         let pid = palaver::thread::gettid();
-        let token = ClientToken {
+        ClientToken {
             pid,
             name: String::new(),
-        };
-        token
+        }
     }
 }

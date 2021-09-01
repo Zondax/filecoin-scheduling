@@ -66,7 +66,7 @@ pub fn spawn_scheduler_with_handler<P: AsRef<Path>>(
     let handler = scheduler::Scheduler::new(settings.clone(), devices, None, db)?;
     let server = Server::new(handler);
 
-    Ok(spawn_service(server, settings)?)
+    spawn_service(server, settings)
 }
 
 fn spawn_service<H: Handler>(server: Server<H>, settings: Settings) -> Result<CloseHandle> {

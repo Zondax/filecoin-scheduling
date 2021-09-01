@@ -93,7 +93,7 @@ impl Client {
     /// `address` must be an address like: ip:port
     fn new(token: ClientToken, settings: Settings) -> Result<Self, crate::Error> {
         let base_url = format!("http://{}", settings.service.address);
-        let rpc_caller = RpcCaller::new(&base_url.as_str())?;
+        let rpc_caller = RpcCaller::new(base_url.as_str())?;
         let client = Self {
             token,
             context: String::new(),
@@ -433,11 +433,6 @@ mod tests {
         let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
         let devices = common::list_devices();
         let handle = spawn_scheduler_with_handler(settings, "/tmp/release/", devices).unwrap();
-        let _res_req = ResourceReq {
-            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
-            quantity: 1,
-            preemptible: true,
-        };
 
         let res = client.release();
         handle.close();
@@ -453,11 +448,6 @@ mod tests {
         let devices = common::list_devices();
         let handle =
             spawn_scheduler_with_handler(settings, "/tmp/panic_handler/", devices).unwrap();
-        let _res_req = ResourceReq {
-            resource: common::ResourceType::Gpu(ResourceMemory::Mem(2)),
-            quantity: 1,
-            preemptible: true,
-        };
 
         let res = client.schedule_one_of(
             &mut TaskTestPanic,
