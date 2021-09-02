@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::UdpSocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -88,10 +89,11 @@ fn test_schedule() {
     let devices_state = Arc::new(DevicesState(hash_map));
 
     let mut settings = Settings::new("/tmp/test.config.toml").unwrap();
-    settings.service.address = "127.0.0.1:4000".to_owned();
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    settings.service.address = format!("{}", socket.local_addr().unwrap());
     let handler =
         spawn_scheduler_with_handler(settings.clone(), "/tmp/schedule/", devices).unwrap();
-    //std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(500));
 
     let mut joiner = vec![];
 

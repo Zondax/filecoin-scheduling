@@ -362,6 +362,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::UdpSocket;
 
     struct TaskTest;
 
@@ -410,12 +411,15 @@ mod tests {
 
     #[test]
     fn calls_scheduler_one_process() {
-        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
-        settings.service.address = "127.0.0.1:8000".to_string();
-        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
-
+        let mut path = PathBuf::new().join("/tmp");
+        path.push(SCHEDULER_CONFIG_NAME);
+        let mut settings = Settings::new(path).unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = common::list_devices();
-        let handle = spawn_scheduler_with_handler(settings, "/tmp/one_task/", devices).unwrap();
+        let handle =
+            spawn_scheduler_with_handler(settings.clone(), "/tmp/one_process/", devices).unwrap();
+        let client = Client::register_with_settings::<Error>(settings).unwrap();
 
         let res = client.schedule_one_of(&mut TaskTest, task_requirements(), Default::default());
         // Accept just this type of error
@@ -428,11 +432,15 @@ mod tests {
     #[test]
     fn release_test() {
         // This test only check communication and well formed param parsing
-        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
-        settings.service.address = "127.0.0.1:10000".to_string();
-        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
+        let mut path = PathBuf::new().join("/tmp");
+        path.push(SCHEDULER_CONFIG_NAME);
+        let mut settings = Settings::new(path).unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = common::list_devices();
-        let handle = spawn_scheduler_with_handler(settings, "/tmp/release/", devices).unwrap();
+        let handle =
+            spawn_scheduler_with_handler(settings.clone(), "/tmp/release_test/", devices).unwrap();
+        let client = Client::register_with_settings::<Error>(settings).unwrap();
 
         let res = client.release();
         handle.close();
@@ -442,12 +450,15 @@ mod tests {
 
     #[test]
     fn test_panic_handler() {
-        let mut settings = Settings::new(SCHEDULER_CONFIG_NAME).unwrap();
-        settings.service.address = "127.0.0.1:9000".to_string();
-        let client = Client::register_with_settings::<Error>(settings.clone()).unwrap();
+        let mut path = PathBuf::new().join("/tmp");
+        path.push(SCHEDULER_CONFIG_NAME);
+        let mut settings = Settings::new(path).unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = common::list_devices();
         let handle =
-            spawn_scheduler_with_handler(settings, "/tmp/panic_handler/", devices).unwrap();
+            spawn_scheduler_with_handler(settings.clone(), "/tmp/panic_test/", devices).unwrap();
+        let client = Client::register_with_settings::<Error>(settings).unwrap();
 
         let res = client.schedule_one_of(
             &mut TaskTestPanic,
