@@ -1,18 +1,18 @@
 [[tasks_settings]]
 task_type = "MerkleTree"
-devices = ["00:00", "00:01", "00:02"]
+devices = ["cd41e33e-91de-f0ff-e764-b00297783841", "46abccd6-022e-b783-572d-833f7104d05f"]
 timeout = 1500
 deadline = 1500
 
 [[tasks_settings]]
 task_type = "WinningPost"
-devices = ["00:02"]
+devices = ["cd41e33e-91de-f0ff-e764-b00297783841", "46abccd6-022e-b783-572d-833f7104d05f"]
 timeout = 15
 deadline = 15
 
 [[tasks_settings]]
 task_type = "WindowPost"
-devices = ["00:00", "00:01", "00:02"]
+devices = ["cd41e33e-91de-f0ff-e764-b00297783841", "46abccd6-022e-b783-572d-833f7104d05f"]
 timeout = 900
 deadline = 900
 
