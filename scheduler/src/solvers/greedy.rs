@@ -102,7 +102,7 @@ impl Solver for GreedySolver {
     fn solve_job_schedule(
         &mut self,
         current_state: &HashMap<Pid, TaskState>,
-        _scheduler_settings: &Settings,
+        settings: &Settings,
     ) -> Result<VecDeque<Pid>> {
         // Criterion A: Use task deadline as a priority indicator. The sooner the deadline the higher
         //      the priority
@@ -114,10 +114,18 @@ impl Solver for GreedySolver {
 
         // iterate our tasks for making the triplet pushing it into the queue
         for (job_id, state) in current_state.iter() {
-            // get the jobs deadline or fake a new one.
-            let deadline = state.requirements.deadline.map_or(u64::MAX, |d| {
-                d.as_duration().map(|d| d.as_secs()).unwrap_or(u64::MAX)
-            });
+            // get the jobs deadline according to task_type.
+            let deadline = settings
+                .tasks_settings
+                .iter()
+                .find(|task| Some(task.task_type) == state.requirements.task_type)
+                .map(|task| task.deadline)
+                .unwrap_or_else(|| {
+                    state.requirements.deadline.map_or(u64::MAX, |d| {
+                        d.as_duration().map(|d| d.as_secs()).unwrap_or(u64::MAX)
+                    })
+                });
+
             let conditions = (Reverse(deadline), Reverse(state.creation_time));
             priority_queue.push(job_id, conditions);
         }
