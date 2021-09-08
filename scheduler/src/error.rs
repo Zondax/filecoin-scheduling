@@ -1,4 +1,4 @@
-use common::Pid;
+use crate::Pid;
 
 #[derive(thiserror::Error, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Error {

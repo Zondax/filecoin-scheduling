@@ -5,7 +5,7 @@ authors = ["Zondax GmbH <info@zondax.ch>"]
 edition = "2018"
 
 [dependencies]
-common = { path = "../common/" }
+#common = { path = "../common/" }
 futures = "0.3.12"
 jsonrpc-core = "17.0.0"
 jsonrpc-derive = "17.0.0"
@@ -17,7 +17,7 @@ priority-queue = "1.0.5"
 thiserror = "1.0.24"
 config = "0.11.0"
 toml = "0.5.8"
-chrono = "0.4.19"
+chrono = { version = "0.4.19", features = ["serde"] }
 parking_lot = "0.11.1"
 dirs = "3.0.2"
 sysinfo = "0.19.2"
@@ -27,6 +27,7 @@ num_cpus = "1.13.0"
 sled = { version = "0.34.6" }
 bincode = "1.3.3"
 once_cell = "1.8.0"
+rust-gpu-tools = { version = "0.4.0"}
 
 [dev-dependencies]
 criterion = "0.3.4"

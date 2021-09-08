@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use std::path::Path;
 
-use common::{DeviceId, TaskType};
+use crate::{DeviceId, TaskType};
 
 /// Define the interval in milliseconds
 /// after which the maintenance thread
@@ -90,7 +90,7 @@ impl Default for Settings {
             min_wait_time: MIN_WAIT_TIME,
             max_wait_time: None,
         };
-        let all_devices = common::list_devices()
+        let all_devices = crate::list_devices()
             .gpu_devices()
             .iter()
             .map(|d| d.device_id())

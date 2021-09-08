@@ -16,11 +16,11 @@ use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
-use crate::{Error, Result};
-use common::{
+use crate::{
     ClientToken, DeviceId, Devices, Pid, PreemptionResponse, RequestMethod, ResourceType,
     TaskRequirements, TaskType,
 };
+use crate::{Error, Result};
 
 // match all the devices that were assigned to task with type taskType
 // returns None if there are not.
