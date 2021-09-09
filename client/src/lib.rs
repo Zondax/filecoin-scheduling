@@ -4,21 +4,23 @@ use std::time::Duration;
 
 use tracing::{debug, error, trace, warn};
 
+pub mod error;
+mod global_mutex;
+mod rpc_client;
+mod task;
+
 pub use error::Error;
 pub use rpc_client::RpcCaller;
 use scheduler::run_scheduler;
 pub use scheduler::{
     list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
-    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
-    TaskRequirements, TaskResult, TaskType,
+    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskReqBuilder, TaskRequirements,
+    TaskResult, TaskType,
 };
+pub use task::TaskFunc;
 
 pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError, Settings};
 use std::path::PathBuf;
-
-pub mod error;
-mod global_mutex;
-mod rpc_client;
 
 // delay in milliseconds between calls to wait_allocation/preemptive
 // this might be part of a configuration file.
