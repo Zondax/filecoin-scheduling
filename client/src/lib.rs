@@ -15,9 +15,9 @@ use scheduler::run_scheduler;
 pub use scheduler::{
     list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
     ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskReqBuilder, TaskRequirements,
-    TaskResult, TaskType,
+    TaskType,
 };
-pub use task::TaskFunc;
+pub use task::{TaskFunc, TaskResult};
 
 pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError, Settings};
 use std::path::PathBuf;

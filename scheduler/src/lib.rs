@@ -8,12 +8,12 @@ mod error;
 mod handler;
 mod monitor;
 mod requests;
+mod requirements;
 mod resource;
 mod scheduler;
 mod server;
 mod solver;
 mod solvers;
-mod task;
 
 pub use crate::config::Settings;
 pub use crate::scheduler::Scheduler;
@@ -23,12 +23,12 @@ pub use error::Error;
 pub use handler::Handler;
 pub use monitor::*;
 pub use requests::{PreemptionResponse, RequestMethod};
+pub use requirements::*;
 pub use resource::*;
 pub use server::RpcMethods;
 pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};
 use std::net::SocketAddr;
-pub use task::*;
 
 use crate::db::Database;
 use jsonrpc_http_server::jsonrpc_core::IoHandler;

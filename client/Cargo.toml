@@ -5,7 +5,6 @@ authors = ["Zondax GmbH <info@zondax.ch>"]
 edition = "2018"
 
 [dependencies]
-#common = { path = "../common/" }
 nix = "0.22.0"
 scheduler = { path = "../scheduler/" }
 serde = { version = "1.0.126", features = ["serde_derive"] }

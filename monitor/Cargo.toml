@@ -11,7 +11,6 @@ clap = "2.33.3"
 colorful = "0.2.1"
 anyhow = "1.0.40"
 scheduler = { path = "../scheduler/" }
-common = { path = "../common/" }
 tokio = { version = "1.5.0", features = ["rt-multi-thread"] }
 futures = "0.3.12"
 tui = "0.14.0"

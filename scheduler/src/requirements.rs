@@ -5,13 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::ResourceReq;
 
-/// Helper type that indicates if a task should be executed again
-#[derive(PartialEq, Eq)]
-pub enum TaskResult {
-    Continue,
-    Done,
-}
-
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TaskType {
@@ -37,12 +30,6 @@ impl TaskType {
                 "Trying to deserialize an unsupported task type",
             )),
         }
-    }
-}
-
-impl TaskResult {
-    pub fn is_continue(&self) -> bool {
-        matches!(self, Self::Continue)
     }
 }
 

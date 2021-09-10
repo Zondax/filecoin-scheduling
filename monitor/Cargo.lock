@@ -232,17 +232,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bca1619ff57dd7a56b58a8e25ef4199f123e78e503fe1653410350a1b98ae65"
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "num_cpus",
- "rust-gpu-tools",
- "serde 1.0.126",
- "tracing",
-]
-
-[[package]]
 name = "config"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1121,7 +1110,6 @@ dependencies = [
  "chrono",
  "clap",
  "colorful",
- "common",
  "futures",
  "jsonrpc_client",
  "reqwest",
@@ -1664,7 +1652,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "chrono",
- "common",
  "config",
  "crossbeam",
  "dirs 3.0.2",
@@ -1677,6 +1664,7 @@ dependencies = [
  "palaver",
  "parking_lot",
  "priority-queue",
+ "rust-gpu-tools",
  "serde 1.0.126",
  "sled",
  "sysinfo",
