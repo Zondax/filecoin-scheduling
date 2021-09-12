@@ -17,8 +17,8 @@ use crate::requests::{SchedulerRequest, SchedulerResponse};
 use crate::solver::{ResourceState, Resources, TaskState};
 use crate::solvers::create_solver;
 use crate::{
-    ClientToken, DeviceId, Devices, Pid, PreemptionResponse, RequestMethod, ResourceType,
-    TaskRequirements, TaskType,
+    ClientToken, DeviceId, Devices, Pid, PreemptionResponse, RequestMethod, ResourceAlloc,
+    ResourceType, TaskRequirements, TaskType,
 };
 use crate::{Error, Result};
 
@@ -147,15 +147,15 @@ impl Scheduler {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-        job_context: String,
-    ) -> SchedulerResponse {
+        context: job_context,
+    ) -> Result<Option<ResourceAlloc>> {
         // check for stalled jobs and remove those that no longer exists
         // making room for new clients
         self.log_stalled_jobs();
 
         if requirements.req.is_empty() {
             error!("Schedule request with empty parameters");
-            return SchedulerResponse::Schedule(Err(Error::ResourceReqEmpty));
+            return Err(Error::ResourceReqEmpty);
         }
         // before continuing we need to check if this client.pid is already in the
         // jobs queue meaning there is a collision that we need to avoid
@@ -165,7 +165,7 @@ impl Scheduler {
                 "Ignoring request - A client with the same id: {} is already in the queue ",
                 client.pid
             );
-            return SchedulerResponse::Schedule(Ok(None));
+            return Ok(None);
         }
 
         let restrictions =
@@ -176,7 +176,7 @@ impl Scheduler {
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
         if !resources.has_min_available_memory(&requirements) {
-            return SchedulerResponse::Schedule(Ok(None));
+            return Ok(None);
         }
 
         let mut solver = create_solver(None);
@@ -187,7 +187,7 @@ impl Scheduler {
             &*self.tasks_state.read(),
         ) {
             Some(res) => res,
-            _ => return SchedulerResponse::Schedule(Ok(None)), // Should not happen, we filtered lines before
+            _ => return Ok(None), // Should not happen, we filtered lines before
         };
         drop(resources);
 
@@ -214,13 +214,12 @@ impl Scheduler {
             Err(e) => {
                 error!("Solver error: {}", e.to_string());
                 self.tasks_state.write().remove(&client.pid);
-                return SchedulerResponse::Schedule(Err(Error::SolverOther(e.to_string())));
+                return Err(Error::SolverOther(e.to_string()));
             }
         };
 
-        if let Err(e) = self.db.insert(client.pid, task_state) {
-            return SchedulerResponse::Schedule(Err(e));
-        }
+        self.db.insert(client.pid, task_state)?;
+
         // update our resources state
         let mut resources = self.devices.write();
         alloc.devices.iter().for_each(|id| {
@@ -234,7 +233,7 @@ impl Scheduler {
         // state is not empty so reset the shutdown tracker
         *self.shutdown_tracker.write() = Instant::now();
 
-        SchedulerResponse::Schedule(Ok(Some(alloc)))
+        Ok(Some(alloc))
     }
 
     // this client has to wait if another is currently using the resource it shares
@@ -506,7 +505,9 @@ impl Handler for Scheduler {
         // Executor doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
-            RequestMethod::Schedule(client, req, context) => self.schedule(client, req, context),
+            RequestMethod::Schedule(client, req, context) => {
+                SchedulerResponse::Schedule(self.schedule(client, req, context))
+            }
             RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(client) => {
                 SchedulerResponse::SchedulerWaitPreemptive(self.wait_preemptive(client))
