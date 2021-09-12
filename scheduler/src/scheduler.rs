@@ -147,7 +147,7 @@ impl Scheduler {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-        context: job_context,
+        job_context: String,
     ) -> Result<Option<ResourceAlloc>> {
         // check for stalled jobs and remove those that no longer exists
         // making room for new clients
