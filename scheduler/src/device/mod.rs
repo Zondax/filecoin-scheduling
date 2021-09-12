@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 mod device_id;
 pub use device_id::DeviceId;
 
@@ -10,19 +8,6 @@ use rust_gpu_tools::opencl::Device as ClDevice;
 pub struct Device {
     dev: ClDevice,
     pub id: DeviceId,
-}
-
-#[cfg(not(dummy_devices))]
-impl Hash for Device {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        if let Some(uuid) = self.dev.uuid() {
-            uuid.hash(hasher);
-        } else {
-            self.dev.name().hash(hasher);
-        }
-        let pci_id = self.dev.pci_id();
-        pci_id.hash(hasher);
-    }
 }
 
 #[cfg(dummy_devices)]
