@@ -7,30 +7,11 @@ use super::ResourceReq;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
+#[serde(rename_all = "snake_case")]
 pub enum TaskType {
     MerkleTree,
     WinningPost,
     WindowPost,
-}
-
-//this is more appropriate here, unless this is VERY specific
-impl TaskType {
-    pub fn deserialize_with<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        let mut s = String::deserialize(de)?;
-        s.make_ascii_lowercase();
-
-        match s.as_ref() {
-            "merkletree" => Ok(TaskType::MerkleTree),
-            "winningpost" => Ok(TaskType::WinningPost),
-            "windowpost" => Ok(TaskType::WindowPost),
-            _ => Err(serde::de::Error::custom(
-                "Trying to deserialize an unsupported task type",
-            )),
-        }
-    }
 }
 
 /// Deadline struct to configure when the task should be started and finished

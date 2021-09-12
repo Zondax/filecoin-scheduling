@@ -30,7 +30,6 @@ const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
-    #[serde(deserialize_with = "TaskType::deserialize_with")]
     pub task_type: TaskType,
     pub devices: Vec<DeviceId>,
     pub timeout: u64,

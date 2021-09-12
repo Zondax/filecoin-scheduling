@@ -1,11 +1,11 @@
 use rust_gpu_tools::opencl::UniqueId;
-use serde::{de::Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct DeviceId(pub UniqueId);
 
 impl PartialEq for DeviceId {
@@ -41,42 +41,16 @@ impl TryFrom<&str> for DeviceId {
     }
 }
 
-impl DeviceId {
-    pub fn serialize_impl<S>(v: &Self, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match v.0 {
-            UniqueId::PciId(id) => s.serialize_str(id.to_string().as_str()),
-            UniqueId::Uuid(uuid) => s.serialize_str(uuid.to_string().as_str()),
-        }
-    }
+impl TryFrom<String> for DeviceId {
+    type Error = rust_gpu_tools::opencl::GPUError;
 
-    pub fn deserialize_impl<'de, D>(de: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let v = String::deserialize(de)?;
-        let inner =
-            UniqueId::try_from(v.as_ref()).map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        Ok(DeviceId(inner))
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Self(UniqueId::try_from(value.as_str())?))
     }
 }
 
-impl Serialize for DeviceId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Self::serialize_impl(self, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DeviceId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        DeviceId::deserialize_impl(deserializer)
+impl From<DeviceId> for String {
+    fn from(id: DeviceId) -> Self {
+        id.0.to_string()
     }
 }
