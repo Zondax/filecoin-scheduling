@@ -4,20 +4,23 @@ use std::time::Duration;
 
 use tracing::{debug, error, trace, warn};
 
-pub use common::{
-    list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
-    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskFunc, TaskReqBuilder,
-    TaskRequirements, TaskResult, TaskType,
-};
-pub use error::Error;
-pub use rpc_client::RpcCaller;
-use scheduler::run_scheduler;
-pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError, Settings};
-use std::path::PathBuf;
-
 pub mod error;
 mod global_mutex;
 mod rpc_client;
+mod task;
+
+pub use error::Error;
+pub use rpc_client::RpcCaller;
+use scheduler::run_scheduler;
+pub use scheduler::{
+    list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
+    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskReqBuilder, TaskRequirements,
+    TaskType,
+};
+pub use task::{TaskFunc, TaskResult};
+
+pub use scheduler::{spawn_scheduler_with_handler, Error as SchedulerError, Settings};
+use std::path::PathBuf;
 
 // delay in milliseconds between calls to wait_allocation/preemptive
 // this might be part of a configuration file.
@@ -311,7 +314,7 @@ impl Client {
         use nix::unistd::{fork, ForkResult};
 
         // check if there are resources to manage before trying to start the scheduler service
-        let devices = common::list_devices();
+        let devices = scheduler::list_devices();
         if devices.gpu_devices().is_empty() {
             return Err(Error::NoGpuResources);
         }
@@ -416,7 +419,7 @@ mod tests {
         let mut settings = Settings::new(path).unwrap();
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
-        let devices = common::list_devices();
+        let devices = scheduler::list_devices();
         let handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/one_process/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();
@@ -437,7 +440,7 @@ mod tests {
         let mut settings = Settings::new(path).unwrap();
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
-        let devices = common::list_devices();
+        let devices = scheduler::list_devices();
         let handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/release_test/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();
@@ -455,7 +458,7 @@ mod tests {
         let mut settings = Settings::new(path).unwrap();
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
-        let devices = common::list_devices();
+        let devices = scheduler::list_devices();
         let handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/panic_test/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();

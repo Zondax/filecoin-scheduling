@@ -5,7 +5,7 @@ use crate::{
     solver::{Resources, Solver, TaskState},
     Result,
 };
-use common::{DeviceId, Pid, ResourceAlloc, TaskRequirements};
+use crate::{DeviceId, Pid, ResourceAlloc, TaskRequirements};
 
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;

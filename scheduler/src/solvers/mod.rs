@@ -12,11 +12,11 @@ pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
 mod tests {
     use super::*;
     use crate::solver::TaskState;
-    use crate::solver::{ResourceState, Resources};
-    use chrono::Utc;
-    use common::{
-        DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
+    use crate::{
+        list_devices, solver::Resources, DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq,
+        ResourceState, ResourceType, TaskRequirements,
     };
+    use chrono::Utc;
     use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -24,7 +24,7 @@ mod tests {
     #[test]
     fn check_gpu_allocation() {
         let mut tasks = HashMap::new();
-        let devices = common::list_devices();
+        let devices = list_devices();
         let state_t1 = devices
             .gpu_devices()
             .iter()

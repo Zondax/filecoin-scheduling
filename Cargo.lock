@@ -218,7 +218,6 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "common",
  "criterion",
  "dirs 3.0.2",
  "fs2",
@@ -236,18 +235,6 @@ dependencies = [
  "tracing-appender",
  "tracing-futures",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "num_cpus",
- "palaver",
- "rust-gpu-tools",
- "serde 1.0.129",
- "tracing",
 ]
 
 [[package]]
@@ -1740,7 +1727,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "chrono",
- "common",
  "config",
  "criterion",
  "crossbeam",
@@ -1755,6 +1741,7 @@ dependencies = [
  "parking_lot",
  "priority-queue",
  "rand 0.8.4",
+ "rust-gpu-tools",
  "serde 1.0.129",
  "sled",
  "sysinfo",

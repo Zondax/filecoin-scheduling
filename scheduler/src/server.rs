@@ -9,7 +9,7 @@ use crate::handler::Handler;
 use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 
-use common::{
+use crate::{
     ClientToken, DeviceId, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
 };
 

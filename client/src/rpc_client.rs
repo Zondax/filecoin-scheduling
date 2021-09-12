@@ -2,8 +2,9 @@ use jsonrpc_core_client::{RpcChannel, TypedClient};
 use tokio::runtime::Runtime;
 
 use super::Error as ClientError;
-use common::{ClientToken, DeviceId, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements};
-use scheduler::Error;
+use scheduler::{
+    ClientToken, DeviceId, Error, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements,
+};
 
 use once_cell::sync::OnceCell;
 

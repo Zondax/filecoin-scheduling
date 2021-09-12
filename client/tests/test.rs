@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use client::{
-    spawn_scheduler_with_handler, Client, Error, ResourceAlloc, Settings, TaskFunc, TaskResult,
+    list_devices, spawn_scheduler_with_handler, Client, DeviceId, Error, ResourceAlloc, Settings,
+    TaskFunc, TaskResult, TaskType,
 };
-use common::{dummy_task_requirements, DeviceId, TaskType};
+use scheduler::dummy_task_requirements;
 
 const NUM_ITERATIONS: usize = 20;
 
@@ -79,7 +80,7 @@ fn test_schedule() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    let devices = common::list_devices();
+    let devices = list_devices();
     let mut hash_map = HashMap::new();
 
     devices.gpu_devices().iter().for_each(|dev| {

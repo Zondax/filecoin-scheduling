@@ -1,11 +1,15 @@
 use tracing::warn;
 
+mod client;
 mod config;
 mod db;
+mod device;
 mod error;
 mod handler;
 mod monitor;
 mod requests;
+mod requirements;
+mod resource;
 mod scheduler;
 mod server;
 mod solver;
@@ -13,9 +17,14 @@ mod solvers;
 
 pub use crate::config::Settings;
 pub use crate::scheduler::Scheduler;
+pub use client::{ClientToken, Pid};
+pub use device::*;
 pub use error::Error;
 pub use handler::Handler;
 pub use monitor::*;
+pub use requests::{PreemptionResponse, RequestMethod};
+pub use requirements::*;
+pub use resource::*;
 pub use server::RpcMethods;
 pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};
@@ -36,7 +45,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub fn run_scheduler<P: AsRef<Path>>(
     settings: Settings,
     database_path: P,
-    devices: common::Devices,
+    devices: Devices,
 ) -> Result<()> {
     let maintenance_interval = settings.service.maintenance_interval;
     let (shutdown_tx, shutdown_rx) = bounded(0);
@@ -60,7 +69,7 @@ pub fn run_scheduler<P: AsRef<Path>>(
 pub fn spawn_scheduler_with_handler<P: AsRef<Path>>(
     settings: Settings,
     database_path: P,
-    devices: common::Devices,
+    devices: Devices,
 ) -> Result<CloseHandle> {
     let db = Database::open(database_path, true)?;
     let handler = scheduler::Scheduler::new(settings.clone(), devices, None, db)?;

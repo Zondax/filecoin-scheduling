@@ -1,6 +1,7 @@
 use std::hash::{Hash, Hasher};
 
-use crate::DeviceId;
+mod device_id;
+pub use device_id::DeviceId;
 
 use rust_gpu_tools::opencl::Device as ClDevice;
 

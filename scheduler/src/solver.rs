@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Settings;
 use crate::Error;
-use common::{
+use crate::{
     Device, DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType,
     TaskRequirements,
 };
@@ -252,10 +252,11 @@ pub trait Solver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::list_devices;
 
     #[test]
     fn check_allocation() {
-        let devices = common::list_devices();
+        let devices = list_devices();
         println!("DEVICES: {:?}", devices);
         let state_t1 = devices
             .gpu_devices()

@@ -3,25 +3,7 @@ use std::time::Duration;
 use chrono::{offset::Utc, DateTime};
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceAlloc, ResourceReq};
-
-pub trait TaskFunc {
-    type Output;
-    type Error;
-
-    fn init(&mut self, _: Option<&ResourceAlloc>) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn end(&mut self, _: Option<&ResourceAlloc>) -> Result<Self::Output, Self::Error>;
-    fn task(&mut self, alloc: Option<&ResourceAlloc>) -> Result<TaskResult, Self::Error>;
-}
-
-/// Helper type that indicates if a task should be executed again
-#[derive(PartialEq, Eq)]
-pub enum TaskResult {
-    Continue,
-    Done,
-}
+use super::ResourceReq;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
@@ -48,12 +30,6 @@ impl TaskType {
                 "Trying to deserialize an unsupported task type",
             )),
         }
-    }
-}
-
-impl TaskResult {
-    pub fn is_continue(&self) -> bool {
-        matches!(self, Self::Continue)
     }
 }
 
