@@ -4,6 +4,7 @@ pub type Pid = u64;
 pub struct ClientToken {
     pub pid: Pid,
     pub name: String,
+    pub context: String,
 }
 
 impl Default for ClientToken {
@@ -12,6 +13,7 @@ impl Default for ClientToken {
         ClientToken {
             pid,
             name: String::new(),
+            context: String::new(),
         }
     }
 }

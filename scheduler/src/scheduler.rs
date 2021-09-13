@@ -147,7 +147,6 @@ impl Scheduler {
         &self,
         client: ClientToken,
         requirements: TaskRequirements,
-        job_context: String,
     ) -> Result<Option<ResourceAlloc>> {
         // check for stalled jobs and remove those that no longer exists
         // making room for new clients
@@ -200,7 +199,7 @@ impl Scheduler {
             last_seen: AtomicU64::new(time),
             aborted: AtomicBool::new(false),
             creation_time: time,
-            context: job_context,
+            context: client.context,
         };
 
         let state_clone = task_state.clone();
@@ -505,8 +504,8 @@ impl Handler for Scheduler {
         // Executor doesnt get blocked by this intensive operation
         let sender = request.sender;
         let response = match request.method {
-            RequestMethod::Schedule(client, req, context) => {
-                SchedulerResponse::Schedule(self.schedule(client, req, context))
+            RequestMethod::Schedule(client, req) => {
+                SchedulerResponse::Schedule(self.schedule(client, req))
             }
             RequestMethod::ListAllocations => self.list_allocations(),
             RequestMethod::WaitPreemptive(client) => {

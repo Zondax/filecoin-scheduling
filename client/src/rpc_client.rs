@@ -82,7 +82,6 @@ impl RpcCaller {
         &self,
         token: &ClientToken,
         task: &TaskRequirements,
-        job_context: &str,
     ) -> Result<Option<ResourceAlloc>, ClientError> {
         get_runtime()
             .handle()
@@ -92,7 +91,7 @@ impl RpcCaller {
                     .call_method::<_, Result<Option<ResourceAlloc>, Error>>(
                         "wait_allocation",
                         "Result<Option<ResourceAlloc>, Error>>",
-                        (token, task, job_context),
+                        (token, task),
                     )
                     .await
             })?
