@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 
+#[cfg(feature = "http_client")]
 use jsonrpc_core_client::RpcError;
 use scheduler::Error as SchedulerError;
 
@@ -29,6 +30,7 @@ pub enum Error {
     Other(String),
 }
 
+#[cfg(feature = "http_client")]
 impl From<RpcError> for Error {
     fn from(err: RpcError) -> Self {
         match &err {

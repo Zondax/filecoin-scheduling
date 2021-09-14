@@ -1,17 +1,12 @@
+#![cfg(feature = "http_client")]
 use jsonrpc_core_client::{RpcChannel, TypedClient};
-use tokio::runtime::Runtime;
 
 use super::Error as ClientError;
 use scheduler::{
     ClientToken, DeviceId, Error, Pid, PreemptionResponse, ResourceAlloc, TaskRequirements,
 };
 
-use once_cell::sync::OnceCell;
-
-fn get_runtime() -> &'static Runtime {
-    static RUNTIME: OnceCell<Runtime> = OnceCell::new();
-    RUNTIME.get_or_init(|| Runtime::new().expect("Error creating tokio runtime"))
-}
+use super::{get_runtime, RpcCall};
 
 #[derive(Clone)]
 struct RpcHandler(TypedClient);
@@ -26,6 +21,7 @@ impl From<RpcChannel> for RpcHandler {
         RpcHandler(channel.into())
     }
 }
+
 impl RpcCaller {
     pub fn new(base_url: &str) -> Result<RpcCaller, ClientError> {
         use jsonrpc_core_client::transports::http::connect;
@@ -35,8 +31,10 @@ impl RpcCaller {
         let handler = RpcHandler(inner);
         Ok(RpcCaller { handler })
     }
+}
 
-    pub fn wait_preemptive(&self, token: &ClientToken) -> Result<PreemptionResponse, ClientError> {
+impl RpcCall for RpcCaller {
+    fn wait_preemptive(&self, token: &ClientToken) -> Result<PreemptionResponse, ClientError> {
         get_runtime()
             .handle()
             .block_on(async {
@@ -52,7 +50,7 @@ impl RpcCaller {
             .map_err(ClientError::Scheduler)
     }
 
-    pub fn check_server(&self) -> Result<Pid, ClientError> {
+    fn service_status(&self) -> Result<Pid, ClientError> {
         let handle = get_runtime().handle();
         Ok(handle.block_on(async {
             self.handler
@@ -62,7 +60,7 @@ impl RpcCaller {
         })?)
     }
 
-    pub fn list_allocations(&self) -> Result<Vec<(DeviceId, u64)>, ClientError> {
+    fn list_allocations(&self) -> Result<Vec<(DeviceId, u64)>, ClientError> {
         get_runtime()
             .handle()
             .block_on(async {
@@ -78,7 +76,7 @@ impl RpcCaller {
             .map_err(ClientError::Scheduler)
     }
 
-    pub fn wait_allocation(
+    fn wait_allocation(
         &self,
         token: &ClientToken,
         task: &TaskRequirements,
@@ -98,7 +96,7 @@ impl RpcCaller {
             .map_err(ClientError::Scheduler)
     }
 
-    pub fn release(&self, token: &ClientToken) -> Result<(), ClientError> {
+    fn release(&self, token: &ClientToken) -> Result<(), ClientError> {
         get_runtime()
             .handle()
             .block_on(async {
@@ -110,7 +108,7 @@ impl RpcCaller {
             .map_err(ClientError::Scheduler)
     }
 
-    pub fn release_preemptive(&self, token: &ClientToken) -> Result<(), ClientError> {
+    fn release_preemptive(&self, token: &ClientToken) -> Result<(), ClientError> {
         get_runtime()
             .handle()
             .block_on(async {

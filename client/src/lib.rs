@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use tracing::{debug, error, trace, warn};
 
+mod backend;
 pub mod error;
 mod global_mutex;
-mod rpc_client;
 mod task;
 
+pub use backend::{client_backend, RpcCall, RpcCaller};
 pub use error::Error;
-pub use rpc_client::RpcCaller;
 use scheduler::run_scheduler;
 pub use scheduler::{
     list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
@@ -94,7 +94,7 @@ impl Client {
     /// `address` must be an address like: ip:port
     fn new(token: ClientToken, settings: Settings) -> Result<Self, crate::Error> {
         let base_url = format!("http://{}", settings.service.address);
-        let rpc_caller = RpcCaller::new(base_url.as_str())?;
+        let rpc_caller = client_backend(base_url.as_str())?;
         let client = Self {
             token,
             rpc_caller,
@@ -299,7 +299,7 @@ impl Client {
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn check_scheduler_service(&self) -> Result<Pid, Error> {
-        let pid = self.rpc_caller.check_server()?;
+        let pid = self.rpc_caller.service_status()?;
         debug!("Scheduler service running, PID: {}", pid);
         Ok(pid)
     }
