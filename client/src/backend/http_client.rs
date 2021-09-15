@@ -1,4 +1,3 @@
-#![cfg(feature = "http_client")]
 use jsonrpc_core_client::{RpcChannel, TypedClient};
 
 use super::Error as ClientError;

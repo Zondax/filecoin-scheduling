@@ -1,10 +1,7 @@
-#[cfg(feature = "http_client")]
 mod http_client;
 use once_cell::sync::OnceCell;
 
-#[cfg(feature = "http_client")]
 pub use http_client::RpcCaller;
-#[cfg(feature = "http_client")]
 use tokio_02 as tokio;
 
 use tokio::runtime::Runtime;
@@ -29,7 +26,6 @@ pub trait RpcCall {
     fn release_preemptive(&self, token: &ClientToken) -> Result<(), Error>;
 }
 
-#[cfg(feature = "http_client")]
 pub fn client_backend(address: &str) -> Result<RpcCaller, Error> {
     http_client::RpcCaller::new(address)
 }
