@@ -6,7 +6,7 @@ use crate::{ClientToken, DeviceId, Pid, ResourceAlloc, Result, TaskRequirements}
 
 #[derive(Serialize, Deserialize)]
 pub enum RequestMethod {
-    Schedule(ClientToken, TaskRequirements, String),
+    Schedule(ClientToken, TaskRequirements),
     ListAllocations,
     WaitPreemptive(ClientToken),
     Release(ClientToken),

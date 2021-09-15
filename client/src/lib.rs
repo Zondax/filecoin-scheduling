@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use tracing::{debug, error, trace, warn};
 
+mod backend;
 pub mod error;
 mod global_mutex;
-mod rpc_client;
 mod task;
 
+pub use backend::{client_backend, RpcCall, RpcCaller};
 pub use error::Error;
-pub use rpc_client::RpcCaller;
 use scheduler::run_scheduler;
 pub use scheduler::{
     list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
@@ -63,7 +63,6 @@ pub fn get_config_path() -> Result<PathBuf, Error> {
 #[derive(Clone)]
 pub struct Client {
     pub token: ClientToken,
-    pub context: String,
     pub(crate) rpc_caller: RpcCaller,
     settings: Settings,
 }
@@ -72,7 +71,6 @@ impl fmt::Debug for Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Client")
             .field("token", &self.token)
-            .field("context", &self.context)
             .field("rpc_caller", &"http")
             .field("settings", &self.settings)
             .finish()
@@ -96,10 +94,9 @@ impl Client {
     /// `address` must be an address like: ip:port
     fn new(token: ClientToken, settings: Settings) -> Result<Self, crate::Error> {
         let base_url = format!("http://{}", settings.service.address);
-        let rpc_caller = RpcCaller::new(base_url.as_str())?;
+        let rpc_caller = client_backend(base_url.as_str())?;
         let client = Self {
             token,
-            context: String::new(),
             rpc_caller,
             settings,
         };
@@ -113,7 +110,7 @@ impl Client {
     }
 
     pub fn set_context<T: ToString>(&mut self, context: T) {
-        self.context = context.to_string();
+        self.token.context = context.to_string();
     }
 }
 
@@ -191,7 +188,7 @@ impl Client {
                         "client: {}:{} from: {} - Calling task function",
                         self.token.pid,
                         self.token.name,
-                        self.context,
+                        self.token.context,
                     );
                     // try to handle possible panics
                     let result = catch_unwind(AssertUnwindSafe(|| task.task(Some(alloc))));
@@ -200,7 +197,7 @@ impl Client {
                         let _ = self.release();
                         error!(
                             "Client: {}:{} in {} panics",
-                            self.token.pid, self.token.name, self.context,
+                            self.token.pid, self.token.name, self.token.context,
                         );
                         // TODO: Look for ways to show the panic message. without propagating the panic
                         return Err(E::from(Error::TaskFunctionPanics));
@@ -215,7 +212,7 @@ impl Client {
                 PreemptionResponse::Abort => {
                     warn!(
                         "Client: {}:{} from: {} - aborted",
-                        self.token.pid, self.token.name, self.context,
+                        self.token.pid, self.token.name, self.token.context,
                     );
                     return Err(E::from(Error::Aborted));
                 }
@@ -234,13 +231,13 @@ impl Client {
         use std::time::Instant;
         let start = Instant::now();
         loop {
-            let alloc_state =
-                self.rpc_caller
-                    .wait_allocation(&self.token, &requirements, &self.context)?;
+            let alloc_state = self
+                .rpc_caller
+                .wait_allocation(&self.token, &requirements)?;
             if let Some(alloc) = alloc_state {
                 debug!(
                     "Client: {}:{} from: {} - got allocation {:?}",
-                    self.token.pid, self.token.name, self.context, alloc.devices,
+                    self.token.pid, self.token.name, self.token.context, alloc.devices,
                 );
                 return Ok(alloc);
             }
@@ -302,7 +299,7 @@ impl Client {
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn check_scheduler_service(&self) -> Result<Pid, Error> {
-        let pid = self.rpc_caller.check_server()?;
+        let pid = self.rpc_caller.service_status()?;
         debug!("Scheduler service running, PID: {}", pid);
         Ok(pid)
     }
