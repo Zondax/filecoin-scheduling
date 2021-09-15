@@ -3,7 +3,7 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use std::time::Duration;
 
 use client::{Client, Error, ResourceAlloc, TaskFunc, TaskResult};
-use common::dummy_task_requirements;
+use scheduler::dummy_task_requirements;
 const NUM_ITERATIONS: usize = 100;
 
 #[derive(Copy, Clone)]

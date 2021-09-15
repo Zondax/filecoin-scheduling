@@ -18,6 +18,7 @@ mod solvers;
 pub use crate::config::Settings;
 pub use crate::scheduler::Scheduler;
 pub use client::{ClientToken, Pid};
+pub use db::Database;
 pub use device::*;
 pub use error::Error;
 pub use handler::Handler;
@@ -30,7 +31,6 @@ pub use server::Server;
 pub use solver::{ResourceState, Solver, TaskState};
 use std::net::SocketAddr;
 
-use crate::db::Database;
 use jsonrpc_http_server::jsonrpc_core::IoHandler;
 use jsonrpc_http_server::CloseHandle;
 use jsonrpc_http_server::ServerBuilder;
