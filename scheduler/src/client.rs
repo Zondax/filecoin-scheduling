@@ -1,5 +1,4 @@
-pub type Pid = u64;
-
+use crate::Pid;
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Hash, Eq, PartialEq)]
 pub struct ClientToken {
     pub pid: Pid,

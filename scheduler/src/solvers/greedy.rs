@@ -1,11 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::{
-    config::Settings,
-    solver::{Resources, Solver, TaskState},
-    Result,
-};
+use super::Solver;
 use crate::{DeviceId, Pid, ResourceAlloc, TaskRequirements};
+use crate::{Resources, Result, Settings, TaskState};
 
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;

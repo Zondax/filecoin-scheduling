@@ -4,15 +4,7 @@ use chrono::{offset::Utc, DateTime};
 use serde::{Deserialize, Serialize};
 
 use super::ResourceReq;
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[non_exhaustive]
-#[serde(rename_all = "snake_case")]
-pub enum TaskType {
-    MerkleTree,
-    WinningPost,
-    WindowPost,
-}
+use super::TaskType;
 
 /// Deadline struct to configure when the task should be started and finished
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]

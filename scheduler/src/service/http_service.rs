@@ -1,4 +1,8 @@
 use crossbeam::channel::{bounded, select, tick, Receiver};
+use jsonrpc_http_server::jsonrpc_core::IoHandler;
+use jsonrpc_http_server::CloseHandle;
+use jsonrpc_http_server::ServerBuilder;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
@@ -11,11 +15,39 @@ use crate::monitor::MonitorInfo;
 use crate::requests::{SchedulerRequest, SchedulerResponse};
 
 use crate::{
-    ClientToken, DeviceId, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, TaskRequirements,
+    ClientToken, DeviceId, Error, Pid, PreemptionResponse, RequestMethod, ResourceAlloc, Settings,
+    TaskRequirements,
 };
 
+use super::{CloseService, Service};
 use crate::Result;
 use tracing::warn;
+
+struct CloseServiceImpl(Option<CloseHandle>);
+
+impl CloseService for CloseServiceImpl {
+    fn close_service(&mut self) -> Result<()> {
+        // take the handle as we can not call close()
+        // twice
+        self.0
+            .take()
+            .map(|h| {
+                h.close();
+            })
+            .ok_or_else(|| Error::Other("Service not running or already closed".to_string()))
+    }
+}
+
+#[derive(Default)]
+pub struct HttpService {
+    settings: Settings,
+}
+
+impl HttpService {
+    pub fn new(settings: Settings) -> Self {
+        Self { settings }
+    }
+}
 
 pub type AsyncRpcResult<T> = BoxFuture<RpcResult<Result<T>>>;
 
@@ -70,17 +102,84 @@ where
         let handler = self.0.clone();
         let ticker = tick(Duration::from_millis(tick_interval));
         std::thread::spawn(move || loop {
+            let should_continue = handler.maintenance();
             select! {
                 recv(ticker) -> _ => {
-                    if !handler.maintenance() {
-                        warn!("Closing maintenance thread");
+                    if !should_continue {
                         shutdown_tx.send(()).unwrap();
+                        warn!("Closing maintenance thread");
                         break;
                     }
                 },
             }
         });
         shutdown_rx
+    }
+}
+
+impl<H: Handler> Service<H> for HttpService {
+    fn start_service(&self, handler: H) -> Result<()> {
+        let server = Server::new(handler);
+        let maintenance_interval = self.settings.service.maintenance_interval;
+
+        let address: SocketAddr = self
+            .settings
+            .service
+            .address
+            .parse()
+            .map_err(|_| Error::InvalidAddress)?;
+        let mut shutdown_rx =
+            maintenance_interval.map(|tick| server.start_maintenance_thread(tick));
+
+        let mut io = IoHandler::new();
+        io.extend_with(server.to_delegate());
+
+        let server = ServerBuilder::new(io)
+            .threads(num_cpus::get())
+            .start_http(&address)
+            .map_err(|e| {
+                // Close the maintenance thread
+                shutdown_rx.take();
+                Error::ConnectionError(e.to_string())
+            })?;
+        let close_handle = server.close_handle();
+        if let Some(rx) = shutdown_rx {
+            std::thread::spawn(move || {
+                server.wait();
+            });
+            rx.recv().unwrap();
+            warn!("Closed!!!!!!!!!!!!!!!!!!!!");
+            close_handle.close();
+        } else {
+            warn!("no tick");
+            server.wait();
+        }
+
+        Ok(())
+    }
+
+    fn spawn_service(&self, handler: H) -> Result<Box<dyn super::CloseService>> {
+        let server = Server::new(handler);
+
+        let address: SocketAddr = self
+            .settings
+            .service
+            .address
+            .parse()
+            .map_err(|_| Error::InvalidAddress)?;
+
+        let mut io = IoHandler::new();
+        io.extend_with(server.to_delegate());
+
+        let server = ServerBuilder::new(io)
+            .threads(num_cpus::get())
+            .start_http(&address)
+            .map_err(|e| Error::ConnectionError(e.to_string()))?;
+        let close_handle = server.close_handle();
+        std::thread::spawn(move || {
+            server.wait();
+        });
+        Ok(Box::new(CloseServiceImpl(Some(close_handle))))
     }
 }
 
