@@ -13,9 +13,9 @@ pub use backend::{client_backend, RpcCall, RpcCaller};
 pub use error::Error;
 use scheduler::run_scheduler;
 pub use scheduler::{
-    list_devices, ClientToken, Deadline, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc,
-    ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskReqBuilder, TaskRequirements,
-    TaskType,
+    list_devices, ClientToken, CloseService, Deadline, DeviceId, Devices, Pid, PreemptionResponse,
+    ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskEstimations, TaskReqBuilder,
+    TaskRequirements, TaskType,
 };
 pub use task::{TaskFunc, TaskResult};
 
@@ -417,7 +417,7 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = scheduler::list_devices();
-        let handle =
+        let mut handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/one_process/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();
 
@@ -426,7 +426,7 @@ mod tests {
         if let Err(e) = res {
             assert!(matches!(e, Error::Timeout));
         }
-        handle.close();
+        handle.close_service().unwrap();
     }
 
     #[test]
@@ -438,12 +438,12 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = scheduler::list_devices();
-        let handle =
+        let mut handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/release_test/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();
 
         let res = client.release();
-        handle.close();
+        handle.close_service().unwrap();
 
         assert!(res.is_ok());
     }
@@ -456,7 +456,7 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         settings.service.address = format!("{}", socket.local_addr().unwrap());
         let devices = scheduler::list_devices();
-        let handle =
+        let mut handle =
             spawn_scheduler_with_handler(settings.clone(), "/tmp/panic_test/", devices).unwrap();
         let client = Client::register_with_settings::<Error>(settings).unwrap();
 
@@ -465,7 +465,7 @@ mod tests {
             task_requirements(),
             Duration::from_secs(60),
         );
-        handle.close();
+        handle.close_service().unwrap();
 
         assert!(matches!(res.unwrap_err(), Error::TaskFunctionPanics));
     }

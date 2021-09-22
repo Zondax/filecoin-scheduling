@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use client::{
-    list_devices, spawn_scheduler_with_handler, Client, DeviceId, Error, ResourceAlloc, Settings,
-    TaskFunc, TaskResult, TaskType,
+    list_devices, spawn_scheduler_with_handler, Client, CloseService, DeviceId, Error,
+    ResourceAlloc, Settings, TaskFunc, TaskResult, TaskType,
 };
 use scheduler::dummy_task_requirements;
 
@@ -92,7 +92,7 @@ fn test_schedule() {
     let mut settings = Settings::new("/tmp/test.config.toml").unwrap();
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     settings.service.address = format!("{}", socket.local_addr().unwrap());
-    let handler =
+    let mut handler =
         spawn_scheduler_with_handler(settings.clone(), "/tmp/schedule/", devices).unwrap();
     std::thread::sleep(Duration::from_millis(500));
 
@@ -132,5 +132,5 @@ fn test_schedule() {
         assert!(res.is_ok());
     }
 
-    handler.close();
+    handler.close_service().unwrap();
 }

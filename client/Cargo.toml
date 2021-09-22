@@ -8,7 +8,8 @@ edition = "2018"
 nix = "0.22.0"
 scheduler = { path = "../scheduler/" }
 serde = { version = "1.0.126", features = ["serde_derive"] }
-tokio_02 = { package = "tokio", version = "0.2", features = ["time", "rt-threaded"]}
+#tokio_02 = { package = "tokio", version = "0.2", features = ["time", "rt-threaded"]}
+tokio_02 = { package = "tokio", version = "0.2"}
 tracing = "0.1.26"
 tracing-futures = "0.2.5"
 chrono = "0.4.19"
