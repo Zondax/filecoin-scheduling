@@ -264,6 +264,7 @@ impl Scheduler {
     #[instrument(level = "trace", skip(self), fields(pid = client))]
     fn check_priority_queue(&self, client: Pid) -> Result<bool> {
         let queue = self.jobs_queue.read();
+        let state = self.tasks_state.read();
         debug!("current job_plan {:?}", *queue);
         // check the job plan to see if the task is up-front the queue or not
         if let Some(job) = queue.front() {
@@ -271,9 +272,7 @@ impl Scheduler {
             if *job == client {
                 Ok(true)
             } else {
-                let state = self.tasks_state.read();
                 let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
-
                 // in this case we get an ordered queue based on the priority(highest to lowest) of the tasks that were assigned to the same
                 // resource as client.
                 let sub_queue = queue
