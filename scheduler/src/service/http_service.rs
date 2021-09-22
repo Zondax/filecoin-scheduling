@@ -148,10 +148,8 @@ impl<H: Handler> Service<H> for HttpService {
                 server.wait();
             });
             rx.recv().unwrap();
-            warn!("Closed!!!!!!!!!!!!!!!!!!!!");
             close_handle.close();
         } else {
-            warn!("no tick");
             server.wait();
         }
 
