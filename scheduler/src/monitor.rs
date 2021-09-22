@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Deadline, DeviceId, Pid, ResourceAlloc, TaskType};
+use crate::{Deadline, DeviceId, Pid, ResourceAlloc, TaskState, TaskType};
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct MonitorInfo {

@@ -32,9 +32,6 @@ rust-gpu-tools = { version = "0.4.0"}
 criterion = "0.3.4"
 rand = "0.8.4"
 
-[target.'cfg(loom)'.dependencies]
-loom = "0.5"
-
 [[bench]]
 name = "allocation"
 harness = false
