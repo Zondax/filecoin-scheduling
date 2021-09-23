@@ -4,23 +4,22 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use sysinfo::{System, SystemExt};
 
 use chrono::Utc;
-use crossbeam::channel::Sender;
 use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
 use crate::config::{Settings, Task};
 use crate::db::Database;
-use crate::handler::Handler;
 use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
-use crate::requests::{SchedulerRequest, SchedulerResponse};
-use crate::solver::{ResourceState, Resources, TaskState};
+use crate::requests::SchedulerResponse;
 use crate::solvers::create_solver;
+
 use crate::{
-    ClientToken, DeviceId, Devices, Pid, PreemptionResponse, RequestMethod, ResourceAlloc,
-    ResourceType, TaskRequirements, TaskType,
+    ClientToken, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc, ResourceType,
+    TaskRequirements, TaskType,
 };
 use crate::{Error, Result};
+use crate::{ResourceState, Resources, TaskState};
 
 // match all the devices that were assigned to task with type taskType
 // returns None if there are not.
@@ -64,31 +63,25 @@ pub fn task_is_stalled(
 pub struct Scheduler {
     // Keep a cache of jobs on the system. each job_id has an associated job state
     // indicating the current iteration, and allocated resources and its requirements per resource
-    tasks_state: RwLock<HashMap<Pid, TaskState>>,
+    pub(crate) tasks_state: RwLock<HashMap<Pid, TaskState>>,
 
     // Sorted jobs to be executed.
-    jobs_queue: RwLock<VecDeque<Pid>>,
+    pub(crate) jobs_queue: RwLock<VecDeque<Pid>>,
 
     // the db object to store the current state
     // so in case something goes wrong we can retrive the last
     // state from the db and re-construct our scheduler.
-    db: Database,
+    pub(crate) db: Database,
 
-    devices: RwLock<Resources>,
-    settings: Settings,
-    system: Mutex<System>,
-    pid: Pid,
-    shutdown_tracker: RwLock<Instant>,
-    shutdown_tx: Option<Sender<()>>,
+    pub(crate) devices: RwLock<Resources>,
+    pub(crate) settings: Settings,
+    pub(crate) system: Mutex<System>,
+    pub(crate) pid: Pid,
+    pub(crate) shutdown_tracker: RwLock<Instant>,
 }
 
 impl Scheduler {
-    pub fn new(
-        settings: Settings,
-        devices: Devices,
-        shutdown_tx: Option<Sender<()>>,
-        db: Database,
-    ) -> Result<Self> {
+    pub fn new(settings: Settings, devices: Devices, db: Database) -> Result<Self> {
         // get the system resources
         let mut devices = devices
             .gpu_devices()
@@ -138,7 +131,6 @@ impl Scheduler {
             system,
             pid,
             shutdown_tracker,
-            shutdown_tx,
         })
     }
 
@@ -174,7 +166,7 @@ impl Scheduler {
 
         // First step is to check if there are enough resources. This avoids calling alloc
         // knowing that it might fail
-        if !resources.has_min_available_memory(&requirements) {
+        if !resources.has_min_available_memory(&requirements.req) {
             return Ok(None);
         }
 
@@ -272,6 +264,7 @@ impl Scheduler {
     #[instrument(level = "trace", skip(self), fields(pid = client))]
     fn check_priority_queue(&self, client: Pid) -> Result<bool> {
         let queue = self.jobs_queue.read();
+        let state = self.tasks_state.read();
         debug!("current job_plan {:?}", *queue);
         // check the job plan to see if the task is up-front the queue or not
         if let Some(job) = queue.front() {
@@ -279,9 +272,7 @@ impl Scheduler {
             if *job == client {
                 Ok(true)
             } else {
-                let state = self.tasks_state.read();
                 let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
-
                 // in this case we get an ordered queue based on the priority(highest to lowest) of the tasks that were assigned to the same
                 // resource as client.
                 let sub_queue = queue
@@ -338,7 +329,7 @@ impl Scheduler {
     }
 
     // returns (device_id, available memory)
-    fn list_allocations(&self) -> SchedulerResponse {
+    pub fn list_allocations(&self) -> SchedulerResponse {
         let alloc = self
             .devices
             .read()
@@ -376,7 +367,7 @@ impl Scheduler {
         self.remove_job(client.pid)
     }
 
-    fn abort(&self, clients: Vec<Pid>) -> Result<()> {
+    pub fn abort(&self, clients: Vec<Pid>) -> Result<()> {
         for client in clients.iter() {
             let state = self.tasks_state.read();
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
@@ -387,7 +378,7 @@ impl Scheduler {
         Ok(())
     }
 
-    fn check_process_exist(&self, pid: Pid) -> bool {
+    pub fn check_process_exist(&self, pid: Pid) -> bool {
         let mut s = self.system.lock();
         s.refresh_process(pid as _)
     }
@@ -413,7 +404,7 @@ impl Scheduler {
 
     // this function is experimental and might be removed in later versions of the
     // scheduler.
-    fn remove_stalled(&self, clients: Vec<Pid>) -> Result<()> {
+    pub fn remove_stalled(&self, clients: Vec<Pid>) -> Result<()> {
         let stalled = self.get_stalled_jobs();
         clients
             .into_iter()
@@ -439,7 +430,7 @@ impl Scheduler {
         stalled
     }
 
-    fn remove_job(&self, id: Pid) {
+    pub fn remove_job(&self, id: Pid) {
         // remove job from our priority queue
         self.jobs_queue.write().retain(|pid| *pid != id);
         // remove job from the state and unset any resources that were in used
@@ -457,7 +448,7 @@ impl Scheduler {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn monitor(&self) -> std::result::Result<MonitorInfo, String> {
+    pub(crate) fn monitor(&self) -> std::result::Result<MonitorInfo, String> {
         let task_states = self.tasks_state.read();
         let resources = self.devices.read();
         let task_states = task_states
@@ -495,64 +486,5 @@ impl Scheduler {
             resources,
             job_plan: self.jobs_queue.read().iter().copied().collect::<Vec<_>>(),
         })
-    }
-}
-
-impl Handler for Scheduler {
-    fn process_request(&self, request: SchedulerRequest) {
-        // TODO: Analyze if spawning a thread is worth considering that doing so the handler's
-        // Executor doesnt get blocked by this intensive operation
-        let sender = request.sender;
-        let response = match request.method {
-            RequestMethod::Schedule(client, req) => {
-                SchedulerResponse::Schedule(self.schedule(client, req))
-            }
-            RequestMethod::ListAllocations => self.list_allocations(),
-            RequestMethod::WaitPreemptive(client) => {
-                SchedulerResponse::SchedulerWaitPreemptive(self.wait_preemptive(client))
-            }
-            RequestMethod::Release(client) => {
-                self.release(client);
-                SchedulerResponse::Release
-            }
-            RequestMethod::ReleasePreemptive(client) => {
-                self.release_preemptive(client);
-                SchedulerResponse::ReleasePreemptive
-            }
-            RequestMethod::Abort(client_id) => SchedulerResponse::Abort(self.abort(client_id)),
-            RequestMethod::RemoveStalled(client_id) => {
-                SchedulerResponse::RemoveStalled(self.remove_stalled(client_id))
-            }
-            RequestMethod::Monitoring => SchedulerResponse::Monitoring(self.monitor()),
-            RequestMethod::CheckService => SchedulerResponse::CheckService(self.pid),
-        };
-        let _ = sender.send(response);
-    }
-
-    fn maintenance(&self) -> bool {
-        let mut _continue = true;
-        // remove jobs that no longer exist in the system.
-        let mut to_remove = vec![];
-        for id in self.jobs_queue.read().iter() {
-            if !self.check_process_exist(*id) {
-                warn!("Removing job {}. Parent process does not exist", id);
-                to_remove.push(*id);
-            }
-        }
-
-        for id in to_remove.into_iter() {
-            self.remove_job(id);
-        }
-
-        if let Some(shutdown_timeout) = self.settings.service.shutdown_timeout {
-            if self.shutdown_tracker.read().elapsed().as_secs() > shutdown_timeout {
-                let _ = self.shutdown_tx.as_ref().map(|tx| {
-                    warn!("Closing service after {}s of inactivity", shutdown_timeout);
-                    let _ = tx.try_send(());
-                    _continue = false;
-                });
-            }
-        }
-        _continue
     }
 }
