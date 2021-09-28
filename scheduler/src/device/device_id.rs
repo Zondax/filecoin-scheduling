@@ -1,4 +1,4 @@
-use rust_gpu_tools::opencl::UniqueId;
+use rust_gpu_tools::UniqueId;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
@@ -34,7 +34,7 @@ impl Deref for DeviceId {
 }
 
 impl TryFrom<&str> for DeviceId {
-    type Error = rust_gpu_tools::opencl::GPUError;
+    type Error = rust_gpu_tools::GPUError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self(UniqueId::try_from(value)?))
@@ -42,7 +42,7 @@ impl TryFrom<&str> for DeviceId {
 }
 
 impl TryFrom<String> for DeviceId {
-    type Error = rust_gpu_tools::opencl::GPUError;
+    type Error = rust_gpu_tools::GPUError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(Self(UniqueId::try_from(value.as_str())?))

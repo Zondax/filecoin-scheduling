@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 nix = "0.22.0"
-scheduler = { path = "../scheduler/" }
+scheduler = { path = "../scheduler/", optional = true}
 serde = { version = "1.0.126", features = ["serde_derive"] }
 tokio_02 = { package = "tokio", version = "0.2", features = ["time", "rt-threaded"]}
 tracing = "0.1.26"
@@ -25,6 +25,11 @@ ipmpsc = "0.5.1"
 rand = "0.8.4"
 tracing-appender = "0.1.2"
 tracing-subscriber = { version = "0.2.19", default-features = true }
+
+[features]
+default = ["opencl"]
+cuda = ["scheduler/cuda"]
+opencl = ["scheduler/opencl"]
 
 [[bench]]
 name = "schedule_one_of"
