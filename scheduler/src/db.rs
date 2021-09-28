@@ -12,6 +12,15 @@ pub struct Database {
 
 impl Database {
     pub fn open<P: AsRef<Path>>(path: P, temporary: bool) -> Result<Self> {
+        if !path.as_ref().exists() {
+            std::fs::create_dir_all(&path).map_err(|e| {
+                Error::Database(format!(
+                    "cannot create database in {:?} err: {}",
+                    path.as_ref(),
+                    e.to_string()
+                ))
+            })?;
+        }
         let config = Config::default()
             .path(path)
             .temporary(temporary)

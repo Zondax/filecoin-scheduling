@@ -2,8 +2,8 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use std::time::Duration;
 
-use client::{register, schedule_one_of, Error, ResourceAlloc, TaskFunc, TaskResult};
-use common::dummy_task_requirements;
+use client::{Client, Error, ResourceAlloc, TaskFunc, TaskResult};
+use scheduler::dummy_task_requirements;
 const NUM_ITERATIONS: usize = 100;
 
 #[derive(Copy, Clone)]
@@ -40,18 +40,14 @@ impl TaskFunc for Test {
 }
 
 fn call_schedule(b: &mut Bencher) {
-    let client = register::<Error>(None, None).unwrap();
+    let client = Client::register::<Error>().unwrap();
 
     let task_req = dummy_task_requirements();
     let mut test_func = Test::new(client.token.pid as _);
     b.iter(|| {
-        let _ = schedule_one_of(
-            client.clone(),
-            &mut test_func,
-            task_req.clone(),
-            Duration::from_secs(60),
-        )
-        .unwrap();
+        let _ = client
+            .schedule_one_of(&mut test_func, task_req.clone(), Duration::from_secs(60))
+            .unwrap();
     });
 }
 

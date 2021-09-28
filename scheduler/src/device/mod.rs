@@ -1,27 +1,13 @@
-use std::hash::{Hash, Hasher};
+mod device_id;
+pub use device_id::DeviceId;
 
-use crate::DeviceId;
-
-use rust_gpu_tools::opencl::Device as ClDevice;
+use rust_gpu_tools::Device as GPUDevice;
 
 #[cfg(not(dummy_devices))]
 #[derive(Debug, Clone)]
 pub struct Device {
-    dev: ClDevice,
+    dev: GPUDevice,
     pub id: DeviceId,
-}
-
-#[cfg(not(dummy_devices))]
-impl Hash for Device {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        if let Some(uuid) = self.dev.uuid() {
-            uuid.hash(hasher);
-        } else {
-            self.dev.name().hash(hasher);
-        }
-        let pci_id = self.dev.pci_id();
-        pci_id.hash(hasher);
-    }
 }
 
 #[cfg(dummy_devices)]
@@ -44,7 +30,7 @@ impl Device {
         self.dev.memory()
     }
 
-    pub fn get_inner(&self) -> ClDevice {
+    pub fn get_inner(&self) -> GPUDevice {
         self.dev.clone()
     }
 }
@@ -81,7 +67,7 @@ impl Devices {
 #[cfg(not(dummy_devices))]
 pub fn list_devices() -> Devices {
     let gpu_devices = {
-        ClDevice::all()
+        GPUDevice::all()
             .into_iter()
             .map(|dev| {
                 let unique_id = dev.unique_id();
@@ -103,7 +89,7 @@ pub fn list_devices() -> Devices {
 
 #[cfg(dummy_devices)]
 pub fn list_devices() -> Devices {
-    use rust_gpu_tools::opencl::UniqueId;
+    use rust_gpu_tools::UniqueId;
     use std::convert::TryFrom;
 
     let gpu_devices = (0..3)

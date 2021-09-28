@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use std::path::Path;
 
-use common::{DeviceId, TaskType};
+use crate::{DeviceId, TaskType};
 
 /// Define the interval in milliseconds
 /// after which the maintenance thread
@@ -18,12 +18,22 @@ const MAINTENANCE_INTERVAL: u64 = 2000;
 const SHUTDOWN_TIMEOUT: u64 = 300;
 
 const MIN_WAIT_TIME: u64 = 120;
+// default deadline for merkeltree tasks
+const DEFAULT_DEADLINE: u64 = 1500;
+// Constant that defines the winning_post deadline and timeout
+const WINNING_POST_DEADLINE: u64 = 15;
+// Constant that defines the window_post deadline and timeout
+const WINDOW_POST_DEADLINE: u64 = 900;
+
+// Server address
+const SERVER_ADDRESS: &str = "127.0.0.1:5000";
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Task {
-    devices: Vec<DeviceId>,
-    #[serde(deserialize_with = "TaskType::deserialize_with")]
-    task_type: TaskType,
+    pub task_type: TaskType,
+    pub devices: Vec<DeviceId>,
+    pub timeout: u64,
+    pub deadline: u64,
 }
 
 impl Task {
@@ -38,7 +48,7 @@ impl Task {
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct Service {
-    address: String,
+    pub address: String,
     /// interval in milliseconds. if present in the configuration file, creates a thread that performs some maintenance
     /// operations such as removing tasks that no longer exist in the system or automatic shutdown
     /// if there are not more tasks or requests.
@@ -70,7 +80,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         let service = Service {
-            address: "127.0.0.1:5000".to_string(),
+            address: SERVER_ADDRESS.to_string(),
             maintenance_interval: Some(MAINTENANCE_INTERVAL),
             shutdown_timeout: Some(SHUTDOWN_TIMEOUT),
         };
@@ -79,28 +89,29 @@ impl Default for Settings {
             min_wait_time: MIN_WAIT_TIME,
             max_wait_time: None,
         };
-        let all_devices = common::list_devices()
+        let all_devices = crate::list_devices()
             .gpu_devices()
             .iter()
             .map(|d| d.device_id())
             .collect::<Vec<_>>();
-        let task = Task {
-            devices: all_devices.clone(),
-            task_type: TaskType::MerkleTree,
-        };
-        // create a setting with 3 task description
+        // create a setting with 3 tasks description
         let tasks_settings = (0..3)
             .map(|i| {
-                let mut task_i = task.clone();
-                task_i.task_type = match i {
-                    1 => TaskType::WindowPost,
-                    2 => TaskType::WinningPost,
-                    _ => TaskType::MerkleTree,
+                let (task_type, deadline) = match i {
+                    1 => (TaskType::WinningPost, WINNING_POST_DEADLINE),
+                    2 => (TaskType::WindowPost, WINDOW_POST_DEADLINE),
+                    _ => (TaskType::MerkleTree, DEFAULT_DEADLINE),
                 };
-                if task_i.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
-                    task_i.devices = [all_devices[2].clone()].to_vec();
+                let mut task = Task {
+                    task_type,
+                    devices: all_devices.clone(),
+                    timeout: deadline,
+                    deadline,
+                };
+                if task.task_type == TaskType::WinningPost && cfg!(dummy_devices) {
+                    task.devices = [all_devices[2].clone()].to_vec();
                 }
-                task_i
+                task
             })
             .collect::<Vec<_>>();
 
@@ -113,7 +124,7 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub(crate) fn new<P: AsRef<Path>>(path: P) -> Result<Self, config::ConfigError> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, config::ConfigError> {
         if path.as_ref().exists() {
             let mut s = Config::new();
             s.merge(File::with_name(path.as_ref().to_str().ok_or_else(

@@ -1,22 +1,40 @@
 mod greedy;
 use crate::config::Settings;
-use crate::solver::Solver;
+use crate::Error;
+use crate::{DeviceId, Pid, ResourceAlloc, Resources, TaskRequirements, TaskState};
 pub use greedy::GreedySolver;
+use std::collections::{HashMap, VecDeque};
 
 pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
     Box::new(GreedySolver)
+}
+// Trait that is implemented by any object that can be used as a solver
+pub trait Solver {
+    fn solve_job_schedule(
+        &mut self,
+        current_state: &HashMap<Pid, TaskState>,
+        scheduler_settings: &Settings,
+    ) -> Result<VecDeque<Pid>, Error>;
+
+    fn allocate_task(
+        &mut self,
+        resources: &Resources,
+        requirements: &TaskRequirements,
+        restrictions: &Option<Vec<DeviceId>>,
+        task_state: &HashMap<Pid, TaskState>,
+    ) -> Option<ResourceAlloc>;
 }
 
 #[cfg(dummy_devices)]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::solver::TaskState;
-    use crate::solver::{ResourceState, Resources};
-    use chrono::Utc;
-    use common::{
-        DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceType, TaskRequirements,
+    use crate::TaskState;
+    use crate::{
+        list_devices, DeviceId, Pid, ResourceAlloc, ResourceMemory, ResourceReq, ResourceState,
+        ResourceType, Resources, TaskRequirements,
     };
+    use chrono::Utc;
     use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -24,7 +42,7 @@ mod tests {
     #[test]
     fn check_gpu_allocation() {
         let mut tasks = HashMap::new();
-        let devices = common::list_devices();
+        let devices = list_devices();
         let state_t1 = devices
             .gpu_devices()
             .iter()
