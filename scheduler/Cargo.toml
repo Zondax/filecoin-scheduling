@@ -26,7 +26,7 @@ num_cpus = "1.13.0"
 sled = { version = "0.34.6" }
 bincode = "1.3.3"
 once_cell = "1.8.0"
-rust-gpu-tools = { git = "https://github.com/filecoin-project/rust-gpu-tools", branch = "master", default-features = false}
+rust-gpu-tools = { version = "0.5.0" }
 
 
 
