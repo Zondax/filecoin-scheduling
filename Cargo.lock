@@ -1696,8 +1696,9 @@ dependencies = [
 
 [[package]]
 name = "rust-gpu-tools"
-version = "0.4.3"
-source = "git+https://github.com/filecoin-project/rust-gpu-tools?branch=master#705641f36bedff317c30f1608594ad03f082d7eb"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1785ab2a8accec77189e23fead221f2543cebf7ccf569788511cdac9f5fad168"
 dependencies = [
  "dirs 2.0.2",
  "fil-rustacuda",
