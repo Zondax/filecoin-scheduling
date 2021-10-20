@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use sysinfo::{System, SystemExt};
 
-use chrono::Utc;
 use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
@@ -35,28 +33,6 @@ pub fn match_task_devices(
         }
     }
     None
-}
-
-/// compute whether a task is considered stalled
-///
-/// using the value of [Settings::min_wait_time] seconds before now
-///
-/// if [Settings::max_wait_time] is set, this function will check if the
-/// stalled task should be removed regardless its parent process remains
-/// active in the system.
-pub fn task_is_stalled(
-    last_seen: u64,
-    _task_type: Option<TaskType>,
-    scheduler_settings: &Settings,
-) -> (bool, bool) {
-    let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    let max_wait_time = scheduler_settings.time_settings.max_wait_time;
-    let now = Utc::now().timestamp() as u64;
-    let is_stalled = now - min_wait_time > last_seen;
-    let must_be_removed = max_wait_time
-        .map(|max| now - max > last_seen)
-        .unwrap_or(false);
-    (is_stalled, must_be_removed)
 }
 
 //#[derive(Debug)]
@@ -182,17 +158,7 @@ impl Scheduler {
         };
         drop(resources);
 
-        let time: u64 = Utc::now().timestamp() as u64;
-
-        // prepare the task
-        let task_state = TaskState {
-            requirements,
-            allocation: alloc.clone(),
-            last_seen: AtomicU64::new(time),
-            aborted: AtomicBool::new(false),
-            creation_time: time,
-            context: client.context,
-        };
+        let task_state = TaskState::new(requirements, alloc.clone(), client.context);
 
         let state_clone = task_state.clone();
         self.tasks_state.write().insert(client.pid, state_clone);
@@ -239,11 +205,11 @@ impl Scheduler {
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn update_last_seen(&self, client: &ClientToken) -> Result<()> {
         let state = self.tasks_state.read();
-        let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
+        state
+            .get(&client.pid)
+            .ok_or(Error::UnknownClient)?
+            .update_last_seen();
         // update the last_seen counter
-        current_task
-            .last_seen
-            .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
         Ok(())
     }
 
@@ -303,7 +269,7 @@ impl Scheduler {
     fn abort_client(&self, client: &ClientToken) -> Result<bool> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
-        Ok(current_task.aborted.load(Ordering::Relaxed))
+        Ok(current_task.aborted())
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
@@ -372,7 +338,7 @@ impl Scheduler {
             let state = self.tasks_state.read();
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
             warn!("aborting client: {} from: {}", client, current_task.context);
-            current_task.aborted.store(true, Ordering::Relaxed);
+            current_task.abort();
             self.db.insert(*client, current_task.clone())?;
         }
         Ok(())
@@ -418,11 +384,7 @@ impl Scheduler {
     fn get_stalled_jobs(&self) -> Vec<(Pid, bool)> {
         let mut stalled = vec![];
         for (job_id, task) in self.tasks_state.read().iter() {
-            let (stalls, remove) = task_is_stalled(
-                task.last_seen.load(Ordering::Relaxed),
-                task.requirements.task_type,
-                &self.settings,
-            );
+            let (stalls, remove) = task.is_stalling(&self.settings);
             if stalls {
                 stalled.push((*job_id, remove));
             }
@@ -453,21 +415,13 @@ impl Scheduler {
         let resources = self.devices.read();
         let task_states = task_states
             .iter()
-            .map(|(id, state)| {
-                let last_seen = state.last_seen.load(Ordering::Relaxed);
-                MonitorTask {
-                    id: *id,
-                    alloc: state.allocation.clone(),
-                    task_type: state.requirements.task_type,
-                    deadline: state.requirements.deadline,
-                    last_seen,
-                    stalled: task_is_stalled(
-                        last_seen,
-                        state.requirements.task_type,
-                        &self.settings,
-                    )
-                    .0,
-                }
+            .map(|(id, task)| MonitorTask {
+                id: *id,
+                alloc: task.allocation.clone(),
+                task_type: task.requirements.task_type,
+                deadline: task.requirements.deadline,
+                last_seen: task.last_seen(),
+                stalled: task.is_stalling(&self.settings).0,
             })
             .collect::<Vec<_>>();
         let resources = resources
