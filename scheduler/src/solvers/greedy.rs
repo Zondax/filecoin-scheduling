@@ -95,7 +95,7 @@ impl Solver for GreedySolver {
         None
     }
 
-    fn solve_job_schedule(
+    fn make_plan(
         &mut self,
         current_state: &HashMap<Pid, TaskState>,
         settings: &Settings,

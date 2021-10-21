@@ -10,7 +10,7 @@ pub(crate) fn create_solver(_config: Option<&Settings>) -> Box<dyn Solver> {
 }
 // Trait that is implemented by any object that can be used as a solver
 pub trait Solver {
-    fn solve_job_schedule(
+    fn make_plan(
         &mut self,
         current_state: &HashMap<Pid, TaskState>,
         scheduler_settings: &Settings,
