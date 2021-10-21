@@ -249,8 +249,8 @@ impl Scheduler {
             // immediately
             .take(1)
             .map(|task| *task == client)
-            .nth(0);
-        Ok(dont_wait.ok_or(Error::UnknownClient)?)
+            .next();
+        dont_wait.ok_or(Error::UnknownClient)
     }
 
     // check if a task was cancelled by the user
