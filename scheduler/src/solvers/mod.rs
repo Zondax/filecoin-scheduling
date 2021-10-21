@@ -20,7 +20,7 @@ pub trait Solver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<DeviceId>>,
+        restrictions: Option<Vec<DeviceId>>,
         task_state: &HashMap<Pid, TaskState>,
     ) -> Option<ResourceAlloc>;
 }
@@ -72,7 +72,7 @@ mod tests {
 
         let mut solver = create_solver(None);
         //can allocate on any device so go
-        let alloc = solver.allocate_task(&mut devices_t1, &task1, &None, &tasks);
+        let alloc = solver.allocate_task(&mut devices_t1, &task1, None, &tasks);
 
         assert!(alloc.is_some());
 
@@ -111,7 +111,7 @@ mod tests {
 
         //resource 0 is busy so should allocate on idle GPU instead
         let alloc = solver
-            .allocate_task(&mut devices_t2, &task1, &None, &tasks)
+            .allocate_task(&mut devices_t2, &task1, None, &tasks)
             .unwrap();
         assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
 
@@ -131,7 +131,7 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let mut devices_t3 = Resources(state_t3);
         //everything busy so should allocate on any GPU instead
-        let alloc = solver.allocate_task(&mut devices_t3, &task1, &None, &HashMap::new());
+        let alloc = solver.allocate_task(&mut devices_t3, &task1, None, &HashMap::new());
         assert!(alloc.is_some());
 
         let task2 = TaskRequirements {
@@ -170,7 +170,7 @@ mod tests {
             .collect::<HashMap<_, ResourceState>>();
         let mut devices_t4 = Resources(state_t4);
         let alloc = solver
-            .allocate_task(&mut devices_t4, &task2, &None, &tasks)
+            .allocate_task(&mut devices_t4, &task2, None, &tasks)
             .unwrap();
         //allocate the requirement needing one idle GPU only instead of two of which one is busy
         assert!(alloc.devices[0] != devices.gpu_devices()[0].device_id());
@@ -207,7 +207,7 @@ mod tests {
             .allocate_task(
                 &mut devices_t5,
                 &task3,
-                &Some(vec![devices.gpu_devices()[0].device_id()]),
+                Some(vec![devices.gpu_devices()[0].device_id()]),
                 &tasks,
             )
             .unwrap();

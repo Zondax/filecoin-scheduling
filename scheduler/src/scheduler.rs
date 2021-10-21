@@ -6,7 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
-use crate::config::{Settings, Task};
+use crate::config::Settings;
 use crate::db::Database;
 use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
 use crate::requests::SchedulerResponse;
@@ -14,26 +14,10 @@ use crate::solvers::create_solver;
 
 use crate::{
     ClientToken, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc, ResourceType,
-    TaskRequirements, TaskType,
+    TaskRequirements,
 };
 use crate::{Error, Result};
 use crate::{ResourceState, Resources, TaskState};
-
-// match all the devices that were assigned to task with type taskType
-// returns None if there are not.
-pub fn match_task_devices(
-    task_type: Option<TaskType>,
-    scheduler_settings: &[Task],
-) -> Option<Vec<DeviceId>> {
-    let this_task = task_type?;
-    for task in scheduler_settings {
-        let devices = task.devices();
-        if task.task_type() == this_task && !devices.is_empty() {
-            return Some(devices);
-        }
-    }
-    None
-}
 
 //#[derive(Debug)]
 pub struct Scheduler {
@@ -135,8 +119,7 @@ impl Scheduler {
             return Ok(None);
         }
 
-        let restrictions =
-            match_task_devices(requirements.task_type, &self.settings.tasks_settings);
+        let restrictions = self.settings.devices_for_task(requirements.task_type);
 
         let resources = self.devices.read();
 
@@ -150,7 +133,7 @@ impl Scheduler {
         let alloc = match solver.allocate_task(
             &resources,
             &requirements,
-            &restrictions,
+            restrictions,
             &*self.tasks_state.read(),
         ) {
             Some(res) => res,

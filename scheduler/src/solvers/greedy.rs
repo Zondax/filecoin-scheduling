@@ -45,12 +45,11 @@ impl Solver for GreedySolver {
         &mut self,
         resources: &Resources,
         requirements: &TaskRequirements,
-        restrictions: &Option<Vec<DeviceId>>,
+        restrictions: Option<Vec<DeviceId>>,
         tasks_state: &HashMap<Pid, TaskState>,
     ) -> Option<ResourceAlloc> {
-        let device_restrictions = restrictions
-            .clone()
-            .unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
+        let device_restrictions =
+            restrictions.unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
 
         let mut options = vec![];
 
