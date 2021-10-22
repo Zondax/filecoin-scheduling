@@ -9,19 +9,20 @@ use std::cmp::Reverse;
 
 pub struct GreedySolver;
 
-fn get_by_resource_load(
-    resources: &Resources,
-    tasks_state: &HashMap<Pid, TaskState>,
-) -> Vec<DeviceId> {
+fn get_by_resource_load(resources: &mut [DeviceId], tasks_state: &HashMap<Pid, TaskState>) {
+    if resources.len() == 1 {
+        return;
+    }
+
     let mut map = HashMap::new();
     // get the load of each device
-    resources.0.iter().for_each(|(id, _)| {
-        map.insert(id, 0usize);
+    resources.iter().for_each(|id| {
+        map.insert(id.clone(), 0usize);
     });
     for (id, counter) in map.iter_mut() {
         if tasks_state
             .iter()
-            .any(|(_, state)| state.allocation.devices.iter().any(|dev| dev == *id))
+            .any(|(_, state)| state.allocation.devices.iter().any(|dev| dev == id))
         {
             *counter += 1;
         }
@@ -36,8 +37,8 @@ fn get_by_resource_load(
 
     resource_load_queue
         .into_sorted_iter()
-        .map(|(i, _)| i.clone())
-        .collect::<Vec<_>>()
+        .zip(resources.iter_mut())
+        .for_each(|((i, _), dev)| *dev = i);
 }
 
 impl Solver for GreedySolver {
@@ -48,8 +49,11 @@ impl Solver for GreedySolver {
         restrictions: Option<Vec<DeviceId>>,
         tasks_state: &HashMap<Pid, TaskState>,
     ) -> Option<ResourceAlloc> {
-        let device_restrictions =
+        // Get the devices this task can use or default to all resources
+        let mut device_restrictions =
             restrictions.unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
+        // Order the restrictions according to the number of tasks using it
+        get_by_resource_load(&mut device_restrictions, tasks_state);
 
         let mut options = vec![];
 
@@ -60,25 +64,16 @@ impl Solver for GreedySolver {
                 quantity = device_restrictions.len();
             }
             // check if the pool of devices have room for the requested allocations
-            let mut optional_resources = resources
-                .get_devices_with_requirements(req)
-                .filter(|b| device_restrictions.iter().any(|x| x == b))
-                .collect::<Vec<DeviceId>>();
+            let mut available = resources.get_devices_with_requirements(req);
+            let devices = device_restrictions
+                .iter()
+                .filter(|dev| available.any(|avail| avail == **dev))
+                .cloned()
+                .take(quantity)
+                .collect::<Vec<_>>();
 
-            if optional_resources.len() >= quantity {
-                if resources.0.len() > 1 {
-                    let ordered = get_by_resource_load(resources, tasks_state);
-                    let filtered = ordered
-                        .iter()
-                        .filter(|id| optional_resources.iter().any(|optional| optional == *id))
-                        .take(quantity)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    options.push((filtered, req));
-                } else {
-                    optional_resources.truncate(quantity);
-                    options.push((optional_resources, req));
-                }
+            if devices.len() >= quantity {
+                options.push((devices, req))
             }
         }
 
