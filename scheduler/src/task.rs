@@ -1,7 +1,8 @@
+use chrono::Utc;
 use serde::{de::Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
-use crate::{ResourceAlloc, TaskRequirements};
+use crate::{ResourceAlloc, Settings, TaskRequirements};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Process id
@@ -90,9 +91,55 @@ impl Clone for TaskState {
 }
 
 impl TaskState {
+    pub fn new(requirements: TaskRequirements, allocation: ResourceAlloc, context: String) -> Self {
+        let time: u64 = Utc::now().timestamp() as u64;
+        TaskState {
+            requirements,
+            allocation,
+            last_seen: AtomicU64::new(time),
+            aborted: AtomicBool::new(false),
+            creation_time: time,
+            context,
+        }
+    }
     pub fn end_timestamp(&self) -> i64 {
         self.requirements
             .deadline
             .map_or(i64::MAX, |d| d.end_timestamp_secs())
+    }
+
+    /// compute whether a task is considered stalled
+    ///
+    /// using the value of [Settings::min_wait_time] seconds before now
+    ///
+    /// if [Settings::max_wait_time] is set, this function will check if the
+    /// stalled task should be removed regardless its parent process remains
+    /// active on the system.
+    pub fn is_stalling(&self, scheduler_settings: &Settings) -> (bool, bool) {
+        let min_wait_time = scheduler_settings.time_settings.min_wait_time;
+        let max_wait_time = scheduler_settings.time_settings.max_wait_time;
+        let now = Utc::now().timestamp() as u64;
+        let is_stalled = now - min_wait_time > self.last_seen.load(Ordering::Relaxed);
+        let must_be_removed = max_wait_time
+            .map(|max| now - max > self.last_seen.load(Ordering::Relaxed))
+            .unwrap_or(false);
+        (is_stalled, must_be_removed)
+    }
+
+    pub fn last_seen(&self) -> u64 {
+        self.last_seen.load(Ordering::Relaxed)
+    }
+
+    pub fn update_last_seen(&self) {
+        self.last_seen
+            .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
+    }
+
+    pub fn aborted(&self) -> bool {
+        self.aborted.load(Ordering::Relaxed)
+    }
+
+    pub fn abort(&self) {
+        self.aborted.store(true, Ordering::Relaxed);
     }
 }

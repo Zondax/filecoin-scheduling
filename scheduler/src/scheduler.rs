@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use sysinfo::{System, SystemExt};
 
-use chrono::Utc;
 use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 use tracing::{debug, error, instrument, warn};
 
-use crate::config::{Settings, Task};
+use crate::config::Settings;
 use crate::db::Database;
 use crate::monitor::{GpuResource, MonitorInfo, Task as MonitorTask};
 use crate::requests::SchedulerResponse;
@@ -16,48 +14,10 @@ use crate::solvers::create_solver;
 
 use crate::{
     ClientToken, DeviceId, Devices, Pid, PreemptionResponse, ResourceAlloc, ResourceType,
-    TaskRequirements, TaskType,
+    TaskRequirements,
 };
 use crate::{Error, Result};
 use crate::{ResourceState, Resources, TaskState};
-
-// match all the devices that were assigned to task with type taskType
-// returns None if there are not.
-pub fn match_task_devices(
-    task_type: Option<TaskType>,
-    scheduler_settings: &[Task],
-) -> Option<Vec<DeviceId>> {
-    let this_task = task_type?;
-    for task in scheduler_settings {
-        let devices = task.devices();
-        if task.task_type() == this_task && !devices.is_empty() {
-            return Some(devices);
-        }
-    }
-    None
-}
-
-/// compute whether a task is considered stalled
-///
-/// using the value of [Settings::min_wait_time] seconds before now
-///
-/// if [Settings::max_wait_time] is set, this function will check if the
-/// stalled task should be removed regardless its parent process remains
-/// active in the system.
-pub fn task_is_stalled(
-    last_seen: u64,
-    _task_type: Option<TaskType>,
-    scheduler_settings: &Settings,
-) -> (bool, bool) {
-    let min_wait_time = scheduler_settings.time_settings.min_wait_time;
-    let max_wait_time = scheduler_settings.time_settings.max_wait_time;
-    let now = Utc::now().timestamp() as u64;
-    let is_stalled = now - min_wait_time > last_seen;
-    let must_be_removed = max_wait_time
-        .map(|max| now - max > last_seen)
-        .unwrap_or(false);
-    (is_stalled, must_be_removed)
-}
 
 //#[derive(Debug)]
 pub struct Scheduler {
@@ -118,7 +78,7 @@ impl Scheduler {
 
         if !tasks_state.is_empty() {
             let mut solver = create_solver(None);
-            jobs_queue = solver.solve_job_schedule(&tasks_state, &settings)?;
+            jobs_queue = solver.make_plan(&tasks_state, &settings)?;
         }
         let devices = RwLock::new(Resources(devices));
 
@@ -148,10 +108,12 @@ impl Scheduler {
             error!("Schedule request with empty parameters");
             return Err(Error::ResourceReqEmpty);
         }
+
+        let state = self.tasks_state.read();
         // before continuing we need to check if this client.pid is already in the
         // jobs queue meaning there is a collision that we need to avoid
         // by ignoring the request until the previous job is done.
-        if self.tasks_state.read().contains_key(&client.pid) {
+        if state.contains_key(&client.pid) {
             warn!(
                 "Ignoring request - A client with the same id: {} is already in the queue ",
                 client.pid
@@ -159,8 +121,7 @@ impl Scheduler {
             return Ok(None);
         }
 
-        let restrictions =
-            match_task_devices(requirements.task_type, &self.settings.tasks_settings);
+        let restrictions = self.settings.devices_for_task(requirements.task_type);
 
         let resources = self.devices.read();
 
@@ -171,33 +132,22 @@ impl Scheduler {
         }
 
         let mut solver = create_solver(None);
-        let alloc = match solver.allocate_task(
-            &resources,
-            &requirements,
-            &restrictions,
-            &*self.tasks_state.read(),
-        ) {
+        let alloc = match solver.allocate_task(&resources, &requirements, restrictions, &state) {
             Some(res) => res,
             _ => return Ok(None), // Should not happen, we filtered lines before
         };
         drop(resources);
+        drop(state);
 
-        let time: u64 = Utc::now().timestamp() as u64;
-
-        // prepare the task
-        let task_state = TaskState {
-            requirements,
-            allocation: alloc.clone(),
-            last_seen: AtomicU64::new(time),
-            aborted: AtomicBool::new(false),
-            creation_time: time,
-            context: client.context,
-        };
+        let task_state = TaskState::new(requirements, alloc.clone(), client.context);
 
         let state_clone = task_state.clone();
         self.tasks_state.write().insert(client.pid, state_clone);
+
         // Update our plan
-        let new_plan = match solver.solve_job_schedule(&self.tasks_state.read(), &self.settings) {
+        let res = { solver.make_plan(&self.tasks_state.read(), &self.settings) };
+
+        let new_plan = match res {
             Ok(plan) => {
                 debug!("scheduler job_plan {:?}", plan);
                 plan
@@ -209,7 +159,9 @@ impl Scheduler {
             }
         };
 
-        self.db.insert(client.pid, task_state)?;
+        if let Err(e) = self.db.insert(client.pid, task_state) {
+            warn!("Can not add task to internal Database {}", e.to_string());
+        }
 
         // update our resources state
         let mut resources = self.devices.write();
@@ -238,12 +190,11 @@ impl Scheduler {
     // update the last_seen counter
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
     fn update_last_seen(&self, client: &ClientToken) -> Result<()> {
-        let state = self.tasks_state.read();
-        let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
-        // update the last_seen counter
-        current_task
-            .last_seen
-            .store(Utc::now().timestamp() as u64, Ordering::Relaxed);
+        self.tasks_state
+            .read()
+            .get(&client.pid)
+            .ok_or(Error::UnknownClient)?
+            .update_last_seen();
         Ok(())
     }
 
@@ -265,45 +216,48 @@ impl Scheduler {
     fn check_priority_queue(&self, client: Pid) -> Result<bool> {
         let queue = self.jobs_queue.read();
         let state = self.tasks_state.read();
-        debug!("current job_plan {:?}", *queue);
-        // check the job plan to see if the task is up-front the queue or not
-        if let Some(job) = queue.front() {
-            // return immediately if the task is at the front of the queue
-            if *job == client {
-                Ok(true)
-            } else {
-                let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
-                // in this case we get an ordered queue based on the priority(highest to lowest) of the tasks that were assigned to the same
-                // resource as client.
-                let sub_queue = queue
-                    .iter()
-                    .filter(|id| {
-                        if let Some(next_task) = state.get(id) {
-                            current_task.allocation.devices.iter().any(|dev_id| {
-                                next_task.allocation.devices.iter().any(|id| dev_id == id)
-                            })
-                        } else {
-                            false
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                if !sub_queue.is_empty() {
-                    Ok(client == *sub_queue[0])
-                } else {
-                    Err(Error::UnknownClient)
-                }
-            }
-        } else {
-            warn!("Queue empty!");
-            Err(Error::UnknownClient)
+
+        if queue.is_empty() {
+            return Err(Error::UnknownClient);
         }
+        debug!("current job_plan {:?}", *queue);
+
+        if queue.front().filter(|v| **v == client).is_some() {
+            return Ok(true);
+        }
+
+        // Slow path where the client is not at the front so we need to get a sub-queue
+        // that contains all the tasks(including client) that share at least one resource
+        // this sub-queue is ordered according to each task's priority
+        let current_task = state.get(&client).ok_or(Error::UnknownClient)?;
+        let dont_wait = queue
+            .iter()
+            .filter(|id| {
+                if let Some(next_task) = state.get(id) {
+                    current_task
+                        .allocation
+                        .devices
+                        .iter()
+                        .any(|dev_id| next_task.allocation.devices.contains(dev_id))
+                } else {
+                    false
+                }
+            })
+            // we care about the first element as it is the highest
+            // priority task that uses at least one resource as client
+            // then compare it to check if client can continue
+            // immediately
+            .take(1)
+            .map(|task| *task == client)
+            .next();
+        dont_wait.ok_or(Error::UnknownClient)
     }
 
-    // check if client was aborted by the user
+    // check if a task was cancelled by the user
     fn abort_client(&self, client: &ClientToken) -> Result<bool> {
         let state = self.tasks_state.read();
         let current_task = state.get(&client.pid).ok_or(Error::UnknownClient)?;
-        Ok(current_task.aborted.load(Ordering::Relaxed))
+        Ok(current_task.aborted())
     }
 
     #[instrument(level = "trace", skip(self), fields(pid = client.pid))]
@@ -372,7 +326,7 @@ impl Scheduler {
             let state = self.tasks_state.read();
             let current_task = state.get(client).ok_or(Error::UnknownClient)?;
             warn!("aborting client: {} from: {}", client, current_task.context);
-            current_task.aborted.store(true, Ordering::Relaxed);
+            current_task.abort();
             self.db.insert(*client, current_task.clone())?;
         }
         Ok(())
@@ -418,11 +372,7 @@ impl Scheduler {
     fn get_stalled_jobs(&self) -> Vec<(Pid, bool)> {
         let mut stalled = vec![];
         for (job_id, task) in self.tasks_state.read().iter() {
-            let (stalls, remove) = task_is_stalled(
-                task.last_seen.load(Ordering::Relaxed),
-                task.requirements.task_type,
-                &self.settings,
-            );
+            let (stalls, remove) = task.is_stalling(&self.settings);
             if stalls {
                 stalled.push((*job_id, remove));
             }
@@ -431,10 +381,19 @@ impl Scheduler {
     }
 
     pub fn remove_job(&self, id: Pid) {
+        //Get writers before removing the task from the queue and the state
+        //as this avoids race conditions
+        let mut queue = self.jobs_queue.write();
+        let mut state = self.tasks_state.write();
         // remove job from our priority queue
-        self.jobs_queue.write().retain(|pid| *pid != id);
+        queue.retain(|pid| *pid != id);
+        let task = state.remove(&id);
+        let is_empty = state.is_empty();
+        drop(queue);
+        drop(state);
+
         // remove job from the state and unset any resources that were in used
-        if let Some(current_task) = self.tasks_state.write().remove(&id) {
+        if let Some(current_task) = task {
             let mut devices = self.devices.write();
             devices.unset_busy_resources(&current_task.allocation.devices, id);
             if let ResourceType::Gpu(ref m) = current_task.allocation.requirement.resource {
@@ -442,7 +401,8 @@ impl Scheduler {
             }
             let _ = self.db.remove::<_, TaskState>(id);
         }
-        if !self.tasks_state.read().is_empty() {
+
+        if !is_empty {
             *self.shutdown_tracker.write() = Instant::now();
         }
     }
@@ -451,23 +411,16 @@ impl Scheduler {
     pub(crate) fn monitor(&self) -> std::result::Result<MonitorInfo, String> {
         let task_states = self.tasks_state.read();
         let resources = self.devices.read();
+        let queue = self.jobs_queue.read();
         let task_states = task_states
             .iter()
-            .map(|(id, state)| {
-                let last_seen = state.last_seen.load(Ordering::Relaxed);
-                MonitorTask {
-                    id: *id,
-                    alloc: state.allocation.clone(),
-                    task_type: state.requirements.task_type,
-                    deadline: state.requirements.deadline,
-                    last_seen,
-                    stalled: task_is_stalled(
-                        last_seen,
-                        state.requirements.task_type,
-                        &self.settings,
-                    )
-                    .0,
-                }
+            .map(|(id, task)| MonitorTask {
+                id: *id,
+                alloc: task.allocation.clone(),
+                task_type: task.requirements.task_type,
+                deadline: task.requirements.deadline,
+                last_seen: task.last_seen(),
+                stalled: task.is_stalling(&self.settings).0,
             })
             .collect::<Vec<_>>();
         let resources = resources
@@ -484,7 +437,7 @@ impl Scheduler {
         Ok(MonitorInfo {
             task_states,
             resources,
-            job_plan: self.jobs_queue.read().iter().copied().collect::<Vec<_>>(),
+            job_plan: queue.iter().copied().collect::<Vec<_>>(),
         })
     }
 }

@@ -145,6 +145,20 @@ impl Settings {
             Ok(s)
         }
     }
+
+    // match all the devices that were assigned to task with type taskType
+    // returns None if there are not.
+    pub fn devices_for_task(&self, task_type: Option<TaskType>) -> Option<Vec<DeviceId>> {
+        if let Some(this_task) = task_type {
+            for task in self.tasks_settings.iter() {
+                let devices = task.devices();
+                if task.task_type() == this_task && !devices.is_empty() {
+                    return Some(devices);
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
