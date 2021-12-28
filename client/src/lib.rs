@@ -48,9 +48,8 @@ pub fn get_config_path() -> Result<PathBuf, Error> {
     };
     // check that the dirs exist otherwise create them if possible
     if !path.is_dir() {
-        std::fs::create_dir_all(&path).map_err(|e| {
-            Error::ConfigError(format!("cannot create config dir {}", e.to_string()))
-        })?;
+        std::fs::create_dir_all(&path)
+            .map_err(|e| Error::ConfigError(format!("cannot create config dir {}", e)))?;
     }
     Ok(path)
 }

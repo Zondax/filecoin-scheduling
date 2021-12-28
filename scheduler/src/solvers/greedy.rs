@@ -50,7 +50,7 @@ impl Solver for GreedySolver {
         tasks_state: &HashMap<Pid, TaskState>,
     ) -> Option<ResourceAlloc> {
         // Get the devices this task can use or default to all resources
-        let mut device_restrictions =
+        let device_restrictions =
             restrictions.unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
 
         let mut options = vec![];

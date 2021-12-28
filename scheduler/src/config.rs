@@ -133,14 +133,10 @@ impl Settings {
             s.try_into()
         } else {
             let s = Self::default();
-            let toml = toml::to_string(&s).map_err(|e| {
-                ConfigError::Message(format!("Error generating toml file: {}", e.to_string()))
-            })?;
+            let toml = toml::to_string(&s)
+                .map_err(|e| ConfigError::Message(format!("Error generating toml file: {}", e)))?;
             std::fs::write(&path, &toml).map_err(|e| {
-                ConfigError::Message(format!(
-                    "Can not create default configuration file {}",
-                    e.to_string()
-                ))
+                ConfigError::Message(format!("Can not create default configuration file {}", e))
             })?;
             Ok(s)
         }

@@ -17,7 +17,7 @@ impl Database {
                 Error::Database(format!(
                     "cannot create database in {:?} err: {}",
                     path.as_ref(),
-                    e.to_string()
+                    e
                 ))
             })?;
         }
