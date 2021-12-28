@@ -52,8 +52,6 @@ impl Solver for GreedySolver {
         // Get the devices this task can use or default to all resources
         let mut device_restrictions =
             restrictions.unwrap_or_else(|| resources.0.keys().cloned().collect::<Vec<DeviceId>>());
-        // Order the restrictions according to the number of tasks using it
-        get_by_resource_load(&mut device_restrictions, tasks_state);
 
         let mut options = vec![];
 
@@ -63,16 +61,16 @@ impl Solver for GreedySolver {
             if quantity > device_restrictions.len() {
                 quantity = device_restrictions.len();
             }
-            // check if the pool of devices have room for the requested allocations
-            let mut available = resources.get_devices_with_requirements(req);
-            let devices = device_restrictions
-                .iter()
-                .filter(|dev| available.any(|avail| avail == **dev))
-                .cloned()
+            // check if the pool of devices have room for the requested allocation
+            let available = resources.get_devices_with_requirements(req);
+            let mut devices = available
+                .filter(|avail| device_restrictions.iter().any(|dev| avail == dev))
                 .take(quantity)
                 .collect::<Vec<_>>();
 
-            if devices.len() >= quantity {
+            if !devices.is_empty() && devices.len() <= quantity {
+                // Order the restrictions according to the number of tasks using it
+                get_by_resource_load(&mut devices, tasks_state);
                 options.push((devices, req))
             }
         }
