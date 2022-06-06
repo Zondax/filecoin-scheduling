@@ -222,18 +222,14 @@ dependencies = [
  "dirs 3.0.2",
  "fs2",
  "ipmpsc",
- "jsonrpc-core",
  "jsonrpc-core-client",
- "nix 0.22.1",
+ "nix 0.22.2",
  "once_cell",
- "rand 0.8.4",
  "scheduler",
  "serde 1.0.129",
  "thiserror",
  "tokio",
  "tracing",
- "tracing-appender",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -1235,9 +1231,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.22.1"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7555d6c7164cc913be1ce7f95cbecdabda61eb2ccd89008524af306fb7f5031"
+checksum = "d3bb9a13fa32bc5aeb64150cd3f32d6cf4c748f8f8a417cce5d2eb976a8370ba"
 dependencies = [
  "bitflags",
  "cc",
@@ -1784,13 +1780,11 @@ dependencies = [
  "config",
  "criterion",
  "crossbeam",
- "dirs 3.0.2",
  "futures 0.3.16",
  "jsonrpc-core",
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "num_cpus",
- "once_cell",
  "palaver",
  "parking_lot",
  "priority-queue",
@@ -1802,7 +1796,6 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -2193,17 +2186,6 @@ dependencies = [
  "pin-project-lite 0.2.7",
  "tracing-attributes",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-appender"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9965507e507f12c8901432a33e31131222abac31edd90cabbcf85cf544b7127a"
-dependencies = [
- "chrono",
- "crossbeam-channel",
- "tracing-subscriber",
 ]
 
 [[package]]
