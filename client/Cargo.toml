@@ -5,7 +5,7 @@ authors = ["Zondax GmbH <info@zondax.ch>"]
 edition = "2018"
 
 [dependencies]
-nix = "0.22.0"
+nix = "0.22.2"
 scheduler = { path = "../scheduler/", optional = true}
 tokio_02 = { package = "tokio", version = "0.2", features = ["time", "rt-threaded"]}
 tracing = "0.1.26"
