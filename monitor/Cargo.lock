@@ -125,9 +125,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.7.0"
+version = "3.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c59e7af012c713f529e7a3ee57ce9b31ddd858d4b512923602f74608b009631"
+checksum = "0d261e256854913907f67ed06efbc3338dfe6179796deefc1ff763fc1aee5535"
 
 [[package]]
 name = "byte-tools"
@@ -202,9 +202,9 @@ dependencies = [
 
 [[package]]
 name = "cl3"
-version = "0.4.1"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e162e5fd0310c1060ab86ca788bf8660f916cbba7473b1c1cb1ecac8e663b9e2"
+checksum = "a120623848b1af3824734f4f7d8e60e43b9c0cfe86f179a337e383e47234997a"
 dependencies = [
  "cl-sys",
  "libc",
@@ -356,15 +356,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13aea89a5c93364a98e9b37b2fa237effbb694d5cfe01c5b70941f7eb087d5e3"
 dependencies = [
  "cfg-if 0.1.10",
- "dirs-sys",
-]
-
-[[package]]
-name = "dirs"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
-dependencies = [
  "dirs-sys",
 ]
 
@@ -1246,9 +1237,9 @@ checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
 name = "opencl3"
-version = "0.2.4"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2362074823a6505fc03fe1729c2fd4bdf9668c70e0ecaf8de7d1799cd54b465"
+checksum = "f8862f86c2b3f757038243318edb55a47b1be7d46376fe6bdd9aedd1b0074902"
 dependencies = [
  "cl3",
  "libc",
@@ -1602,11 +1593,11 @@ dependencies = [
 
 [[package]]
 name = "rust-gpu-tools"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dcf264eeb8cbea81e83cd5ed838b9ee51b0879a55896c000cf2d4161d509eac"
+checksum = "1785ab2a8accec77189e23fead221f2543cebf7ccf569788511cdac9f5fad168"
 dependencies = [
- "dirs 2.0.2",
+ "dirs",
  "hex",
  "lazy_static",
  "log",
@@ -1654,13 +1645,11 @@ dependencies = [
  "chrono",
  "config",
  "crossbeam",
- "dirs 3.0.2",
  "futures",
  "jsonrpc-core",
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "num_cpus",
- "once_cell",
  "palaver",
  "parking_lot",
  "priority-queue",
@@ -1671,7 +1660,6 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
