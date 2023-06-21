@@ -202,9 +202,9 @@ dependencies = [
 
 [[package]]
 name = "cl3"
-version = "0.4.1"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e162e5fd0310c1060ab86ca788bf8660f916cbba7473b1c1cb1ecac8e663b9e2"
+checksum = "a120623848b1af3824734f4f7d8e60e43b9c0cfe86f179a337e383e47234997a"
 dependencies = [
  "cl-sys",
  "libc",
@@ -356,15 +356,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13aea89a5c93364a98e9b37b2fa237effbb694d5cfe01c5b70941f7eb087d5e3"
 dependencies = [
  "cfg-if 0.1.10",
- "dirs-sys",
-]
-
-[[package]]
-name = "dirs"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
-dependencies = [
  "dirs-sys",
 ]
 
@@ -1246,9 +1237,9 @@ checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
 name = "opencl3"
-version = "0.2.4"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2362074823a6505fc03fe1729c2fd4bdf9668c70e0ecaf8de7d1799cd54b465"
+checksum = "f8862f86c2b3f757038243318edb55a47b1be7d46376fe6bdd9aedd1b0074902"
 dependencies = [
  "cl3",
  "libc",
@@ -1256,16 +1247,28 @@ dependencies = [
 
 [[package]]
 name = "openssl"
-version = "0.10.34"
+version = "0.10.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7830286ad6a3973c0f1d9b73738f69c76b739301d0229c4b96501695cbe4c8"
+checksum = "345df152bc43501c5eb9e4654ff05f794effb78d4efe3d53abc158baddc0703d"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
  "foreign-types",
  "libc",
  "once_cell",
+ "openssl-macros",
  "openssl-sys",
+]
+
+[[package]]
+name = "openssl-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b501e44f11665960c7e7fcf062c7d96a14ade4aa98116c004b2e37b5be7d736c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1276,11 +1279,10 @@ checksum = "28988d872ab76095a6e6ac88d99b54fd267702734fd7ffe610ca27f533ddb95a"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.63"
+version = "0.9.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b0d6fb7d80f877617dfcb014e605e2b5ab2fb0afdf27935219bb6bd984cb98"
+checksum = "374533b0e45f3a7ced10fcaeccca020e66656bc03dac384f852e4e5a7a8104a6"
 dependencies = [
- "autocfg",
  "cc",
  "libc",
  "pkg-config",
@@ -1602,11 +1604,11 @@ dependencies = [
 
 [[package]]
 name = "rust-gpu-tools"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dcf264eeb8cbea81e83cd5ed838b9ee51b0879a55896c000cf2d4161d509eac"
+checksum = "1785ab2a8accec77189e23fead221f2543cebf7ccf569788511cdac9f5fad168"
 dependencies = [
- "dirs 2.0.2",
+ "dirs",
  "hex",
  "lazy_static",
  "log",
@@ -1654,13 +1656,11 @@ dependencies = [
  "chrono",
  "config",
  "crossbeam",
- "dirs 3.0.2",
  "futures",
  "jsonrpc-core",
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "num_cpus",
- "once_cell",
  "palaver",
  "parking_lot",
  "priority-queue",
@@ -1671,7 +1671,6 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
